@@ -1,0 +1,45 @@
+{
+  "name": "@pbh/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "clean": "rm -rf .next .turbo"
+  },
+  "dependencies": {
+    "next": "^15.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.0",
+    "@pbh/domain": "*",
+    "@pbh/contracts": "*",
+    "@pbh/application": "*",
+    "@pbh/repositories": "*",
+    "@pbh/model-gateway": "*",
+    "@pbh/agent-runtime": "*",
+    "@pbh/security": "*",
+    "@pbh/observability": "*",
+    "@pbh/content-guidelines": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "vitest": "^3.2.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@playwright/test": "^1.52.0",
+    "eslint": "^9.27.0",
+    "eslint-config-next": "^15.3.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "jsdom": "^26.1.0"
+  }
+}
