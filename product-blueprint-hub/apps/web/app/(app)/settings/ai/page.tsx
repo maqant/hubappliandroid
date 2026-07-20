@@ -1,6 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 export default function AISettingsPage() {
+  const [health, setHealth] = useState<{ provider: string; configured: boolean } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/ai/health")
+      .then((res) => res.json())
+      .then((data) => setHealth(data))
+      .catch((err) => console.error(err));
+  }, []);
+
+  const isOpenAI = process.env.NEXT_PUBLIC_MODEL_PROVIDER === "openai" && health?.provider === "openai";
+
   return (
     <>
       <div className="page-header">
@@ -9,38 +22,36 @@ export default function AISettingsPage() {
       <div className="page-content" style={{ maxWidth: 720 }}>
         <div className="card mb-6">
           <div className="flex items-center gap-3 mb-4">
-            <span className="badge badge-demo">Demo Mode Active</span>
+            <span className={`badge ${isOpenAI ? "badge-openai" : "badge-demo"}`}>
+              {isOpenAI ? "OpenAI Active" : "Demo Mode Active"}
+            </span>
           </div>
-          <h3 className="mb-2">Current Provider: FakeModelProvider</h3>
+          <h3 className="mb-2">Current Provider: {isOpenAI ? "RemoteOpenAIProvider" : "FakeModelProvider"}</h3>
           <p className="text-sm text-muted mb-4">
-            The application is running with a deterministic fake AI provider. No API keys are
-            required. All AI responses are generated locally without network calls.
+            {isOpenAI 
+              ? "The application is connected to real OpenAI via the secure backend."
+              : "The application is running with a deterministic fake AI provider. No API keys are required."}
           </p>
 
           <div className="card" style={{ background: "var(--color-neutral-50)" }}>
             <h4 className="mb-3">Provider Status</h4>
             <div className="mb-2">
               <div className="flex items-center gap-3">
-                <span className="badge badge-completed">Active</span>
+                <span className={`badge ${!isOpenAI ? "badge-completed" : "badge-pending"}`}>
+                  {!isOpenAI ? "Active" : "Inactive"}
+                </span>
                 <span className="font-semibold text-sm">Fake (Demo)</span>
               </div>
               <p className="text-xs text-muted">Deterministic, no network, always available</p>
             </div>
             <div className="mb-2">
               <div className="flex items-center gap-3">
-                <span className="badge badge-pending">Not Configured</span>
+                <span className={`badge ${isOpenAI ? "badge-completed" : "badge-pending"}`}>
+                  {isOpenAI ? "Active" : "Not Configured"}
+                </span>
                 <span className="font-semibold text-sm">OpenAI</span>
               </div>
-              <p className="text-xs text-muted">Set OPENAI_API_KEY server-side to enable</p>
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <span className="badge badge-pending">Not Configured</span>
-                <span className="font-semibold text-sm">Azure OpenAI</span>
-              </div>
-              <p className="text-xs text-muted">
-                Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY server-side to enable
-              </p>
+              <p className="text-xs text-muted">Set NEXT_PUBLIC_MODEL_PROVIDER=openai and OPENAI_API_KEY server-side to enable</p>
             </div>
           </div>
         </div>

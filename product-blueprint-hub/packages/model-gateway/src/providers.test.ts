@@ -215,4 +215,50 @@ Locked References:
       );
     });
   });
+
+  describe("RemoteOpenAIProvider", () => {
+    it("should call the server route /api/ai/complete and not fallback to fake silently", async () => {
+      // Import the class dynamically since it's just added
+      const { RemoteOpenAIProvider } = await import("./providers");
+      const provider = new RemoteOpenAIProvider();
+      
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ content: "mocked openai response" })
+      } as Response);
+
+      const req = {
+        prompt: "Hello",
+        tier: "TERRA" as const,
+        correlationId: "test-openai",
+      };
+
+      const res = await provider.complete(req);
+      expect(fetchSpy).toHaveBeenCalledWith("/api/ai/complete", expect.any(Object));
+      expect(res.content).toBe("mocked openai response");
+      
+      fetchSpy.mockRestore();
+    });
+
+    it("should throw error if server returns error, without falling back to fake", async () => {
+      const { RemoteOpenAIProvider } = await import("./providers");
+      const provider = new RemoteOpenAIProvider();
+      
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: false,
+        statusText: "Bad Request",
+        json: async () => ({ error: "Rate limited" })
+      } as Response);
+
+      const req = {
+        prompt: "Hello",
+        tier: "TERRA" as const,
+        correlationId: "test-openai-error",
+      };
+
+      await expect(provider.complete(req)).rejects.toThrow(/Rate limited/);
+      
+      fetchSpy.mockRestore();
+    });
+  });
 });

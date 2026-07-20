@@ -151,8 +151,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <option value="en">English</option>
             </select>
           </div>
-          <div className="badge badge-demo" style={{ marginBottom: "var(--space-2)" }}>
-            Demo Mode
+          <div className={`badge ${process.env.NEXT_PUBLIC_MODEL_PROVIDER === 'openai' ? 'badge-openai' : 'badge-demo'}`} style={{ marginBottom: "var(--space-2)" }}>
+            {process.env.NEXT_PUBLIC_MODEL_PROVIDER === 'openai' ? 'OpenAI' : 'Demo Mode'}
           </div>
           <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-neutral-500)" }}>
             {user?.displayName ?? "Loading..."}

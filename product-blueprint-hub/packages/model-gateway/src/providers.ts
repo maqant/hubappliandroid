@@ -648,6 +648,50 @@ export class AzureOpenAIProvider implements IModelProvider {
 }
 
 // ============================================
+// Remote OpenAI Provider (Client Side)
+// ============================================
+
+export class RemoteOpenAIProvider implements IModelProvider {
+  readonly name = "openai";
+  readonly isConfigured = true;
+
+  async complete(request: ModelRequest): Promise<ModelResponse> {
+    const res = await fetch("/api/ai/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    
+    if (!res.ok) {
+      let errText = "Unknown error";
+      try {
+        const errJson = await res.json();
+        errText = errJson.error || res.statusText;
+      } catch {
+        errText = await res.text();
+      }
+      throw new Error(`OpenAI Provider Error: ${errText}`);
+    }
+
+    return res.json();
+  }
+
+  async checkHealth(): Promise<{ status: "ok" | "error"; message: string }> {
+    try {
+      const res = await fetch("/api/ai/health");
+      if (!res.ok) return { status: "error", message: `Health check failed: ${res.status}` };
+      const data = await res.json();
+      if (data.provider !== "openai") {
+        return { status: "error", message: `Server is using ${data.provider}, not openai` };
+      }
+      return { status: "ok", message: "Remote OpenAI configured and reachable" };
+    } catch (e: any) {
+      return { status: "error", message: `Network error: ${e.message}` };
+    }
+  }
+}
+
+// ============================================
 // Helpers
 // ============================================
 

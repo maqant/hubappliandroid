@@ -3,6 +3,13 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": [
+        "NEXT_PUBLIC_MODEL_PROVIDER",
+        "OPENAI_API_KEY",
+        "MODEL_SOL_ID",
+        "MODEL_TERRA_ID",
+        "MODEL_LUNA_ID"
+      ],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "dev": {

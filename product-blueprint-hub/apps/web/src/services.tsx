@@ -28,7 +28,7 @@ import {
   PackageUseCases,
 } from "@pbh/application";
 import { createLocalRepositoryRegistry } from "@pbh/repositories";
-import { FakeModelProvider, ModelGateway } from "@pbh/model-gateway";
+import { FakeModelProvider, ModelGateway, RemoteOpenAIProvider } from "@pbh/model-gateway";
 import { createContext, useContext, useMemo } from "react";
 
 // ============================================
@@ -41,7 +41,14 @@ function createServices() {
   const gateway = new ModelGateway();
   const fakeProvider = new FakeModelProvider();
   gateway.registerProvider("fake", fakeProvider);
-  gateway.setActiveProvider("fake");
+  
+  if (process.env.NEXT_PUBLIC_MODEL_PROVIDER === "openai") {
+    const openaiProvider = new RemoteOpenAIProvider();
+    gateway.registerProvider("openai", openaiProvider);
+    gateway.setActiveProvider("openai");
+  } else {
+    gateway.setActiveProvider("fake");
+  }
 
   const provider = gateway.getActiveProvider();
 
