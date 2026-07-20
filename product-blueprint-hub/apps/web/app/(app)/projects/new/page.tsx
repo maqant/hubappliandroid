@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import type { TargetPlatform } from "@pbh/domain";
 import { useServices } from "@/services";
 import { useTranslation } from "@/i18n";
 
@@ -13,6 +14,7 @@ export default function NewProjectPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [ideaText, setIdeaText] = useState("");
+  const [targetPlatform, setTargetPlatform] = useState<TargetPlatform | "">("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -22,10 +24,10 @@ export default function NewProjectPage() {
   const saveDraft = useCallback(() => {
     if (!name && !description && !ideaText) return;
     setSaveStatus("saving");
-    const draft = { name, description, ideaText, savedAt: new Date().toISOString() };
+    const draft = { name, description, ideaText, targetPlatform, savedAt: new Date().toISOString() };
     localStorage.setItem("pbh_draft_project", JSON.stringify(draft));
     setTimeout(() => setSaveStatus("saved"), 300);
-  }, [name, description, ideaText]);
+  }, [name, description, ideaText, targetPlatform]);
 
   // Load draft on mount
   useEffect(() => {
@@ -36,6 +38,7 @@ export default function NewProjectPage() {
         setName(parsed.name || "");
         setDescription(parsed.description || "");
         setIdeaText(parsed.ideaText || "");
+        setTargetPlatform(parsed.targetPlatform || "");
       } catch {
         // ignore
       }
@@ -49,10 +52,11 @@ export default function NewProjectPage() {
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
-  }, [name, description, ideaText, saveDraft]);
+  }, [name, description, ideaText, targetPlatform, saveDraft]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
+    if (!targetPlatform) newErrors.targetPlatform = "Veuillez choisir un type de produit.";
     if (!name.trim()) newErrors.name = "Project name is required";
     if (name.length > 200) newErrors.name = "Name must be 200 characters or less";
     setErrors(newErrors);
@@ -69,6 +73,7 @@ export default function NewProjectPage() {
         name.trim(),
         description.trim(),
         ideaText.trim(),
+        [targetPlatform as TargetPlatform]
       );
       localStorage.removeItem("pbh_draft_project");
       router.push(`/projects/${project.id}`);
@@ -94,6 +99,34 @@ export default function NewProjectPage() {
 
       <div className="page-content" style={{ maxWidth: 720 }}>
         <form onSubmit={handleSubmit}>
+          {/* Target Platform */}
+          <div className="mb-6">
+            <label className="label label-required">Quel type de produit souhaitez-vous concevoir ?</label>
+            <div className="grid grid-cols-2 gap-4 mt-2">
+              <div 
+                className={`card p-4 cursor-pointer border-2 transition-all ${targetPlatform === 'ANDROID_EXPO' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
+                onClick={() => setTargetPlatform('ANDROID_EXPO')}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="text-2xl">📱</div>
+                  <h3 className="font-semibold m-0">Application mobile Android</h3>
+                </div>
+                <p className="text-sm text-muted m-0">Application installée sur un téléphone Android, développée avec React Native et Expo.</p>
+              </div>
+              <div 
+                className={`card p-4 cursor-pointer border-2 transition-all ${targetPlatform === 'WEB_NEXTJS' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
+                onClick={() => setTargetPlatform('WEB_NEXTJS')}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="text-2xl">🌐</div>
+                  <h3 className="font-semibold m-0">Application web</h3>
+                </div>
+                <p className="text-sm text-muted m-0">Application React utilisée directement dans un navigateur et déployable sur le web.</p>
+              </div>
+            </div>
+            {errors.targetPlatform && <div className="error-text mt-2">{errors.targetPlatform}</div>}
+          </div>
+
           {/* Project Name */}
           <div className="mb-6">
             <label htmlFor="project-name" className="label label-required">

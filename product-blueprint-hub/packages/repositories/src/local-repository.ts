@@ -19,6 +19,9 @@ import type {
   IModelUsageRepository,
   IAuditEventRepository,
   IUserRepository,
+  IDesignProposalRepository,
+  IDesignGraphRepository,
+  IDesignBaselineRepository,
   RepositoryRegistry,
 } from "./interfaces";
 import type {
@@ -40,6 +43,9 @@ import type {
   ModelUsage,
   AuditEvent,
   User,
+  DesignProposal,
+  DesignGraph,
+  DesignBaseline,
 } from "@pbh/domain";
 
 // ============================================
@@ -297,6 +303,46 @@ class LocalUserRepository extends LocalRepo<User> implements IUserRepository {
   }
 }
 
+class LocalDesignProposalRepository extends LocalRepo<DesignProposal> implements IDesignProposalRepository {
+  constructor() {
+    super(STORAGE_PREFIX + "design_proposals");
+  }
+
+  async getByProjectId(projectId: EntityId): Promise<DesignProposal[]> {
+    return this.filter((p) => p.projectId === projectId);
+  }
+
+  async getByLayer(projectId: EntityId, layer: string): Promise<DesignProposal[]> {
+    return this.filter((p) => p.projectId === projectId && p.layer === layer);
+  }
+}
+
+class LocalDesignGraphRepository extends LocalRepo<DesignGraph> implements IDesignGraphRepository {
+  constructor() {
+    super(STORAGE_PREFIX + "design_graphs");
+  }
+
+  async getByProjectId(projectId: EntityId): Promise<DesignGraph | null> {
+    const all = await this.filter((g) => g.projectId === projectId);
+    return all[0] ?? null;
+  }
+}
+
+class LocalDesignBaselineRepository extends LocalRepo<DesignBaseline> implements IDesignBaselineRepository {
+  constructor() {
+    super(STORAGE_PREFIX + "design_baselines");
+  }
+
+  async getByProjectId(projectId: EntityId): Promise<DesignBaseline[]> {
+    return this.filter((b) => b.projectId === projectId);
+  }
+
+  async getActive(projectId: EntityId): Promise<DesignBaseline | null> {
+    const all = await this.filter((b) => b.projectId === projectId && b.status === "ACTIVE");
+    return all[0] ?? null;
+  }
+}
+
 // ============================================
 // Registry factory
 // ============================================
@@ -304,6 +350,9 @@ class LocalUserRepository extends LocalRepo<User> implements IUserRepository {
 export function createLocalRepositoryRegistry(): RepositoryRegistry {
   return {
     projects: new LocalProjectRepository(),
+    designProposals: new LocalDesignProposalRepository(),
+    designGraphs: new LocalDesignGraphRepository(),
+    designBaselines: new LocalDesignBaselineRepository(),
     sources: new LocalSourceRepository(),
     briefItems: new LocalBriefItemRepository(),
     decisions: new LocalDecisionRepository(),

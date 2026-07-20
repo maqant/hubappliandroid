@@ -1,4 +1,4 @@
-import type { EntityId, BriefItem, Project, Source, MissionManifest } from "@pbh/domain";
+import type { EntityId, BriefItem, Project, Source, MissionManifest, TargetPlatform } from "@pbh/domain";
 import {
   createProject,
   createSource,
@@ -26,8 +26,8 @@ import { MissionExecutor } from "@pbh/agent-runtime";
 export class ProjectUseCases {
   constructor(private readonly repos: RepositoryRegistry) {}
 
-  async createProject(name: string, description: string, ideaText: string): Promise<Project> {
-    const project = createProject({ name, description, ideaText });
+  async createProject(name: string, description: string, ideaText: string, targetPlatforms: TargetPlatform[] = ['WEB_NEXTJS']): Promise<Project> {
+    const project = createProject({ name, description, ideaText, targetPlatforms });
     await this.repos.projects.save(project);
     return project;
   }

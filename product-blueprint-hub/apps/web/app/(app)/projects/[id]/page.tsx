@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   useServices,
   type Project,
@@ -23,6 +23,7 @@ import { useTranslation } from "@/i18n";
 type TabId =
   | "sources"
   | "brief"
+  | "design"
   | "decisions"
   | "organization"
   | "control"
@@ -37,6 +38,7 @@ export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
   const svc = useServices();
+  const router = useRouter();
   const { t, lang } = useTranslation();
 
   const [project, setProject] = useState<Project | null>(null);
@@ -447,6 +449,7 @@ export default function ProjectDetailPage() {
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: "sources", label: `📄 ${t("tab.sources")}`, count: sources.length },
     { id: "brief", label: `💡 ${t("tab.brief")}`, count: briefItems.length },
+    { id: "design", label: `📐 Conception Assistée` },
     { id: "decisions", label: `⚖️ ${t("tab.decisions")}`, count: decisions.length },
     {
       id: "organization",
@@ -748,7 +751,46 @@ export default function ProjectDetailPage() {
             )}
           </div>
         )}
+        {activeTab === "design" && (
+          <div className="tab-pane fade-in flex flex-col h-full" style={{ minHeight: "60vh" }}>
+            <div className="flex justify-between items-center mb-4">
+              <h2>Conception Assistée</h2>
+              <button className="btn btn-secondary" onClick={() => router.push(`/projects/${projectId}/design/map`)}>
+                🗺️ Voir la cartographie
+              </button>
+            </div>
+            <div className="flex gap-4 flex-1">
+              {/* Zone Couches */}
+              <div className="card p-4 w-64 bg-surface flex flex-col gap-2">
+                <h3 className="text-sm font-semibold mb-2">Couches</h3>
+                {['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'].map(layer => (
+                  <button key={layer} className="btn btn-secondary text-left w-full justify-between">
+                    {layer} <span className="badge">0</span>
+                  </button>
+                ))}
+              </div>
 
+              {/* Zone Propositions */}
+              <div className="card p-4 flex-1 bg-surface flex flex-col">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold m-0">Propositions</h3>
+                  <button className="btn btn-primary btn-sm">✨ Générer</button>
+                </div>
+                <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg">
+                  Sélectionnez une couche pour voir les propositions
+                </div>
+              </div>
+
+              {/* Zone Détail */}
+              <div className="card p-4 w-80 bg-surface flex flex-col">
+                <h3 className="font-semibold mb-4">Détails</h3>
+                <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg">
+                  Sélectionnez une proposition
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {activeTab === "decisions" && (
           <div>
             <h2 className="mb-4">{t("tab.decisions")}</h2>
@@ -798,19 +840,31 @@ export default function ProjectDetailPage() {
             <div className="flex items-center justify-between mb-4">
               <h2>{t("org.title")}</h2>
               {missions.length > 0 && missions[0]!.status === "PLANNED" && (
-                <button className="btn btn-primary" onClick={runMission} disabled={isRunning}>
-                  {isRunning ? (
-                    <>
-                      <div
-                        className="loading-spinner"
-                        style={{ width: 14, height: 14, borderWidth: 2 }}
-                      />{" "}
-                      {t("action.loading")}
-                    </>
-                  ) : (
-                    `▶️ ${t("org.startBtn")}`
+                <div className="flex items-center gap-4">
+                  {project?.designStatus !== "VALIDATED" && (
+                    <div className="text-sm text-warning flex items-center gap-2">
+                      <span>⚠️</span>
+                      La conception doit être validée avant de lancer la mission.
+                    </div>
                   )}
-                </button>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={runMission} 
+                    disabled={isRunning || project?.designStatus !== "VALIDATED"}
+                  >
+                    {isRunning ? (
+                      <>
+                        <div
+                          className="loading-spinner"
+                          style={{ width: 14, height: 14, borderWidth: 2 }}
+                        />{" "}
+                        {t("action.loading")}
+                      </>
+                    ) : (
+                      `▶️ ${t("org.startBtn")}`
+                    )}
+                  </button>
+                </div>
               )}
             </div>
 

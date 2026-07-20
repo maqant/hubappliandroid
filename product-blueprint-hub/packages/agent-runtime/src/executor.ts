@@ -59,6 +59,15 @@ export class MissionExecutor {
     mission: MissionManifest,
     callbacks?: ExecutionCallbacks,
   ): Promise<MissionManifest> {
+    const project = await this.repos.projects.getById(mission.projectId);
+    let baselineContext = "";
+    if (project?.activeBaselineId) {
+      const baseline = await this.repos.designBaselines.getById(project.activeBaselineId);
+      if (baseline) {
+        baselineContext = `\nDesign Baseline Context:\nTarget Platforms: ${baseline.snapshot.targetPlatforms.join(', ')}\nProposals: ${baseline.snapshot.proposals.length} validated.`;
+      }
+    }
+
     const tasks = [...mission.tasks];
     const completed = new Set<string>();
     let totalTokens = mission.usedBudgetTokens || 0;
@@ -116,7 +125,7 @@ export class MissionExecutor {
         callbacks?.onTaskStarted?.(updatedTask);
 
         try {
-          const run = await this.executeTask(mission.id, updatedTask);
+          const run = await this.executeTask(mission.id, updatedTask, baselineContext);
 
           if (run.status === "FAILED") {
             // executeTask returned a FAILED run — this is an API/HTTP error, not network
@@ -298,12 +307,12 @@ export class MissionExecutor {
     }
   }
 
-  private async executeTask(missionId: EntityId, task: TaskDefinition): Promise<Run> {
+  private async executeTask(missionId: EntityId, task: TaskDefinition, baselineContext: string = ""): Promise<Run> {
     const now = new Date().toISOString();
 
     const request: ModelRequest = {
       prompt: `Execute task: ${task.name}\nDescription: ${task.description}\nAgent: ${task.agentId}`,
-      systemPrompt: `You are agent ${task.agentId}. Analyze and produce structured output for: ${task.description}`,
+      systemPrompt: `You are agent ${task.agentId}. Analyze and produce structured output for: ${task.description}${baselineContext}`,
       tier: task.modelTier,
       maxTokens: task.budgetTokens,
       correlationId: `${missionId}-${task.id}`,

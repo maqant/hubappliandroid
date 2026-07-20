@@ -15,6 +15,7 @@ export function testProject(overrides?: Partial<Parameters<typeof createProject>
     ideaText:
       overrides?.ideaText ??
       "Build a platform that helps users manage their tasks efficiently. Users should be able to create, assign, and track tasks. The system needs to support multiple teams and provide analytics dashboards.",
+    targetPlatforms: overrides?.targetPlatforms ?? ["WEB_NEXTJS"],
   });
 }
 

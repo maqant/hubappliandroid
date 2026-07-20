@@ -27,8 +27,7 @@ export interface BaseEntity extends Timestamped, Versioned {
 }
 
 // ============================================
-// Project
-// ============================================
+export type TargetPlatform = 'MOBILE_IOS' | 'MOBILE_ANDROID' | 'WEB_APP' | 'WEB_RESPONSIVE' | 'WEB_NEXTJS' | 'ANDROID_EXPO';
 
 export type ProjectStatus = "DRAFT" | "ACTIVE" | "ARCHIVED" | "DELETED";
 
@@ -37,12 +36,16 @@ export interface Project extends BaseEntity {
   readonly description: string;
   readonly status: ProjectStatus;
   readonly ideaText: string;
+  readonly targetPlatforms: TargetPlatform[];
+  readonly designStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'VALIDATED';
+  readonly activeBaselineId?: EntityId | null;
 }
 
 export function createProject(params: {
   name: string;
   description?: string;
   ideaText?: string;
+  targetPlatforms: TargetPlatform[];
 }): Project {
   const now = new Date().toISOString();
   return {
@@ -50,7 +53,10 @@ export function createProject(params: {
     name: params.name,
     description: params.description ?? "",
     ideaText: params.ideaText ?? "",
+    targetPlatforms: params.targetPlatforms,
     status: "DRAFT",
+    designStatus: 'NOT_STARTED',
+    activeBaselineId: null,
     version: 1,
     createdAt: now,
     updatedAt: now,

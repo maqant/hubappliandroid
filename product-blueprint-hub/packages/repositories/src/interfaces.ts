@@ -18,6 +18,9 @@ import type {
   ModelUsage,
   AuditEvent,
   User,
+  DesignProposal,
+  DesignGraph,
+  DesignBaseline,
 } from "@pbh/domain";
 
 // ============================================
@@ -38,6 +41,20 @@ export interface IRepository<T extends { id: EntityId }> {
 export interface IProjectRepository extends IRepository<Project> {
   getByStatus(status: string): Promise<Project[]>;
   search(query: string): Promise<Project[]>;
+}
+
+export interface IDesignProposalRepository extends IRepository<DesignProposal> {
+  getByProjectId(projectId: EntityId): Promise<DesignProposal[]>;
+  getByLayer(projectId: EntityId, layer: string): Promise<DesignProposal[]>;
+}
+
+export interface IDesignGraphRepository extends IRepository<DesignGraph> {
+  getByProjectId(projectId: EntityId): Promise<DesignGraph | null>;
+}
+
+export interface IDesignBaselineRepository extends IRepository<DesignBaseline> {
+  getByProjectId(projectId: EntityId): Promise<DesignBaseline[]>;
+  getActive(projectId: EntityId): Promise<DesignBaseline | null>;
 }
 
 export interface ISourceRepository extends IRepository<Source> {
@@ -120,6 +137,9 @@ export interface IUserRepository extends IRepository<User> {
 
 export interface RepositoryRegistry {
   projects: IProjectRepository;
+  designProposals: IDesignProposalRepository;
+  designGraphs: IDesignGraphRepository;
+  designBaselines: IDesignBaselineRepository;
   sources: ISourceRepository;
   briefItems: IBriefItemRepository;
   decisions: IDecisionRepository;
