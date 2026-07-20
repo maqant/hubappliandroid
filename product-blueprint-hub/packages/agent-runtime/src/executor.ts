@@ -441,13 +441,23 @@ ${decisions.map((d) => `- [DECISION] ${d.title}: ${d.statement}`).join("\n")}
     for (const bi of lockedBriefItems) {
       const decisionExists = existingDecisions.some((d) => d.sourceBriefItemId === bi.id);
       if (!decisionExists) {
-        const titleFr = `Décision : ${bi.type} - ${bi.statement.slice(0, 40)}`;
+        const safeType = bi.type || "non-catégorisé";
+        const safeStatement =
+          (typeof bi.statement === "string" && bi.statement.trim().length > 0)
+            ? bi.statement
+            : "Élément sans description";
+
+        if (safeStatement === "Élément sans description") {
+          console.warn(`[MissionExecutor] formalizeDecisions: brief item avec statement manquant (ID: ${bi.id}, Type: ${bi.type})`);
+        }
+
+        const titleFr = `Décision : ${safeType} - ${safeStatement.slice(0, 40)}`;
         const rationaleFr = `Formalisé automatiquement lors de la mission à partir de la référence stable : "${bi.excerpt}"`;
         const decision: import("@pbh/domain").Decision = {
           id: createId(),
           projectId: mission.projectId,
           title: titleFr,
-          statement: bi.statement,
+          statement: safeStatement,
           status: "ACCEPTED",
           rationale: rationaleFr,
           relatedBriefItemIds: [bi.id],

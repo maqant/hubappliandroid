@@ -117,17 +117,12 @@ export class BriefUseCases {
     });
 
     // Parse the response
-    let parsedItems: Array<{
-      type: string;
-      statement: string;
-      confidence: number;
-      excerpt: string;
-    }>;
+    let rawItems: any[];
     try {
       const parsed = JSON.parse(response.content);
-      parsedItems = parsed.items ?? [];
+      rawItems = Array.isArray(parsed.items) ? parsed.items : [];
     } catch {
-      parsedItems = [
+      rawItems = [
         {
           type: "VISION",
           statement: "Extracted vision from provided content.",
@@ -142,6 +137,19 @@ export class BriefUseCases {
         },
       ];
     }
+
+    const parsedItems = rawItems.map((raw) => {
+      const statement = raw.statement?.trim() || raw.description?.trim() || raw.content?.trim() || "Information non définie";
+      if (!raw.statement?.trim()) {
+        console.warn(`[BriefUseCases] analyzeBrief: item IA réparé par fallback`, { raw });
+      }
+      return {
+        type: raw.type?.trim() || "non-catégorisé",
+        statement,
+        confidence: typeof raw.confidence === "number" ? raw.confidence : 0.8,
+        excerpt: raw.excerpt?.trim() || allContent.slice(0, 80),
+      };
+    });
 
     // Create a default source if none exists for linking
     let defaultSource = sources[0];
