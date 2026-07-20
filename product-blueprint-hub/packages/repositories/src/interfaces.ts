@@ -21,6 +21,7 @@ import type {
   DesignProposal,
   DesignGraph,
   DesignBaseline,
+  PromptTemplate,
 } from "@pbh/domain";
 
 // ============================================
@@ -131,6 +132,12 @@ export interface IUserRepository extends IRepository<User> {
   getByEmail(email: string): Promise<User | null>;
 }
 
+export interface IPromptRepository extends IRepository<PromptTemplate> {
+  getByAgentId(agentId: string): Promise<PromptTemplate[]>;
+  getByPromptIdAndVersion(promptId: string, version: number): Promise<PromptTemplate | null>;
+  getActivePrompt(agentId: string): Promise<PromptTemplate | null>;
+}
+
 // ============================================
 // Registry — single access point for all repos
 // ============================================
@@ -157,4 +164,5 @@ export interface RepositoryRegistry {
   modelUsage: IModelUsageRepository;
   auditEvents: IAuditEventRepository;
   users: IUserRepository;
+  prompts: IPromptRepository;
 }

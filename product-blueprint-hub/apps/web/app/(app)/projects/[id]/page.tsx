@@ -17,6 +17,7 @@ import {
   type ExecutionPackage,
   type RunEvent,
   type EntityId,
+  type DesignLayer,
 } from "@/services";
 import { useTranslation } from "@/i18n";
 
@@ -61,7 +62,9 @@ export default function ProjectDetailPage() {
   const [events, setEvents] = useState<RunEvent[]>([]);
   
   const [generationError, setGenerationError] = useState<string | null>(null);
-  const [proposals, setProposals] = useState<any[]>([]); // To be refined  // UI states
+  const [proposals, setProposals] = useState<any[]>([]); // To be refined
+  const [selectedLayer, setSelectedLayer] = useState<DesignLayer>("INTENTION");
+  // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -251,7 +254,7 @@ export default function ProjectDetailPage() {
     setIsGenerating(true);
     setGenerationError(null);
     try {
-      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, project?.ideaText);
+      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, selectedLayer);
       setProposals(result);
       showToast("success", "Propositions générées avec succès");
       load();
@@ -782,7 +785,11 @@ export default function ProjectDetailPage() {
               <div className="card p-4 w-64 bg-surface flex flex-col gap-2">
                 <h3 className="text-sm font-semibold mb-2">Couches</h3>
                 {['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'].map(layer => (
-                  <button key={layer} className="btn btn-secondary text-left w-full justify-between">
+                  <button 
+                    key={layer} 
+                    className={`btn text-left w-full justify-between ${selectedLayer === layer ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setSelectedLayer(layer as DesignLayer)}
+                  >
                     {layer} <span className="badge">0</span>
                   </button>
                 ))}

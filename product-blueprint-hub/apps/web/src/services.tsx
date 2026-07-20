@@ -16,6 +16,13 @@ import type {
   RunEvent,
   EntityId,
   Run,
+  ModelUsage,
+  AuditEvent,
+  User,
+  DesignProposal,
+  DesignGraph,
+  DesignBaseline,
+  DesignLayer,
 } from "@pbh/domain";
 import {
   ProjectUseCases,
@@ -29,7 +36,7 @@ import {
   PackageUseCases,
   DesignWorkshopUseCases,
 } from "@pbh/application";
-import { createLocalRepositoryRegistry } from "@pbh/repositories";
+import { createLocalRepositoryRegistry, seedPrompts } from "@pbh/repositories";
 import { FakeModelProvider, ModelGateway, RemoteOpenAIProvider } from "@pbh/model-gateway";
 import { createContext, useContext, useMemo } from "react";
 
@@ -39,6 +46,10 @@ import { createContext, useContext, useMemo } from "react";
 
 function createServices() {
   const repos = createLocalRepositoryRegistry();
+  
+  // Seed initial prompts asynchronously
+  seedPrompts(repos).catch(console.error);
+
 
   const gateway = new ModelGateway();
   const fakeProvider = new FakeModelProvider();
@@ -67,7 +78,7 @@ function createServices() {
     audits: new AuditUseCases(repos, provider),
     baselines: new BaselineUseCases(repos),
     packages: new PackageUseCases(repos),
-    designWorkshop: new DesignWorkshopUseCases(repos),
+    designWorkshop: new DesignWorkshopUseCases(repos, provider),
   };
 }
 
@@ -103,4 +114,11 @@ export type {
   RunEvent,
   EntityId,
   Run,
+  ModelUsage,
+  AuditEvent,
+  User,
+  DesignProposal,
+  DesignGraph,
+  DesignBaseline,
+  DesignLayer,
 };

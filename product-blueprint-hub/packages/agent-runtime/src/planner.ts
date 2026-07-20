@@ -17,7 +17,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Mission Director",
     type: "FIXED",
     removable: false,
-    purpose: "Plan and delegate without validating own work.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -25,7 +25,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Product Direction",
     type: "FIXED",
     removable: false,
-    purpose: "Problem, users, value and success criteria.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -33,7 +33,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "MVP Guardian",
     type: "FIXED",
     removable: false,
-    purpose: "Classify and prevent scope creep.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -41,7 +41,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Non-Technical User",
     type: "FIXED",
     removable: false,
-    purpose: "Detect any unnecessary knowledge required.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -49,7 +49,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Guided UX",
     type: "FIXED",
     removable: false,
-    purpose: "Journeys, states, prevention and recovery.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -57,7 +57,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Design System",
     type: "FIXED",
     removable: false,
-    purpose: "Visual consistency, components and content.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -65,7 +65,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Cross-Application Consistency",
     type: "FIXED",
     removable: false,
-    purpose: "Professional platform compliance.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -73,7 +73,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "React Vercel Architecture",
     type: "FIXED",
     removable: false,
-    purpose: "Web and server architecture.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -81,7 +81,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "AI Architecture",
     type: "FIXED",
     removable: false,
-    purpose: "Gateway, providers, models, budgets and outputs.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -89,7 +89,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Security",
     type: "FIXED",
     removable: false,
-    purpose: "Secrets, authZ, uploads, injections and logs.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -97,7 +97,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Privacy",
     type: "FIXED",
     removable: false,
-    purpose: "Data, purpose, retention, export and deletion.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -105,7 +105,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Compliance",
     type: "FIXED",
     removable: false,
-    purpose: "Obligations and human reviews.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -113,7 +113,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Accessibility",
     type: "FIXED",
     removable: false,
-    purpose: "Criteria and tests.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -121,7 +121,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "QA",
     type: "FIXED",
     removable: false,
-    purpose: "Requirements, tests and proofs.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -129,7 +129,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Vercel Deployment",
     type: "FIXED",
     removable: false,
-    purpose: "Preview, Production and rollback.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -137,7 +137,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Costs",
     type: "FIXED",
     removable: false,
-    purpose: "Budgets, quotas and metrics.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -145,7 +145,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Technical Audit",
     type: "FIXED",
     removable: false,
-    purpose: "Global consistency in three passes.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
   {
@@ -153,7 +153,7 @@ const FIXED_AGENTS: Omit<AgentDefinition, "id" | "version" | "createdAt" | "upda
     name: "Package Audit",
     type: "FIXED",
     removable: false,
-    purpose: "Baseline vs final package.",
+    purpose: "Refer to Prompt Registry.",
     failureMode: "BLOCKED if contract or proof missing.",
   },
 ];

@@ -1,151 +1,77 @@
-Product Blueprint Hub - Catalogue des Agents & Prompts
-======================================================
+Product Blueprint Hub - Catalogue des Agents & Explication du Workflow
+====================================================================
 
-Il y a bien 18 agents fixes définis dans le logiciel, ainsi que 2 agents dynamiques facultatifs (qui s'activent selon les besoins détectés dans le brief).
+Il y a 18 agents fixes définis dans le logiciel, ainsi que 2 agents dynamiques facultatifs.
 
-Les prompts ne sont pas stockés sous forme de fichiers statiques complexes, mais sont assemblés dynamiquement par le moteur d'exécution (MissionExecutor) à partir des définitions d'agents et des tâches planifiées.
-
-Pour chaque tâche d'agent, la structure d'appel d'API se présente ainsi :
+1. MÉCANIQUE GLOBALE : COMMENT INTERAGISSENT-ILS ? (FONCTIONNEMENT "NEURONAL")
 --------------------------------------------------------------------------------
-SYSTEM PROMPT :
-"You are agent [AGENT_ID]. Analyze and produce structured output for: [TASK_DESCRIPTION]"
+Les agents ne "discutent" pas entre eux comme dans un chat classique. Ils fonctionnent de manière systémique, comme un pipeline de production (Graphe Acyclique Dirigé - DAG) :
 
-USER PROMPT :
-"Execute task: [TASK_NAME]
-Description: [TASK_DESCRIPTION]
-Agent: [AGENT_ID]"
+A. Le Point de Départ (DesignBaseline) :
+Lorsque tu lances la mission, le "MissionExecutor" prend les données validées (ton idée, les BriefItems retenus, ET le choix Android vs Web). Il crée un bloc de contexte immuable (la Baseline).
+
+B. Exécution par vagues (Phases) :
+- PHASE 1 (Analyse) : Les agents d'analyse (Product, Scope, UX) partent TOUS EN MÊME TEMPS (en parallèle). Chacun rédige sa partie du cahier des charges.
+- PHASE 2 (Conception) : Dès que la Phase 1 est finie, l'agent "Architecture" (FIX-ARCH) prend le relais. La magie réside ici : le "MissionExecutor" donne à l'agent Architecture le résultat exact de ce que vient de produire l'agent UX. L'Architecture s'adapte donc à l'UX.
+- PHASE 3 & 4 (Sécurité & Audits) : La sécurité vérifie l'architecture. Puis l'audit technique passe derrière tout le monde.
+- PHASE 5 (Synthèse) : Le "Mission Director" (propulsé par un modèle très intelligent comme GPT-4o) ramasse les 17 chapitres produits par les 17 agents précédents. Son rôle est de lisser les contradictions et d'assembler le fichier "MASTER-CONSOLIDATED.txt" parfait.
+
+C. Construction dynamique du Prompt :
+Aucun agent n'a de prompt statique géant. Le système assemble le prompt à la volée :
+[CONTEXTE GLOBAL (Android/Web, Idée)] + [RÉSULTAT DES AGENTS PRÉCÉDENTS] + [RÔLE DE L'AGENT]
+
+
+2. LISTE DES PROMPTS (RÔLES ET MISSIONS) - MISSION D'ÉCRITURE DU BLUEPRINT
 --------------------------------------------------------------------------------
+Voici la liste des missions exactes injectées dans les prompts pour la rédaction de la Fiche Technique :
 
-Voici la liste complète des 20 agents (18 fixes + 2 dynamiques) avec leurs rôles (Purpose) et la description de leurs tâches générant les prompts :
+--- PHASE 1 : ANALYSE (Parallèle) ---
+1. Product Direction (FIX-PRODUCT) : "Problem, users, value and success criteria."
+2. MVP Guardian (FIX-SCOPE) : "Classify and prevent scope creep."
+3. Non-Technical User (FIX-NOVICE) : "Detect any unnecessary knowledge required."
+4. Guided UX (FIX-UX) : "Journeys, states, prevention and recovery."
 
+*(Agents dynamiques potentiels)*
+- User Research (DYN-USER-RESEARCH) : "Deep analysis of user needs and personas."
+- Risk Analyst (DYN-RISK-ANALYST) : "Detailed risk assessment and mitigation planning."
 
-================================================================================
-AGENTS DE LA PHASE 1 : ANALYSE (Exécution en parallèle)
-================================================================================
+--- PHASE 2 : CONCEPTION (Dépend de la Phase 1) ---
+5. Design System (FIX-DESIGN) : "Visual consistency, components and content."
+6. Cross-Application Consistency (FIX-CROSSAPP) : "Professional platform compliance."
+7. React Vercel Architecture (FIX-ARCH) : "Web and server architecture."
+8. AI Architecture (FIX-AI) : "Gateway, providers, models, budgets and outputs."
 
-1. Product Direction (FIX-PRODUCT)
-   - Rôle : Problem, users, value and success criteria.
-   - Système : "You are agent FIX-PRODUCT. Analyze and produce structured output for: Problem, users, value and success criteria. — Phase 1 parallel analysis."
-   - Utilisateur : "Execute task: Product Direction Analysis\nDescription: Problem, users, value and success criteria. — Phase 1 parallel analysis.\nAgent: FIX-PRODUCT"
+--- PHASE 3 : SÉCURITÉ ET CONFORMITÉ (Dépend de la Phase 2) ---
+9. Security (FIX-SECURITY) : "Secrets, authZ, uploads, injections and logs."
+10. Privacy (FIX-PRIVACY) : "Data, purpose, retention, export and deletion."
+11. Compliance (FIX-COMPLIANCE) : "Obligations and human reviews."
+12. Accessibility (FIX-A11Y) : "Criteria and tests."
 
-2. MVP Guardian (FIX-SCOPE)
-   - Rôle : Classify and prevent scope creep.
-   - Système : "You are agent FIX-SCOPE. Analyze and produce structured output for: Classify and prevent scope creep. — Phase 1 parallel analysis."
-   - Utilisateur : "Execute task: MVP Guardian Analysis\nDescription: Classify and prevent scope creep. — Phase 1 parallel analysis.\nAgent: FIX-SCOPE"
+--- PHASE 4 : AUDITS TECHNIQUES FINAUX (Dépend de la Phase 3) ---
+13. QA (FIX-QA) : "Requirements, tests and proofs."
+14. Costs (FIX-COST) : "Budgets, quotas and metrics."
+15. Vercel Deployment (FIX-VERCEL) : "Preview, Production and rollback."
+16. Package Audit (FIX-PACKAGE-AUDIT) : "Baseline vs final package."
+17. Technical Audit (FIX-TECH-AUDIT) : "Global consistency in three passes."
 
-3. Non-Technical User (FIX-NOVICE)
-   - Rôle : Detect any unnecessary knowledge required.
-   - Système : "You are agent FIX-NOVICE. Analyze and produce structured output for: Detect any unnecessary knowledge required. — Phase 1 parallel analysis."
-   - Utilisateur : "Execute task: Non-Technical User Analysis\nDescription: Detect any unnecessary knowledge required. — Phase 1 parallel analysis.\nAgent: FIX-NOVICE"
-
-4. Guided UX (FIX-UX)
-   - Rôle : Journeys, states, prevention and recovery.
-   - Système : "You are agent FIX-UX. Analyze and produce structured output for: Journeys, states, prevention and recovery. — Phase 1 parallel analysis."
-   - Utilisateur : "Execute task: Guided UX Analysis\nDescription: Journeys, states, prevention and recovery. — Phase 1 parallel analysis.\nAgent: FIX-UX"
-
-
-================================================================================
-AGENTS DE LA PHASE 2 : CONCEPTION (Dépendent de la Phase 1)
-================================================================================
-
-5. Design System (FIX-DESIGN)
-   - Rôle : Visual consistency, components and content.
-   - Système : "You are agent FIX-DESIGN. Analyze and produce structured output for: Visual consistency, components and content. — Phase 2 design."
-   - Utilisateur : "Execute task: Design System Design\nDescription: Visual consistency, components and content. — Phase 2 design.\nAgent: FIX-DESIGN"
-
-6. Cross-Application Consistency (FIX-CROSSAPP)
-   - Rôle : Professional platform compliance.
-   - Système : "You are agent FIX-CROSSAPP. Analyze and produce structured output for: Professional platform compliance. — Phase 2 design."
-   - Utilisateur : "Execute task: Cross-Application Consistency Design\nDescription: Professional platform compliance. — Phase 2 design.\nAgent: FIX-CROSSAPP"
-
-7. React Vercel Architecture (FIX-ARCH)
-   - Rôle : Web and server architecture.
-   - Système : "You are agent FIX-ARCH. Analyze and produce structured output for: Web and server architecture. — Phase 2 design."
-   - Utilisateur : "Execute task: React Vercel Architecture Design\nDescription: Web and server architecture. — Phase 2 design.\nAgent: FIX-ARCH"
-
-8. AI Architecture (FIX-AI)
-   - Rôle : Gateway, providers, models, budgets and outputs.
-   - Système : "You are agent FIX-AI. Analyze and produce structured output for: Gateway, providers, models, budgets and outputs. — Phase 2 design."
-   - Utilisateur : "Execute task: AI Architecture Design\nDescription: Gateway, providers, models, budgets and outputs. — Phase 2 design.\nAgent: FIX-AI"
+--- PHASE 5 : DIRECTION DE MISSION (Dépend de toutes les phases) ---
+18. Mission Director (FIX-DIRECTOR) : "Final synthesis and blueprint consolidation."
 
 
-================================================================================
-AGENTS DE LA PHASE 3 : SÉCURITÉ ET CONFORMITÉ (Dépendent de la Phase 2)
-================================================================================
+3. EN ATTENTE : ATELIER DE CONCEPTION ASSISTÉE (DESIGN WORKSHOP)
+--------------------------------------------------------------------------------
+/!\ NOTE POUR LE CHEF DE PROJET /!\
 
-9. Security (FIX-SECURITY)
-   - Rôle : Secrets, authZ, uploads, injections and logs.
-   - Système : "You are agent FIX-SECURITY. Analyze and produce structured output for: Secrets, authZ, uploads, injections and logs. — Phase 3 security & compliance."
-   - Utilisateur : "Execute task: Security Review\nDescription: Secrets, authZ, uploads, injections and logs. — Phase 3 security & compliance.\nAgent: FIX-SECURITY"
+L'onglet "Conception Assistée" permet à l'utilisateur de construire un premier brouillon interactif de son application (via une sélection de couches : INTENTION, HYPOTHESIS, CAPABILITY, FEATURE, JOURNEY, SCREEN) *avant* de lancer la grande mission décrite ci-dessus.
 
-10. Privacy (FIX-PRIVACY)
-    - Rôle : Data, purpose, retention, export and deletion.
-    - Système : "You are agent FIX-PRIVACY. Analyze and produce structured output for: Data, purpose, retention, export and deletion. — Phase 3 security & compliance."
-    - Utilisateur : "Execute task: Privacy Review\nDescription: Data, purpose, retention, export and deletion. — Phase 3 security & compliance.\nAgent: FIX-PRIVACY"
+Actuellement, l'interface technique est prête et fonctionnelle : lorsque l'utilisateur sélectionne une couche et clique sur "✨ Générer", le système est prêt à appeler l'IA pour lui générer des propositions architecturales.
+Cependant, la logique "neuronale" (les agents et les prompts) n'a pas encore été injectée dans ce bouton de génération. L'interface renvoie des données de démonstration.
 
-11. Compliance (FIX-COMPLIANCE)
-    - Rôle : Obligations and human reviews.
-    - Système : "You are agent FIX-COMPLIANCE. Analyze and produce structured output for: Obligations and human reviews. — Phase 3 security & compliance."
-    - Utilisateur : "Execute task: Compliance Review\nDescription: Obligations and human reviews. — Phase 3 security & compliance.\nAgent: FIX-COMPLIANCE"
+QUESTIONS POUR INSTRUCTION :
 
-12. Accessibility (FIX-A11Y)
-    - Rôle : Criteria and tests.
-    - Système : "You are agent FIX-A11Y. Analyze and produce structured output for: Criteria and tests. — Phase 3 security & compliance."
-    - Utilisateur : "Execute task: Accessibility Review\nDescription: Criteria and tests. — Phase 3 security & compliance.\nAgent: FIX-A11Y"
+1. Architecture des Agents de Conception : 
+Combien d'agents distincts serait-il optimal d'utiliser pour générer ces propositions de manière interactive ? 
+(Ex: Faut-il un seul agent "Générateur Global" assez malin pour s'adapter à la couche sélectionnée, ou préfères-tu un agent très spécialisé pour chaque couche spécifique, comme un Agent "Vision" pour l'intention et un Agent "UX" pour les journeys ?)
 
-
-================================================================================
-AGENTS DE LA PHASE 4 : AUDITS TECHNIQUES ET FINAUX (Dépendent de la Phase 3)
-================================================================================
-
-13. QA (FIX-QA)
-    - Rôle : Requirements, tests and proofs.
-    - Système : "You are agent FIX-QA. Analyze and produce structured output for: Requirements, tests and proofs. — Phase 4 final audits."
-    - Utilisateur : "Execute task: QA Audit\nDescription: Requirements, tests and proofs. — Phase 4 final audits.\nAgent: FIX-QA"
-
-14. Technical Audit (FIX-TECH-AUDIT)
-    - Rôle : Global consistency in three passes.
-    - Modèle / Tier : SOL (Tier critique / GPT-4o)
-    - Système : "You are agent FIX-TECH-AUDIT. Analyze and produce structured output for: Global consistency in three passes. — Phase 4 final audits."
-    - Utilisateur : "Execute task: Technical Audit Audit\nDescription: Global consistency in three passes. — Phase 4 final audits.\nAgent: FIX-TECH-AUDIT"
-
-15. Package Audit (FIX-PACKAGE-AUDIT)
-    - Rôle : Baseline vs final package.
-    - Système : "You are agent FIX-PACKAGE-AUDIT. Analyze and produce structured output for: Baseline vs final package. — Phase 4 final audits."
-    - Utilisateur : "Execute task: Package Audit Audit\nDescription: Baseline vs final package. — Phase 4 final audits.\nAgent: FIX-PACKAGE-AUDIT"
-
-16. Costs (FIX-COST)
-    - Rôle : Budgets, quotas and metrics.
-    - Système : "You are agent FIX-COST. Analyze and produce structured output for: Budgets, quotas and metrics. — Phase 4 final audits."
-    - Utilisateur : "Execute task: Costs Audit\nDescription: Budgets, quotas and metrics. — Phase 4 final audits.\nAgent: FIX-COST"
-
-17. Vercel Deployment (FIX-VERCEL)
-    - Rôle : Preview, Production and rollback.
-    - Système : "You are agent FIX-VERCEL. Analyze and produce structured output for: Preview, Production and rollback. — Phase 4 final audits."
-    - Utilisateur : "Execute task: Vercel Deployment Audit\nDescription: Preview, Production and rollback. — Phase 4 final audits.\nAgent: FIX-VERCEL"
-
-
-================================================================================
-AGENT DE LA PHASE 5 : SYNTHÈSE FINALE (Dépend de tous les autres agents)
-================================================================================
-
-18. Mission Director (FIX-DIRECTOR)
-    - Rôle : Plan and delegate without validating own work.
-    - Modèle / Tier : SOL (Tier critique / GPT-4o)
-    - Système : "You are agent FIX-DIRECTOR. Analyze and produce structured output for: Final synthesis and blueprint consolidation."
-    - Utilisateur : "Execute task: Mission Synthesis\nDescription: Final synthesis and blueprint consolidation.\nAgent: FIX-DIRECTOR"
-
-
-================================================================================
-AGENTS DYNAMIQUES DE BRIEF (Activés selon les besoins détectés)
-================================================================================
-
-19. User Research Specialist (DYN-USER-RESEARCH)
-    - Rôle : Deep analysis of user needs and personas.
-    - Système : "You are agent DYN-USER-RESEARCH. Analyze and produce structured output for: Deep analysis of user needs and personas."
-    - Utilisateur : "Execute task: User Research Specialist Analysis\nDescription: Deep analysis of user needs and personas.\nAgent: DYN-USER-RESEARCH"
-
-20. Risk Analyst (DYN-RISK-ANALYST)
-    - Rôle : Detailed risk assessment and mitigation planning.
-    - Système : "You are agent DYN-RISK-ANALYST. Analyze and produce structured output for: Detailed risk assessment and mitigation planning."
-    - Utilisateur : "Execute task: Risk Analyst Analysis\nDescription: Detailed risk assessment and mitigation planning.\nAgent: DYN-RISK-ANALYST"
+2. Rédaction des Prompts : 
+Peux-tu nous fournir les textes exacts des prompts (système/utilisateur) que nous devons insérer pour équiper ce(s) futur(s) agent(s) de Conception Assistée ?

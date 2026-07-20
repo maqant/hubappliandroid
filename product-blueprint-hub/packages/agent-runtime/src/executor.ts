@@ -310,9 +310,32 @@ export class MissionExecutor {
   private async executeTask(missionId: EntityId, task: TaskDefinition, baselineContext: string = ""): Promise<Run> {
     const now = new Date().toISOString();
 
+    const promptTpl = await this.repos.prompts.getActivePrompt(task.agentId);
+
+    let systemPrompt = `You are agent ${task.agentId}. Analyze and produce structured output for: ${task.description}${baselineContext}`;
+    let userPrompt = `Execute task: ${task.name}\nDescription: ${task.description}\nAgent: ${task.agentId}`;
+    let promptId = "hardcoded";
+    let promptVersion = 0;
+
+    if (promptTpl) {
+      systemPrompt = promptTpl.systemPrompt;
+      userPrompt = promptTpl.userPromptTemplate
+        .replace(/{{MISSION_NAME}}/g, "Blueprint Generation")
+        .replace(/{{AGENT_ID}}/g, task.agentId)
+        .replace(/{{AGENT_ROLE}}/g, task.name)
+        .replace(/{{LANGUAGE}}/g, promptTpl.language)
+        .replace(/{{TARGET_PLATFORM}}/g, "WEB_NEXTJS") // We should ideally get this from the project
+        .replace(/{{DESIGN_BASELINE_JSON}}/g, baselineContext || "N/A")
+        .replace(/{{SPECIALIZED_MISSION_PROMPT}}/g, task.description)
+        .replace(/{{[A-Z_]+}}/g, "N/A"); // replace remaining
+
+      promptId = promptTpl.promptId;
+      promptVersion = promptTpl.version;
+    }
+
     const request: ModelRequest = {
-      prompt: `Execute task: ${task.name}\nDescription: ${task.description}\nAgent: ${task.agentId}`,
-      systemPrompt: `You are agent ${task.agentId}. Analyze and produce structured output for: ${task.description}${baselineContext}`,
+      prompt: userPrompt,
+      systemPrompt,
       tier: task.modelTier,
       maxTokens: task.budgetTokens,
       correlationId: `${missionId}-${task.id}`,
@@ -336,7 +359,7 @@ export class MissionExecutor {
         tokensUsed: response.tokensUsed,
         modelTier: response.tier,
         error: null,
-        diagnostic: response.diagnostic,
+        diagnostic: { ...response.diagnostic, promptId, promptVersion },
         version: 1,
         createdAt: now,
         updatedAt: new Date().toISOString(),
@@ -359,7 +382,7 @@ export class MissionExecutor {
         tokensUsed: 0,
         modelTier: task.modelTier,
         error: err.message || String(err),
-        diagnostic,
+        diagnostic: { ...diagnostic, promptId, promptVersion },
         version: 1,
         createdAt: now,
         updatedAt: new Date().toISOString(),

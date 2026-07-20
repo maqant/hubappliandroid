@@ -22,6 +22,7 @@ import type {
   IDesignProposalRepository,
   IDesignGraphRepository,
   IDesignBaselineRepository,
+  IPromptRepository,
   RepositoryRegistry,
 } from "./interfaces";
 import type {
@@ -46,6 +47,7 @@ import type {
   DesignProposal,
   DesignGraph,
   DesignBaseline,
+  PromptTemplate,
 } from "@pbh/domain";
 
 // ============================================
@@ -343,6 +345,29 @@ class LocalDesignBaselineRepository extends LocalRepo<DesignBaseline> implements
   }
 }
 
+class LocalPromptRepository extends LocalRepo<PromptTemplate> implements IPromptRepository {
+  constructor() {
+    super(STORAGE_PREFIX + "prompts");
+  }
+
+  async getByAgentId(agentId: string): Promise<PromptTemplate[]> {
+    return this.filter((p) => p.agentId === agentId);
+  }
+
+  async getByPromptIdAndVersion(promptId: string, version: number): Promise<PromptTemplate | null> {
+    const all = await this.filter((p) => p.promptId === promptId && p.version === version);
+    return all[0] ?? null;
+  }
+
+  async getActivePrompt(agentId: string): Promise<PromptTemplate | null> {
+    // Retours le prompt actif avec la plus haute version
+    const all = await this.filter((p) => p.agentId === agentId && p.enabled);
+    if (all.length === 0) return null;
+    all.sort((a, b) => b.version - a.version);
+    return all[0];
+  }
+}
+
 // ============================================
 // Registry factory
 // ============================================
@@ -370,6 +395,7 @@ export function createLocalRepositoryRegistry(): RepositoryRegistry {
     modelUsage: new LocalModelUsageRepository(),
     auditEvents: new LocalAuditEventRepository(),
     users: new LocalUserRepository(),
+    prompts: new LocalPromptRepository(),
   };
 }
 
