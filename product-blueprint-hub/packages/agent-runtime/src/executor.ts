@@ -36,10 +36,19 @@ export class MissionExecutor {
   ): Promise<MissionManifest> {
     const tasks = [...mission.tasks];
     const completed = new Set<string>();
-    let totalTokens = 0;
-    let totalCalls = 0;
+    let totalTokens = mission.usedBudgetTokens || 0;
+    let totalCalls = mission.totalCalls || 0;
     const allEvents: RunEvent[] = [];
-    const updatedTasks: TaskDefinition[] = [];
+    const updatedTaskMap = new Map<string, TaskDefinition>();
+    let networkFailure = false;
+
+    // Pre-populate completed set with already-finished tasks (for resume)
+    for (const t of tasks) {
+      if (t.status === "COMPLETED") {
+        completed.add(t.id);
+        updatedTaskMap.set(t.id, t);
+      }
+    }
 
     // Emit mission start
     const startEvent = createEvent(
@@ -57,19 +66,23 @@ export class MissionExecutor {
     let iterations = 0;
     const maxIterations = tasks.length * 2; // Safety limit
 
-    while (completed.size < tasks.length && iterations < maxIterations) {
+    while (completed.size < tasks.length && iterations < maxIterations && !networkFailure) {
       iterations++;
       const readyTasks = tasks.filter(
-        (t) => !completed.has(t.id) && t.dependencies.every((dep) => completed.has(dep)),
+        (t) =>
+          !completed.has(t.id) &&
+          t.dependencies.every((dep) => completed.has(dep)),
       );
 
       if (readyTasks.length === 0 && completed.size < tasks.length) {
-        // Deadlock
+        // Deadlock or all remaining tasks depend on a failed one
         break;
       }
 
-      // Execute ready tasks (simulate parallel)
+      // Execute ready tasks sequentially
       for (const task of readyTasks) {
+        if (networkFailure) break;
+
         const updatedTask: TaskDefinition = {
           ...task,
           status: "RUNNING",
@@ -79,6 +92,35 @@ export class MissionExecutor {
 
         try {
           const run = await this.executeTask(mission.id, updatedTask);
+
+          if (run.status === "FAILED") {
+            // executeTask returned a FAILED run — this is an API/HTTP error, not network
+            const failedTask: TaskDefinition = {
+              ...updatedTask,
+              status: "FAILED",
+              updatedAt: new Date().toISOString(),
+            };
+            completed.add(task.id);
+            updatedTaskMap.set(task.id, failedTask);
+            callbacks?.onTaskFailed?.(failedTask, run.error || "Unknown error");
+            callbacks?.onProgress?.(completed.size, tasks.length);
+            await this.repos.runs.save(run);
+
+            const evt = createEvent(
+              mission.id,
+              task.id,
+              run.id,
+              "TASK_FAILED",
+              `Task "${task.name}" failed: ${run.error}`,
+              { modelTier: run.modelTier, error: run.error },
+            );
+            allEvents.push(evt);
+            await this.repos.runEvents.save(evt);
+            callbacks?.onEvent?.(evt);
+            continue;
+          }
+
+          // Successful run
           totalTokens += run.tokensUsed;
           totalCalls++;
 
@@ -89,14 +131,12 @@ export class MissionExecutor {
           };
 
           completed.add(task.id);
-          updatedTasks.push(completedTask);
+          updatedTaskMap.set(task.id, completedTask);
           callbacks?.onTaskCompleted?.(completedTask, run);
           callbacks?.onProgress?.(completed.size, tasks.length);
 
-          // Save run
           await this.repos.runs.save(run);
 
-          // Create completion event
           const evt = createEvent(
             mission.id,
             task.id,
@@ -108,43 +148,77 @@ export class MissionExecutor {
           allEvents.push(evt);
           await this.repos.runEvents.save(evt);
           callbacks?.onEvent?.(evt);
-        } catch (err) {
+        } catch (err: any) {
+          // Network-level error (Failed to fetch, AbortError, timeout)
+          // Stop the entire mission — do not continue to hammer the network
+          networkFailure = true;
+
           const failedTask: TaskDefinition = {
             ...updatedTask,
             status: "FAILED",
             updatedAt: new Date().toISOString(),
           };
-          updatedTasks.push(failedTask);
-          completed.add(task.id); // Mark as done (failed)
-          callbacks?.onTaskFailed?.(failedTask, String(err));
+          updatedTaskMap.set(task.id, failedTask);
+          completed.add(task.id);
+
+          // Save a FAILED run with network diagnostic
+          const failedRun: Run = {
+            id: createId(),
+            taskId: task.id,
+            missionId: mission.id,
+            status: "FAILED",
+            startedAt: updatedTask.updatedAt,
+            completedAt: new Date().toISOString(),
+            tokensUsed: 0,
+            modelTier: task.modelTier,
+            error: err.message || String(err),
+            diagnostic: err.diagnostic || null,
+            version: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          await this.repos.runs.save(failedRun);
+
+          callbacks?.onTaskFailed?.(failedTask, err.message || String(err));
+          callbacks?.onProgress?.(completed.size, tasks.length);
+          break;
         }
       }
     }
 
+    // Mark all untouched tasks as NOT_RUN (not artificially FAILED)
+    const finalTasks = tasks.map((t) => {
+      if (updatedTaskMap.has(t.id)) return updatedTaskMap.get(t.id)!;
+      // Task was never attempted
+      return {
+        ...t,
+        status: "NOT_RUN" as const,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    const hasFailedTasks = finalTasks.some((t) => t.status === "FAILED");
+    const hasNotRunTasks = finalTasks.some((t) => t.status === "NOT_RUN");
+    const allCompleted = finalTasks.every((t) => t.status === "COMPLETED");
+
     try {
-      // Generate artifacts from completed tasks
-      await this.generateArtifacts(mission);
+      // Only generate artifacts if all tasks completed (no network failure)
+      if (allCompleted) {
+        await this.generateArtifacts(mission);
+        await this.formalizeDecisions(mission);
+        await this.detectConflicts(mission);
+      }
 
-      // Formalize locked brief items into decisions
-      await this.formalizeDecisions(mission);
+      const finalStatus = allCompleted
+        ? "COMPLETED"
+        : (hasFailedTasks || hasNotRunTasks)
+          ? "PARTIAL_FAILURE"
+          : "COMPLETED";
 
-      // Detect conflicts deterministically
-      await this.detectConflicts(mission);
-
-      const hasFailedTasks = updatedTasks.some((t) => t.status === "FAILED");
-
-      // Update mission to COMPLETED or PARTIAL_FAILURE
       const completedMission: MissionManifest = {
         ...mission,
-        status: hasFailedTasks ? "PARTIAL_FAILURE" : "COMPLETED",
-        tasks:
-          updatedTasks.length > 0
-            ? updatedTasks
-            : tasks.map((t) => ({
-                ...t,
-                status: "COMPLETED" as const,
-                updatedAt: new Date().toISOString(),
-              })),
+        status: finalStatus,
+        tasks: finalTasks,
         usedBudgetTokens: totalTokens,
         totalCalls,
         version: mission.version + 1,
@@ -160,9 +234,7 @@ export class MissionExecutor {
       const failedMission: MissionManifest = {
         ...mission,
         status: "PARTIAL_FAILURE",
-        tasks: updatedTasks.map((t) =>
-          t.status === "RUNNING" ? { ...t, status: "FAILED" as const } : t,
-        ),
+        tasks: finalTasks,
         usedBudgetTokens: totalTokens,
         totalCalls,
         version: mission.version + 1,
@@ -237,7 +309,12 @@ export class MissionExecutor {
         updatedAt: new Date().toISOString(),
       };
     } catch (err: any) {
-      // Create a FAILED run to track diagnostic
+      // Network-level errors must propagate up to stop the mission
+      if (err.isNetworkError) {
+        throw err;
+      }
+
+      // API/HTTP error — return a FAILED run (do not throw, task is individually failed)
       const diagnostic = err.diagnostic || null;
       return {
         id: createId(),

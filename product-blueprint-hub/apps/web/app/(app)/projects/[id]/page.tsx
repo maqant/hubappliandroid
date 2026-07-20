@@ -249,7 +249,7 @@ export default function ProjectDetailPage() {
     setIsRunning(true);
     try {
       console.log("runMission: Calling executeMission for", missions[0]!.id);
-      await svc.missions.executeMission(missions[0]!.id, {
+      const result = await svc.missions.executeMission(missions[0]!.id, {
         onProgress: (done, total) => {
           console.log(`runMission progress: ${done}/${total}`);
           showToast(
@@ -260,8 +260,19 @@ export default function ProjectDetailPage() {
           );
         },
       });
-      console.log("runMission: executeMission completed successfully");
-      showToast("success", lang === "fr" ? "Mission terminée" : "Mission completed");
+      console.log("runMission: executeMission completed, status:", result.status);
+      if (result.status === "PARTIAL_FAILURE") {
+        const notRun = result.tasks.filter((t) => t.status === "NOT_RUN").length;
+        const failed = result.tasks.filter((t) => t.status === "FAILED").length;
+        showToast(
+          "error",
+          lang === "fr"
+            ? `Échec partiel : ${failed} échouée(s), ${notRun} non exécutée(s). Utilisez "Reprendre" pour réessayer.`
+            : `Partial failure: ${failed} failed, ${notRun} not run. Use "Resume" to retry.`,
+        );
+      } else {
+        showToast("success", lang === "fr" ? "Mission terminée" : "Mission completed");
+      }
       setActiveTab("control");
       console.log("runMission: calling load()");
       await load();
@@ -269,9 +280,46 @@ export default function ProjectDetailPage() {
     } catch (err) {
       console.error("ERROR IN runMission:", err);
       showToast("error", String(err));
+      await load();
     } finally {
       setIsRunning(false);
       console.log("runMission: finished, isRunning set to false");
+    }
+  };
+
+  const resumeMission = async () => {
+    if (missions.length === 0) return;
+    setIsRunning(true);
+    try {
+      const result = await svc.missions.resumeMission(missions[0]!.id, {
+        onProgress: (done, total) => {
+          showToast(
+            "info",
+            lang === "fr"
+              ? `Reprise : ${done}/${total} tâches`
+              : `Resuming: ${done}/${total} tasks`,
+          );
+        },
+      });
+      if (result.status === "PARTIAL_FAILURE") {
+        const notRun = result.tasks.filter((t) => t.status === "NOT_RUN").length;
+        const failed = result.tasks.filter((t) => t.status === "FAILED").length;
+        showToast(
+          "error",
+          lang === "fr"
+            ? `Échec partiel : ${failed} échouée(s), ${notRun} non exécutée(s).`
+            : `Partial failure: ${failed} failed, ${notRun} not run.`,
+        );
+      } else {
+        showToast("success", lang === "fr" ? "Mission terminée" : "Mission completed");
+      }
+      await load();
+    } catch (err) {
+      console.error("ERROR IN resumeMission:", err);
+      showToast("error", String(err));
+      await load();
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -909,11 +957,18 @@ export default function ProjectDetailPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2>{t("control.title")}</h2>
-              {missions.length > 0 && missions[0]!.status !== "PLANNED" && missions[0]!.status !== "RUNNING" && (
-                <button className="btn btn-secondary" onClick={downloadDiagnosticJson}>
-                  ⬇️ {lang === "fr" ? "Télécharger le diagnostic JSON" : "Download JSON Diagnostic"}
-                </button>
-              )}
+              <div className="flex gap-2">
+                {missions.length > 0 && missions[0]!.status === "PARTIAL_FAILURE" && !isRunning && (
+                  <button className="btn btn-primary" onClick={resumeMission}>
+                    🔄 {lang === "fr" ? "Reprendre les tâches non terminées" : "Resume Incomplete Tasks"}
+                  </button>
+                )}
+                {missions.length > 0 && missions[0]!.status !== "PLANNED" && missions[0]!.status !== "RUNNING" && (
+                  <button className="btn btn-secondary" onClick={downloadDiagnosticJson}>
+                    ⬇️ {lang === "fr" ? "Télécharger le diagnostic JSON" : "Download JSON Diagnostic"}
+                  </button>
+                )}
+              </div>
             </div>
             {missions.length === 0 ? (
               <div className="empty-state">
@@ -933,7 +988,7 @@ export default function ProjectDetailPage() {
                     {missions[0]!.totalBudgetTokens.toLocaleString()} tokens
                   </span>
                   <span className="text-sm text-muted">
-                    {lang === "fr" ? "Apples : " : "Calls: "}
+                    {lang === "fr" ? "Appels : " : "Calls: "}
                     {missions[0]!.totalCalls}
                   </span>
                 </div>
@@ -956,14 +1011,20 @@ export default function ProjectDetailPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className={`badge badge-${t.status.toLowerCase()}`}>
+                        <span className={`badge badge-${t.status.toLowerCase().replace("_", "-")}`}>
                           {lang === "fr"
                             ? t.status === "COMPLETED"
                               ? "Terminée"
                               : t.status === "PENDING"
                                 ? "En attente"
-                                : t.status
-                            : t.status}
+                                : t.status === "FAILED"
+                                  ? "Échouée"
+                                  : t.status === "NOT_RUN"
+                                    ? "Non exécutée"
+                                    : t.status
+                            : t.status === "NOT_RUN"
+                              ? "Not Run"
+                              : t.status}
                         </span>
                         <span className="text-sm font-semibold">
                           {(() => {

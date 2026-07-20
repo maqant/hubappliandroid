@@ -415,6 +415,17 @@ a:hover {
   background: var(--color-error-light);
   color: #991b1b;
 }
+.badge-not-run {
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-500);
+  border: 1px dashed var(--color-neutral-400);
+}
+.badge-partial-failure,
+.badge-partial_failure {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
 
 /* --- Layout --- */
 .layout {

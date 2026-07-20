@@ -315,6 +315,36 @@ export class MissionUseCases {
   async getMissionRuns(missionId: EntityId) {
     return this.repos.runs.getByMissionId(missionId);
   }
+
+  async resumeMission(
+    missionId: EntityId,
+    callbacks?: import("@pbh/agent-runtime").ExecutionCallbacks,
+  ) {
+    const mission = await this.repos.missions.getById(missionId);
+    if (!mission) throw new Error("Mission not found");
+    if (mission.status !== "PARTIAL_FAILURE") {
+      throw new Error("Only PARTIAL_FAILURE missions can be resumed");
+    }
+
+    // Reset NOT_RUN and FAILED tasks back to PENDING so executor will attempt them
+    const resumableTasks = mission.tasks.map((t) =>
+      t.status === "NOT_RUN" || t.status === "FAILED"
+        ? { ...t, status: "PENDING" as const, updatedAt: new Date().toISOString() }
+        : t,
+    );
+
+    const resumedMission = {
+      ...mission,
+      status: "RUNNING" as const,
+      tasks: resumableTasks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.repos.missions.save(resumedMission);
+
+    const executor = new MissionExecutor(this.provider, this.repos);
+    return executor.execute(resumedMission, callbacks);
+  }
 }
 
 export class ConflictUseCases {

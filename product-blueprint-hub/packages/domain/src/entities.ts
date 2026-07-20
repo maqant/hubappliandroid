@@ -513,7 +513,7 @@ export interface AgentDefinition extends BaseEntity {
 export type ModelTier = "LUNA" | "TERRA" | "SOL";
 
 export type TaskStatus =
-  "PENDING" | "READY" | "RUNNING" | "BLOCKED" | "FAILED" | "COMPLETED" | "CANCELLED";
+  "PENDING" | "READY" | "RUNNING" | "BLOCKED" | "FAILED" | "COMPLETED" | "CANCELLED" | "NOT_RUN";
 
 export interface TaskDefinition extends BaseEntity, Owned {
   readonly missionId: EntityId;
