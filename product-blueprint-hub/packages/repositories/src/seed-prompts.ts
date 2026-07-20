@@ -6,7 +6,12 @@ export async function seedPrompts(registry: RepositoryRegistry) {
   // Ne re-seed pas si déjà présent pour éviter d'écraser les modifications
   if (existing.length > 0) return;
 
-  const COMMON_WORKSHOP_SYSTEM = `Tu participes à l’Atelier de conception assistée du Product Blueprint Hub.
+  for (const p of DEFAULT_PROMPTS) {
+    await registry.prompts.save(p);
+  }
+}
+
+const COMMON_WORKSHOP_SYSTEM = `Tu participes à l’Atelier de conception assistée du Product Blueprint Hub.
 
 Ton rôle est d’aider l’utilisateur à transformer une idée brute en produit clairement défini, sans décider à sa place.
 
@@ -237,7 +242,7 @@ SCHÉMA DE SORTIE
 
 Produis uniquement ton livrable spécialisé.`;
 
-  const prompts = [
+export const DEFAULT_PROMPTS = [
     // --- WORKSHOP AGENTS ---
     createPromptTemplate({
       promptId: "workshop-intent",
@@ -518,9 +523,4 @@ Consolider les sorties des agents en une proposition cohérente. Préserve les d
       language: "fr",
       enabled: true,
     }),
-  ];
-
-  for (const p of prompts) {
-    await registry.prompts.save(p);
-  }
-}
+];

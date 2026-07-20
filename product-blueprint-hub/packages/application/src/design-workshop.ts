@@ -13,7 +13,7 @@ export class DesignWorkshopUseCases {
     return this.repos.designProposals.getByLayer(projectId, layer);
   }
 
-  async generateProposals(projectId: EntityId, layer: DesignLayer): Promise<any[]> {
+  async generateProposals(projectId: EntityId, layer: DesignLayer, onProgress?: (agentId: string, status: "pending" | "running" | "done" | "error") => void): Promise<any[]> {
     // 1. Déterminer les agents à appeler selon la couche
     let agentsToCall: string[] = [];
     if (layer === "INTENTION") agentsToCall = ["WORKSHOP-INTENT", "WORKSHOP-CRITIC", "WORKSHOP-SYNTHESIZER"];
@@ -29,19 +29,63 @@ export class DesignWorkshopUseCases {
     const confirmedItems = briefItems.filter((b) => b.status === "LOCKED" || b.status === "ACCEPTED");
     
     const OUTPUT_SCHEMA_JSON = JSON.stringify({
-        schemaVersion: "workshop-response-v1",
-        proposals: [{
-            title: "string", description: "string"
-        }]
+      schemaVersion: "workshop-response-v1",
+      agentId: "string",
+      layer: "string",
+      summary: "string",
+      proposals: [{
+        title: "string",
+        type: "string",
+        description: "string",
+        justification: "string",
+        userValue: "string",
+        confidence: "number",
+        originAgent: "string",
+        priority: "string",
+        complexity: "string",
+        dependencies: ["string"],
+        actions: ["string"]
+      }],
+      questions: [{
+        statement: "string",
+        importance: "string"
+      }],
+      assumptions: [{
+        statement: "string",
+        impact: "string"
+      }],
+      warnings: [{
+        message: "string",
+        severity: "string"
+      }],
+      graphOperations: [{
+        type: "string",
+        node: "string"
+      }]
     }, null, 2);
 
     let upstreamOutputs = "";
     let finalResult = "";
 
+    if (onProgress) {
+      agentsToCall.forEach(a => onProgress(a, "pending"));
+    }
+
+    const routedAgentIds = [...agentsToCall];
+    let promptFound = true;
+    let systemPromptLength = 0;
+    let userPromptLength = 0;
+    let parseStatus = "PENDING";
+    let lastAgentId = "";
+
     for (const agentId of agentsToCall) {
+      if (onProgress) onProgress(agentId, "running");
+      lastAgentId = agentId;
       const promptTpl = await this.repos.prompts.getActivePrompt(agentId);
       if (!promptTpl) {
         console.warn(`Prompt missing for ${agentId}`);
+        promptFound = false;
+        if (onProgress) onProgress(agentId, "error");
         continue;
       }
 
@@ -57,6 +101,11 @@ export class DesignWorkshopUseCases {
         .replace(/{{OUTPUT_SCHEMA_JSON}}/g, OUTPUT_SCHEMA_JSON)
         .replace(/{{[A-Z_]+}}/g, "N/A"); // replace others with N/A
 
+      if (agentId === agentsToCall[agentsToCall.length - 1]) {
+        systemPromptLength = promptTpl.systemPrompt.length;
+        userPromptLength = userPrompt.length;
+      }
+
       const req = {
         prompt: userPrompt,
         systemPrompt: promptTpl.systemPrompt,
@@ -66,26 +115,52 @@ export class DesignWorkshopUseCases {
         metadata: { projectId, layer, agentId }
       };
 
-      const res = await this.provider.complete(req);
-      upstreamOutputs += `\n\n--- OUTPUT FROM ${agentId} ---\n${res.content}`;
-      finalResult = res.content; 
+      try {
+        const res = await this.provider.complete(req);
+        upstreamOutputs += `\n\n--- OUTPUT FROM ${agentId} ---\n${res.content}`;
+        finalResult = res.content; 
+        if (onProgress) onProgress(agentId, "done");
+      } catch (e) {
+        if (onProgress) onProgress(agentId, "error");
+        throw e;
+      }
     }
+
+    let parsedResult: any = null;
 
     try {
       const match = finalResult.match(/\{[\s\S]*\}/);
       const jsonStr = match ? match[0] : finalResult;
-      const parsed = JSON.parse(jsonStr);
-      return parsed.proposals || [];
+      parsedResult = JSON.parse(jsonStr);
+      parseStatus = "SUCCESS";
     } catch(e) {
       console.error("Failed to parse workshop output", e);
-      // Fallback
-      return [
-        {
-          title: "Proposition générée brute",
-          description: finalResult.substring(0, 100) + "..."
-        }
-      ];
+      parseStatus = "ERROR";
+      throw new Error(`La réponse IA n'a pas pu être interprétée. (Agent: ${lastAgentId}, Erreur: ${String(e)})`);
     }
+
+    const diagnostic = {
+      selectedLayer: layer,
+      routedAgentIds,
+      promptId: lastAgentId, // Simplified for diagnostic
+      promptVersion: 1,
+      promptFound,
+      systemPromptLength,
+      userPromptLength,
+      upstreamOutputCount: agentsToCall.length - 1,
+      parsedProposalCount: parsedResult?.proposals?.length || 0,
+      parsedQuestionCount: parsedResult?.questions?.length || 0,
+      parsedAssumptionCount: parsedResult?.assumptions?.length || 0,
+      graphOperationCount: parsedResult?.graphOperations?.length || 0,
+      usedFallback: false,
+      parseStatus,
+      persistenceStatus: "NOT_SAVED_YET"
+    };
+
+    return {
+      ...parsedResult,
+      diagnostic
+    };
   }
 
   async createProposal(params: {

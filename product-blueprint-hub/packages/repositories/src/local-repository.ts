@@ -1,4 +1,5 @@
 import type { EntityId } from "@pbh/domain";
+import { DEFAULT_PROMPTS } from "./seed-prompts";
 import type {
   IRepository,
   IProjectRepository,
@@ -361,7 +362,10 @@ class LocalPromptRepository extends LocalRepo<PromptTemplate> implements IPrompt
 
   async getActivePrompt(agentId: string): Promise<PromptTemplate | null> {
     // Retours le prompt actif avec la plus haute version
-    const all = await this.filter((p) => p.agentId === agentId && p.enabled);
+    let all = await this.filter((p) => p.agentId === agentId && p.enabled);
+    if (all.length === 0) {
+      all = DEFAULT_PROMPTS.filter((p) => p.agentId === agentId && p.enabled);
+    }
     if (all.length === 0) return null;
     all.sort((a, b) => b.version - a.version);
     return all[0];

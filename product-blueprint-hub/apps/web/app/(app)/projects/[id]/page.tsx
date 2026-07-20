@@ -62,8 +62,9 @@ export default function ProjectDetailPage() {
   const [events, setEvents] = useState<RunEvent[]>([]);
   
   const [generationError, setGenerationError] = useState<string | null>(null);
-  const [proposals, setProposals] = useState<any[]>([]); // To be refined
+  const [workshopResult, setWorkshopResult] = useState<any>(null);
   const [selectedLayer, setSelectedLayer] = useState<DesignLayer>("INTENTION");
+  const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({});
   // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
@@ -253,14 +254,17 @@ export default function ProjectDetailPage() {
     if (isGenerating) return;
     setIsGenerating(true);
     setGenerationError(null);
+    setAgentStatuses({});
     try {
-      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, selectedLayer);
-      setProposals(result);
-      showToast("success", "Propositions générées avec succès");
+      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, selectedLayer, (agentId, status) => {
+        setAgentStatuses(prev => ({ ...prev, [agentId]: status }));
+      });
+      setWorkshopResult(result);
+      showToast("success", "Génération terminée avec succès");
       load();
-    } catch (e) {
-      setGenerationError("La génération a échoué. Réessayez.");
-      showToast("error", String(e));
+    } catch (e: any) {
+      setGenerationError(e.message || String(e));
+      showToast("error", e.message || String(e));
     } finally {
       setIsGenerating(false);
     }
@@ -809,14 +813,104 @@ export default function ProjectDetailPage() {
                 </div>
                 {generationError && <p className="text-sm text-red-600 mb-2">{generationError}</p>}
                 
-                {proposals.length > 0 ? (
-                  <div className="flex-1 flex flex-col gap-2 overflow-auto">
-                    {proposals.map((p, idx) => (
-                      <div key={idx} className="p-3 border border-border rounded-md text-sm cursor-pointer hover:border-primary">
-                        <div className="font-medium">{p.title}</div>
-                        <div className="text-muted mt-1">{p.description}</div>
+                {Object.keys(agentStatuses).length > 0 && isGenerating && (
+                  <div className="mb-4 p-3 bg-muted rounded-md text-sm">
+                    <h4 className="font-semibold mb-2">Progression</h4>
+                    {Object.entries(agentStatuses).map(([agentId, status]) => (
+                      <div key={agentId} className="flex justify-between items-center py-1 border-b border-border last:border-0">
+                        <span>{agentId}</span>
+                        <span className={`text-xs font-medium px-2 py-1 rounded ${
+                          status === 'done' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                          status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
+                          status === 'error' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                          'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
+                        }`}>
+                          {status === 'done' ? 'terminé' : status === 'running' ? 'en cours' : status === 'error' ? 'erreur' : 'en attente'}
+                        </span>
                       </div>
                     ))}
+                  </div>
+                )}
+                
+                {workshopResult ? (
+                  <div className="flex-1 flex flex-col gap-4 overflow-auto">
+                    {workshopResult.diagnostic && (
+                      <div className="flex justify-between items-center bg-muted p-2 rounded text-sm">
+                        <span>Status: {workshopResult.diagnostic.parseStatus}</span>
+                        <button className="btn btn-sm" onClick={() => {
+                          const blob = new Blob([JSON.stringify(workshopResult.diagnostic, null, 2)], { type: "application/json" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `diagnostic-${selectedLayer}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}>
+                          Télécharger le diagnostic
+                        </button>
+                      </div>
+                    )}
+                    
+                    {workshopResult.summary && (
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+                        <h4 className="font-semibold mb-1 text-blue-800 dark:text-blue-200">Ce que le HUB a compris</h4>
+                        <p className="text-sm">{workshopResult.summary}</p>
+                      </div>
+                    )}
+
+                    {workshopResult.proposals?.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-2">Propositions / Interprétations</h4>
+                        <div className="flex flex-col gap-2">
+                          {workshopResult.proposals.map((p: any, idx: number) => (
+                            <div key={idx} className="p-3 border border-border rounded-md text-sm">
+                              <div className="flex justify-between">
+                                <span className="font-medium">{p.title}</span>
+                                {p.confidence && <span className="text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">Confiance: {Math.round(p.confidence * 100)}%</span>}
+                              </div>
+                              <div className="text-muted mt-1">{p.description}</div>
+                              {p.justification && <div className="text-xs mt-2 italic border-l-2 pl-2 border-gray-300">Justification: {p.justification}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {workshopResult.questions?.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-2 text-amber-700 dark:text-amber-400">Questions</h4>
+                        <ul className="list-disc pl-5 text-sm">
+                          {workshopResult.questions.map((q: any, idx: number) => (
+                            <li key={idx}>
+                              {q.statement} {q.importance && <span className="text-xs text-muted">({q.importance})</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {workshopResult.assumptions?.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-2 text-purple-700 dark:text-purple-400">Hypothèses</h4>
+                        <ul className="list-disc pl-5 text-sm">
+                          {workshopResult.assumptions.map((a: any, idx: number) => (
+                            <li key={idx}>{a.statement} {a.impact && <span className="text-xs text-muted">- {a.impact}</span>}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {workshopResult.warnings?.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-2 text-red-600 dark:text-red-400">Avertissements</h4>
+                        <ul className="list-disc pl-5 text-sm">
+                          {workshopResult.warnings.map((w: any, idx: number) => (
+                            <li key={idx} className="text-red-600 dark:text-red-400">{w.message} {w.severity && <span className="text-xs">[{w.severity}]</span>}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg">
