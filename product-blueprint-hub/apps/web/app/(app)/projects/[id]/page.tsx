@@ -246,6 +246,7 @@ export default function ProjectDetailPage() {
   const runMission = async () => {
     console.log("runMission: Start clicked, missions length:", missions.length);
     if (missions.length === 0) return;
+    setActiveTab("control");
     setIsRunning(true);
     try {
       console.log("runMission: Calling executeMission for", missions[0]!.id);
@@ -273,7 +274,6 @@ export default function ProjectDetailPage() {
       } else {
         showToast("success", lang === "fr" ? "Mission terminée" : "Mission completed");
       }
-      setActiveTab("control");
       console.log("runMission: calling load()");
       await load();
       console.log("runMission: load() completed");

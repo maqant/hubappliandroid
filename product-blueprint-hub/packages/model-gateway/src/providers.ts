@@ -655,64 +655,94 @@ export class RemoteOpenAIProvider implements IModelProvider {
   readonly name = "openai";
   readonly isConfigured = true;
 
-  private static readonly TIMEOUT_MS = 60_000;
+  private static readonly TIMEOUT_MS = 120_000;
+  private static readonly MAX_RETRIES = 2;
+  private static readonly RETRY_BASE_DELAY_MS = 2_000;
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
     const endpoint = "/api/ai/complete";
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), RemoteOpenAIProvider.TIMEOUT_MS);
+    let lastError: any;
 
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-        signal: controller.signal,
-      });
+    for (let attempt = 0; attempt <= RemoteOpenAIProvider.MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(new Error(`Timeout après ${RemoteOpenAIProvider.TIMEOUT_MS / 1000}s (RemoteOpenAIProvider)`)),
+        RemoteOpenAIProvider.TIMEOUT_MS
+      );
 
-      if (!res.ok) {
-        let errText = "Unknown error";
-        let diagnostic: any = null;
-        try {
-          const errJson = await res.json();
-          errText = errJson.error || res.statusText;
-          diagnostic = errJson.diagnostic;
-        } catch {
-          errText = await res.text();
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
+
+        // Retry on 429 and 5xx
+        if (res.status === 429 || res.status >= 500) {
+          lastError = new Error(`HTTP ${res.status}`);
+          const retryAfter = Number(res.headers.get("retry-after")) || 0;
+          const delay = Math.max(retryAfter * 1000, RemoteOpenAIProvider.RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
         }
-        const error: any = new Error(`OpenAI Provider Error: ${errText}`);
-        if (diagnostic) error.diagnostic = diagnostic;
-        error.isNetworkError = false;
-        throw error;
+
+        if (!res.ok) {
+          let errText = "Unknown error";
+          let diagnostic: any = null;
+          try {
+            const errJson = await res.json();
+            errText = errJson.error || res.statusText;
+            diagnostic = errJson.diagnostic;
+          } catch {
+            errText = await res.text();
+          }
+          const error: any = new Error(`OpenAI Provider Error: ${errText}`);
+          if (diagnostic) error.diagnostic = diagnostic;
+          error.isNetworkError = false;
+          throw error;
+        }
+
+        return await res.json();
+      } catch (err: any) {
+        // If already decorated (HTTP error from above), re-throw as-is
+        if (err.isNetworkError === false) {
+          throw err;
+        }
+
+        // Catch AbortError specifically to use its reason
+        let actualError = err;
+        if (controller.signal.aborted && controller.signal.reason) {
+          actualError = controller.signal.reason instanceof Error ? controller.signal.reason : new Error(String(controller.signal.reason));
+        }
+
+        // Network-level failure: Failed to fetch, AbortError, timeout
+        const clientDiagnostic: Record<string, unknown> = {
+          source: "client",
+          errorName: actualError.name || "UnknownError",
+          errorMessage: actualError.message || String(actualError),
+          online: typeof navigator !== "undefined" ? navigator.onLine : "unknown",
+          signalAborted: controller.signal.aborted,
+          endpoint,
+          taskId: request.metadata?.taskId || null,
+          agentId: request.metadata?.agentId || null,
+          timestamp: new Date().toISOString(),
+          attempt,
+        };
+
+        const networkError: any = new Error(`Network Error: ${actualError.message}`);
+        networkError.diagnostic = clientDiagnostic;
+        networkError.isNetworkError = true;
+        lastError = networkError;
+
+        if (attempt === RemoteOpenAIProvider.MAX_RETRIES) break;
+        await new Promise((r) => setTimeout(r, RemoteOpenAIProvider.RETRY_BASE_DELAY_MS * Math.pow(2, attempt)));
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      return res.json();
-    } catch (err: any) {
-      // If already decorated (HTTP error from above), re-throw as-is
-      if (err.isNetworkError === false) {
-        throw err;
-      }
-
-      // Network-level failure: Failed to fetch, AbortError, timeout
-      const clientDiagnostic: Record<string, unknown> = {
-        source: "client",
-        errorName: err.name || "UnknownError",
-        errorMessage: err.message || String(err),
-        online: typeof navigator !== "undefined" ? navigator.onLine : "unknown",
-        signalAborted: controller.signal.aborted,
-        endpoint,
-        taskId: request.metadata?.taskId || null,
-        agentId: request.metadata?.agentId || null,
-        timestamp: new Date().toISOString(),
-      };
-
-      const networkError: any = new Error(`Network Error: ${err.message}`);
-      networkError.diagnostic = clientDiagnostic;
-      networkError.isNetworkError = true;
-      throw networkError;
-    } finally {
-      clearTimeout(timeoutId);
     }
+
+    throw lastError || new Error("Unknown network failure in provider");
   }
 
   async checkHealth(): Promise<{ status: "ok" | "error"; message: string }> {

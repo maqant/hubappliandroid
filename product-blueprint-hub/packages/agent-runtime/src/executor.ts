@@ -16,6 +16,31 @@ import type { RepositoryRegistry } from "@pbh/repositories";
 // Mission Executor — runs task graph
 // ============================================
 
+const MAX_CONCURRENCY = 3;
+
+async function runWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let cursor = 0;
+
+  async function next(): Promise<void> {
+    while (cursor < items.length) {
+      const index = cursor++;
+      try {
+        results[index] = { status: "fulfilled", value: await worker(items[index], index) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => next()));
+  return results;
+}
+
 export interface ExecutionCallbacks {
   onTaskStarted?: (task: TaskDefinition) => void;
   onTaskCompleted?: (task: TaskDefinition, run: Run) => void;
@@ -79,9 +104,9 @@ export class MissionExecutor {
         break;
       }
 
-      // Execute ready tasks sequentially
-      for (const task of readyTasks) {
-        if (networkFailure) break;
+      // Execute ready tasks in parallel with concurrency pool
+      await runWithConcurrency(readyTasks, MAX_CONCURRENCY, async (task) => {
+        if (networkFailure) return;
 
         const updatedTask: TaskDefinition = {
           ...task,
@@ -117,7 +142,7 @@ export class MissionExecutor {
             allEvents.push(evt);
             await this.repos.runEvents.save(evt);
             callbacks?.onEvent?.(evt);
-            continue;
+            return;
           }
 
           // Successful run
@@ -181,9 +206,8 @@ export class MissionExecutor {
 
           callbacks?.onTaskFailed?.(failedTask, err.message || String(err));
           callbacks?.onProgress?.(completed.size, tasks.length);
-          break;
         }
-      }
+      });
     }
 
     // Mark all untouched tasks as NOT_RUN (not artificially FAILED)
@@ -367,7 +391,9 @@ Decisions:
 ${decisions.map((d) => `- [DECISION] ${d.title}: ${d.statement}`).join("\n")}
 `;
 
-    for (const section of sections) {
+    // Run generation in parallel with concurrency pool
+    const artifactResults = new Array(sections.length);
+    await runWithConcurrency(sections, MAX_CONCURRENCY, async (section, index) => {
       const request: ModelRequest = {
         prompt: `Generate blueprint section: ${section} for mission "${mission.name}". Context: ${contextStr}`,
         systemPrompt: `Generate comprehensive blueprint content for section: ${section}`,
@@ -397,7 +423,12 @@ ${decisions.map((d) => `- [DECISION] ${d.title}: ${d.statement}`).join("\n")}
         updatedAt: now,
       };
 
-      await this.repos.artifacts.save(artifact);
+      artifactResults[index] = artifact;
+    });
+
+    // Save in correct order
+    for (const artifact of artifactResults) {
+      if (artifact) await this.repos.artifacts.save(artifact);
     }
   }
 
