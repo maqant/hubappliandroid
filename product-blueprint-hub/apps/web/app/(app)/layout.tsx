@@ -164,6 +164,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="main-content">
         <ServicesProvider>{children}</ServicesProvider>
       </main>
+
+      {/* Build Number */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: "var(--space-2)",
+          right: "var(--space-3)",
+          fontSize: "10px",
+          color: "var(--color-neutral-400)",
+          pointerEvents: "none",
+          zIndex: 100,
+          opacity: 0.7,
+        }}
+      >
+        build 0.1.2
+      </div>
     </div>
   );
 }
