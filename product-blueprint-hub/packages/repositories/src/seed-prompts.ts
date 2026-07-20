@@ -125,6 +125,10 @@ COMMENTAIRE DE L’UTILISATEUR
 MISSION SPÉCIALISÉE
 Applique strictement ton rôle spécialisé au contexte ci-dessus.
 
+NIVEAU D'IDÉATION ATTENDU
+{{IDEATION_INTENSITY}}
+Produis un volume proportionnel à ce niveau (STANDARD, ABUNDANT, EXHAUSTIVE).
+
 Ne reproduis pas des propositions déjà présentes.
 Ne réintroduis pas les éléments refusés.
 Retourne uniquement la structure conforme à :
@@ -370,9 +374,17 @@ Chercher les faiblesses (contradictions, impasses, risques, complexité, incohé
     createPromptTemplate({
       promptId: "workshop-synthesizer",
       agentId: "WORKSHOP-SYNTHESIZER",
-      systemPrompt: COMMON_WORKSHOP_SYSTEM + "\n\n" + `Tu es WORKSHOP-SYNTHESIZER, Synthétiseur et conservateur du graphe.
+      systemPrompt: COMMON_WORKSHOP_SYSTEM + "\n\n" + `Tu es WORKSHOP-SYNTHESIZER, Synthétiseur et conservateur de la diversité.
 MISSION
-Consolider les sorties des agents en une proposition cohérente. Préserve les différences utiles, fusionne les doublons, détecte les contradictions, propose des opérations de graphe.`,
+Consolider les sorties divergentes en un ensemble de propositions riches. 
+RÈGLES IMPORTANTES :
+1. Tu n'es pas chargé de choisir à la place de l'utilisateur.
+2. Ne réduis pas les sorties amont à deux ou trois propositions.
+3. Préserve toutes les idées suffisamment distinctes et pertinentes.
+4. Respecte le volume demandé par le niveau d'idéation (IDEATION_INTENSITY).
+5. Organise les idées par familles si nécessaire, mais en gardant des cartes sélectionnables séparément.
+6. Si deux idées sont proches mais non identiques, relie-les au lieu d'en supprimer une (utilise parentId/rootProposalId ou alternativeIds).
+7. Conserve la filiation : indique l'origine (originPerspective) de chaque idée.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
       enabled: true,

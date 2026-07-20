@@ -65,6 +65,13 @@ export default function ProjectDetailPage() {
   const [workshopResult, setWorkshopResult] = useState<any>(null);
   const [selectedLayer, setSelectedLayer] = useState<DesignLayer>("INTENTION");
   const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({});
+  
+  // Ideation Swarm states
+  const [ideationIntensity, setIdeationIntensity] = useState<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE'>('ABUNDANT');
+  const [brainstormingMode, setBrainstormingMode] = useState(false);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+  
   // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
@@ -256,7 +263,7 @@ export default function ProjectDetailPage() {
     setGenerationError(null);
     setAgentStatuses({});
     try {
-      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, selectedLayer, (agentId, status) => {
+      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, selectedLayer, ideationIntensity, (agentId, status) => {
         setAgentStatuses(prev => ({ ...prev, [agentId]: status }));
       });
       setWorkshopResult(result);
@@ -802,14 +809,31 @@ export default function ProjectDetailPage() {
               {/* Zone Propositions */}
               <div className="card p-4 flex-1 bg-surface flex flex-col">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold m-0">Propositions</h3>
-                  <button 
-                    className="btn btn-primary btn-sm"
-                    onClick={handleGenerateProposals}
-                    disabled={isGenerating}
-                  >
-                    {isGenerating ? '⏳ Génération…' : '✨ Générer'}
-                  </button>
+                  <div className="flex gap-4 items-center">
+                    <h3 className="font-semibold m-0">Essaim d&apos;Idéation</h3>
+                    <select 
+                      className="input input-sm max-w-[200px]" 
+                      value={ideationIntensity} 
+                      onChange={e => setIdeationIntensity(e.target.value as any)}
+                    >
+                      <option value="STANDARD">Standard (3 perspectives)</option>
+                      <option value="ABUNDANT">Abondante (5 perspectives)</option>
+                      <option value="EXHAUSTIVE">Exhaustive (8 perspectives)</option>
+                    </select>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={brainstormingMode} onChange={e => setBrainstormingMode(e.target.checked)} />
+                      Mode Brainstorming
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      className="btn btn-primary btn-sm"
+                      onClick={handleGenerateProposals}
+                      disabled={isGenerating}
+                    >
+                      {isGenerating ? '⏳ Exploration…' : '✨ Essaimer'}
+                    </button>
+                  </div>
                 </div>
                 {generationError && <p className="text-sm text-red-600 mb-2">{generationError}</p>}
                 
@@ -860,43 +884,113 @@ export default function ProjectDetailPage() {
 
                     {workshopResult.proposals?.length > 0 && (
                       <div>
-                        <h4 className="font-semibold mb-2">Propositions / Interprétations</h4>
-                        <div className="flex flex-col gap-2">
-                          {workshopResult.proposals.map((p: any, idx: number) => (
-                            <div key={idx} className="p-3 border border-border rounded-md text-sm">
-                              <div className="flex justify-between">
-                                <span className="font-medium">{p.title}</span>
-                                {p.confidence && <span className="text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">Confiance: {Math.round(p.confidence * 100)}%</span>}
-                              </div>
-                              <div className="text-muted mt-1">{p.description}</div>
-                              {p.justification && <div className="text-xs mt-2 italic border-l-2 pl-2 border-gray-300">Justification: {p.justification}</div>}
+                        <div className="flex justify-between items-center mb-2">
+                          <h4 className="font-semibold text-lg">
+                            {brainstormingMode ? 'Toutes les Idées (Mode Brainstorming)' : 'Propositions / Interprétations'}
+                          </h4>
+                          {selectedProposalIds.size > 0 && (
+                            <div className="flex gap-2">
+                              <span className="text-sm font-medium pt-1 mr-2">{selectedProposalIds.size} sélectionnées</span>
+                              <button className="btn btn-sm" onClick={() => setSelectedProposalIds(new Set())}>Effacer</button>
+                              <button className="btn btn-sm btn-primary">Accepter la sélection</button>
                             </div>
-                          ))}
+                          )}
+                        </div>
+                        <div className={brainstormingMode ? "grid grid-cols-2 gap-4" : "flex flex-col gap-2"}>
+                          {workshopResult.proposals.map((p: any, idx: number) => {
+                            const isSelected = selectedProposalId === p.id;
+                            const isChecked = selectedProposalIds.has(p.id);
+                            return (
+                              <div 
+                                key={p.id || idx} 
+                                onClick={() => setSelectedProposalId(p.id)}
+                                className={`p-4 border rounded-md cursor-pointer transition-all ${
+                                  isSelected ? 'border-primary shadow-md ring-1 ring-primary' : 'border-border hover:border-gray-400'
+                                } ${brainstormingMode ? 'bg-surface relative' : 'bg-surface'}`}
+                                tabIndex={0}
+                                role="option"
+                                aria-selected={isSelected}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    setSelectedProposalId(p.id);
+                                  }
+                                }}
+                              >
+                                <div className="flex justify-between items-start gap-2">
+                                  <div className="flex items-start gap-2 flex-1">
+                                    <input 
+                                      type="checkbox" 
+                                      className="mt-1"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        e.stopPropagation();
+                                        const next = new Set(selectedProposalIds);
+                                        if (e.target.checked) next.add(p.id);
+                                        else next.delete(p.id);
+                                        setSelectedProposalIds(next);
+                                      }}
+                                    />
+                                    <div>
+                                      <div className="font-semibold text-base mb-1">{p.title}</div>
+                                      <div className="text-sm text-muted">{p.shortPitch || p.description?.substring(0, 100) + '...'}</div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-3 items-center">
+                                  {p.originPerspective && (
+                                    <span className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 px-2 py-1 rounded-full border border-indigo-200 dark:border-indigo-800">
+                                      💡 {p.originPerspective}
+                                    </span>
+                                  )}
+                                  {p.type && <span className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-2 py-1 rounded">{p.type}</span>}
+                                  {p.confidence && <span className="text-xs text-muted">Confiance: {Math.round(p.confidence)}%</span>}
+                                  {p.childrenIds && p.childrenIds.length > 0 && (
+                                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">+{p.childrenIds.length} sous-idées</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
 
                     {workshopResult.questions?.length > 0 && (
                       <div>
-                        <h4 className="font-semibold mb-2 text-amber-700 dark:text-amber-400">Questions</h4>
-                        <ul className="list-disc pl-5 text-sm">
+                        <h4 className="font-semibold mb-2 text-amber-700 dark:text-amber-400">Questions (À résoudre)</h4>
+                        <div className="flex flex-col gap-2">
                           {workshopResult.questions.map((q: any, idx: number) => (
-                            <li key={idx}>
-                              {q.statement} {q.importance && <span className="text-xs text-muted">({q.importance})</span>}
-                            </li>
+                            <div key={idx} className="p-3 border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/10 rounded-md">
+                              <div className="font-medium text-sm mb-1">{q.statement}</div>
+                              {q.importance && <div className="text-xs text-amber-800 dark:text-amber-300 mb-2">Importance : {q.importance}</div>}
+                              <div className="flex gap-2">
+                                <input type="text" placeholder="Répondre ici..." className="input input-sm flex-1 text-xs" />
+                                <button className="btn btn-sm btn-primary text-xs">Enregistrer</button>
+                              </div>
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
 
                     {workshopResult.assumptions?.length > 0 && (
                       <div>
-                        <h4 className="font-semibold mb-2 text-purple-700 dark:text-purple-400">Hypothèses</h4>
-                        <ul className="list-disc pl-5 text-sm">
+                        <h4 className="font-semibold mb-2 text-purple-700 dark:text-purple-400">Hypothèses à valider</h4>
+                        <div className="grid grid-cols-1 gap-2">
                           {workshopResult.assumptions.map((a: any, idx: number) => (
-                            <li key={idx}>{a.statement} {a.impact && <span className="text-xs text-muted">- {a.impact}</span>}</li>
+                            <div key={idx} className="p-3 border border-purple-200 bg-purple-50 dark:border-purple-900/50 dark:bg-purple-900/10 rounded-md">
+                              <div className="font-medium text-sm mb-1">{a.statement}</div>
+                              {a.impact && <div className="text-xs text-purple-800 dark:text-purple-300 mb-3">Impact : {a.impact}</div>}
+                              <div className="flex flex-wrap gap-2">
+                                <button className="btn btn-sm bg-purple-600 hover:bg-purple-700 text-white text-xs border-none">Confirmer</button>
+                                <button className="btn btn-sm bg-white text-gray-800 border-gray-300 hover:bg-gray-50 text-xs">Corriger</button>
+                                <button className="btn btn-sm bg-red-50 text-red-600 border-red-200 hover:bg-red-100 text-xs">Refuser</button>
+                                <button className="btn btn-sm text-xs bg-transparent border-dashed">Décider plus tard</button>
+                              </div>
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
 
@@ -920,11 +1014,78 @@ export default function ProjectDetailPage() {
               </div>
 
               {/* Zone Détail */}
-              <div className="card p-4 w-80 bg-surface flex flex-col">
+              <div className="card p-4 w-96 bg-surface flex flex-col overflow-y-auto">
                 <h3 className="font-semibold mb-4">Détails</h3>
-                <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg">
-                  Sélectionnez une proposition
-                </div>
+                {selectedProposalId && workshopResult?.proposals ? (() => {
+                  const p = workshopResult.proposals.find((p: any) => p.id === selectedProposalId);
+                  if (!p) return <div className="text-muted">Proposition introuvable</div>;
+                  return (
+                    <div className="flex flex-col gap-4 text-sm">
+                      <div>
+                        <h4 className="font-bold text-base">{p.title}</h4>
+                        {p.originPerspective && <div className="text-xs text-indigo-600 mb-2">Issue de : {p.originPerspective}</div>}
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {p.type && <span className="badge badge-neutral">{p.type}</span>}
+                          {p.priority && <span className="badge badge-warning">Prio: {p.priority}</span>}
+                          {p.complexity && <span className="badge badge-info">Complexité: {p.complexity}</span>}
+                        </div>
+                      </div>
+
+                      {p.description && (
+                        <div>
+                          <h5 className="font-semibold text-muted text-xs uppercase">Description</h5>
+                          <p>{p.description}</p>
+                        </div>
+                      )}
+
+                      {p.justification && (
+                        <div>
+                          <h5 className="font-semibold text-muted text-xs uppercase">Justification</h5>
+                          <p className="italic">{p.justification}</p>
+                        </div>
+                      )}
+
+                      {p.userValue && (
+                        <div>
+                          <h5 className="font-semibold text-muted text-xs uppercase">Valeur Utilisateur</h5>
+                          <p>{p.userValue}</p>
+                        </div>
+                      )}
+
+                      {p.dependencies && p.dependencies.length > 0 && (
+                        <div>
+                          <h5 className="font-semibold text-muted text-xs uppercase">Dépendances</h5>
+                          <ul className="list-disc pl-4">
+                            {p.dependencies.map((d: string, i: number) => <li key={i}>{d}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div className="border-t border-border pt-4 mt-2 flex flex-col gap-2">
+                        <h5 className="font-semibold">Actions</h5>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button className="btn btn-sm btn-primary">Accepter</button>
+                          <button className="btn btn-sm">Refuser</button>
+                          <button className="btn btn-sm">Reporter</button>
+                          <button className="btn btn-sm">Modifier</button>
+                        </div>
+                        <button className="btn btn-sm mt-2 flex items-center justify-center gap-2">
+                          <span>🔍</span> Développer cette idée
+                        </button>
+                        
+                        <div className="mt-4">
+                          <h5 className="font-semibold mb-1 text-xs uppercase text-muted">Ce que je voudrais changer</h5>
+                          <textarea className="input w-full text-sm h-20 mb-2" placeholder="Ex: C'est bien mais trop complexe..."></textarea>
+                          <button className="btn btn-sm w-full">Envoyer ma critique</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })() : (
+                  <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg p-4 text-center">
+                    Sélectionnez une proposition pour voir ses détails et agir dessus.
+                  </div>
+                )}
               </div>
             </div>
           </div>

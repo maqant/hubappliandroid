@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] - 2026-07-20
+
+### Ajouts (FEAT)
+- **Mode Essaim d'Idéation** : Le Workshop gère maintenant une intensité d'idéation (Standard, Abondante, Exhaustive) qui génère des idées divergentes depuis plusieurs perspectives (Visionnaire, Pragmatique, etc.) avant de synthétiser le résultat.
+- **Propositions Interactives** : Les propositions s'affichent sous forme de cartes interactives (Checkbox ou focus). Possibilité d'accepter, refuser, reporter ou modifier une proposition, y compris en sélection groupée.
+- **Filiation des idées** : Modèle de propositions supportant la notion d'idées parentes, d'idées enfants et préservant l'origine (agent ou perspective) de l'idée pour garantir la diversité.
+- **Questions et Hypothèses interactives** : Boutons "Confirmer", "Corriger" ou "Refuser" sur les hypothèses pour permettre de valider en temps réel ce que le hub imagine.
+- **Persistance en temps réel** : Les propositions candidates (PROPOSED) sont directement sauvegardées lors de la génération.
+
 ## [0.3.0] - 2026-07-20
 
 ### Ajouts (FEAT)

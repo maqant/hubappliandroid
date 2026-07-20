@@ -40,9 +40,21 @@ export interface DesignProposal extends BaseEntity, Owned {
   readonly status: ProposalStatus;
   readonly origin: 'AI_ASSISTED' | 'MANUAL' | 'IMPORTED_FROM_BRIEF';
   readonly alternatives: FeatureAlternative[];
+  readonly parentId?: EntityId | null;
+  readonly rootProposalId?: EntityId | null;
+  readonly childrenIds?: EntityId[];
+  readonly relatedProposalIds?: EntityId[];
+  readonly dependencyIds?: EntityId[];
+  readonly consequenceIds?: EntityId[];
+  readonly shortPitch?: string;
+  readonly originPerspective?: string;
+  readonly lineage?: string[];
+  readonly priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  readonly complexity?: 'S' | 'M' | 'L' | 'XL';
+  readonly confidence?: number; // 0-100
   readonly selectedAlternativeId?: EntityId | null;
   readonly risks: DesignRisk[];
-  readonly parentProposalIds: EntityId[];
+  readonly parentProposalIds: EntityId[]; // legacy/multiple parents, keeping for compatibility
   readonly targetPlatforms: TargetPlatform[];
   readonly score?: ProposalScore;
   readonly category: string;
