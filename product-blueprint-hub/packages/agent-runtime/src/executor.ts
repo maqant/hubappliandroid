@@ -131,10 +131,12 @@ export class MissionExecutor {
       // Detect conflicts deterministically
       await this.detectConflicts(mission);
 
-      // Update mission to COMPLETED
+      const hasFailedTasks = updatedTasks.some((t) => t.status === "FAILED");
+
+      // Update mission to COMPLETED or PARTIAL_FAILURE
       const completedMission: MissionManifest = {
         ...mission,
-        status: "COMPLETED",
+        status: hasFailedTasks ? "PARTIAL_FAILURE" : "COMPLETED",
         tasks:
           updatedTasks.length > 0
             ? updatedTasks
@@ -157,7 +159,7 @@ export class MissionExecutor {
 
       const failedMission: MissionManifest = {
         ...mission,
-        status: "FAILED",
+        status: "PARTIAL_FAILURE",
         tasks: updatedTasks.map((t) =>
           t.status === "RUNNING" ? { ...t, status: "FAILED" as const } : t,
         ),
@@ -209,24 +211,50 @@ export class MissionExecutor {
       tier: task.modelTier,
       maxTokens: task.budgetTokens,
       correlationId: `${missionId}-${task.id}`,
+      metadata: {
+        missionId,
+        taskId: task.id,
+        agentId: task.agentId,
+        agentName: task.name,
+      },
     };
 
-    const response = await this.provider.complete(request);
-
-    return {
-      id: createId(),
-      taskId: task.id,
-      missionId,
-      status: "COMPLETED",
-      startedAt: now,
-      completedAt: new Date().toISOString(),
-      tokensUsed: response.tokensUsed,
-      modelTier: response.tier,
-      error: null,
-      version: 1,
-      createdAt: now,
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      const response = await this.provider.complete(request);
+      return {
+        id: createId(),
+        taskId: task.id,
+        missionId,
+        status: "COMPLETED",
+        startedAt: now,
+        completedAt: new Date().toISOString(),
+        tokensUsed: response.tokensUsed,
+        modelTier: response.tier,
+        error: null,
+        diagnostic: response.diagnostic,
+        version: 1,
+        createdAt: now,
+        updatedAt: new Date().toISOString(),
+      };
+    } catch (err: any) {
+      // Create a FAILED run to track diagnostic
+      const diagnostic = err.diagnostic || null;
+      return {
+        id: createId(),
+        taskId: task.id,
+        missionId,
+        status: "FAILED",
+        startedAt: now,
+        completedAt: new Date().toISOString(),
+        tokensUsed: 0,
+        modelTier: task.modelTier,
+        error: err.message || String(err),
+        diagnostic,
+        version: 1,
+        createdAt: now,
+        updatedAt: new Date().toISOString(),
+      };
+    }
   }
 
   private async generateArtifacts(mission: MissionManifest): Promise<void> {
@@ -268,6 +296,12 @@ ${decisions.map((d) => `- [DECISION] ${d.title}: ${d.statement}`).join("\n")}
         systemPrompt: `Generate comprehensive blueprint content for section: ${section}`,
         tier: "TERRA",
         correlationId: `${mission.id}-blueprint-${section}`,
+        metadata: {
+          missionId: mission.id,
+          taskId: `artifact-${section}`,
+          agentId: "FIX-DIRECTOR",
+          agentName: "Blueprint Generator",
+        },
       };
 
       const response = await this.provider.complete(request);

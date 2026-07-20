@@ -11,6 +11,13 @@ export interface ModelRequest {
   readonly maxTokens?: number;
   readonly temperature?: number;
   readonly correlationId: string;
+  readonly metadata?: {
+    missionId?: string;
+    taskId?: string;
+    agentId?: string;
+    agentName?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface ModelResponse {
@@ -21,6 +28,7 @@ export interface ModelResponse {
   readonly provider: string;
   readonly durationMs: number;
   readonly correlationId: string;
+  readonly diagnostic?: Record<string, unknown>;
 }
 
 export interface IModelProvider {

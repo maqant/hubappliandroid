@@ -15,6 +15,7 @@ import type {
   ExecutionPackage,
   RunEvent,
   EntityId,
+  Run,
 } from "@pbh/domain";
 import {
   ProjectUseCases,
@@ -99,4 +100,5 @@ export type {
   ExecutionPackage,
   RunEvent,
   EntityId,
+  Run,
 };

@@ -348,6 +348,35 @@ export default function ProjectDetailPage() {
     showToast("success", lang === "fr" ? "Téléchargement lancé" : "Download started");
   };
 
+  const downloadDiagnosticJson = async () => {
+    if (missions.length === 0) return;
+    try {
+      const runs = await svc.missions.getMissionRuns(missions[0]!.id);
+      const diagnostics = runs.map((run) => {
+        const task = missions[0]!.tasks.find((t) => t.id === run.taskId);
+        return {
+          taskId: run.taskId,
+          agentId: task?.agentId || "Unknown",
+          modelTier: run.modelTier,
+          status: run.status,
+          durationMs: run.completedAt ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime() : 0,
+          diagnostic: run.diagnostic,
+          error: run.error,
+        };
+      });
+      const blob = new Blob([JSON.stringify({ missionId: missions[0]!.id, runs: diagnostics }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `diagnostic-openai-${missions[0]!.id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("success", lang === "fr" ? "Diagnostic téléchargé" : "Diagnostic downloaded");
+    } catch (err) {
+      showToast("error", String(err));
+    }
+  };
+
   // ---- Render ----
 
   if (isLoading)
@@ -878,7 +907,14 @@ export default function ProjectDetailPage() {
 
         {activeTab === "control" && (
           <div>
-            <h2 className="mb-4">{t("control.title")}</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2>{t("control.title")}</h2>
+              {missions.length > 0 && missions[0]!.status !== "PLANNED" && missions[0]!.status !== "RUNNING" && (
+                <button className="btn btn-secondary" onClick={downloadDiagnosticJson}>
+                  ⬇️ {lang === "fr" ? "Télécharger le diagnostic JSON" : "Download JSON Diagnostic"}
+                </button>
+              )}
+            </div>
             {missions.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon">🎮</div>

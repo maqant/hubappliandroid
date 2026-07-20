@@ -46,6 +46,28 @@ export async function POST(req: Request) {
     messages.push({ role: "user", content: request.prompt });
 
     const start = Date.now();
+    let diagnostic: Record<string, any> = {
+      timestamp: new Date().toISOString(),
+      missionId: request.metadata?.missionId,
+      taskId: request.metadata?.taskId,
+      agentId: request.metadata?.agentId,
+      agentName: request.metadata?.agentName,
+      modelTier: request.tier,
+      modelId: modelId,
+      attemptNumber: 1,
+      durationMs: 0,
+      httpStatus: 0,
+      success: false,
+      requestId: undefined,
+      errorType: undefined,
+      errorCode: undefined,
+      errorParam: undefined,
+      errorMessage: undefined,
+      promptLength: request.prompt.length + (request.systemPrompt?.length || 0),
+      responseLength: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -61,25 +83,63 @@ export async function POST(req: Request) {
       }),
     });
 
+    diagnostic.durationMs = Date.now() - start;
+    diagnostic.httpStatus = response.status;
+    diagnostic.requestId = response.headers.get("x-request-id") || undefined;
+
     if (!response.ok) {
-      const err = await response.text();
-      console.error("OpenAI Error:", err);
-      return NextResponse.json({ error: "OpenAI API Error" }, { status: 502 });
+      let errData: any = {};
+      try {
+        errData = await response.json();
+      } catch (e) {
+        errData = { error: { message: await response.text() } };
+      }
+      
+      diagnostic.errorType = errData.error?.type;
+      diagnostic.errorCode = errData.error?.code;
+      diagnostic.errorParam = errData.error?.param;
+      diagnostic.errorMessage = errData.error?.message;
+      
+      console.log(JSON.stringify({ diagnosticOpenAI: diagnostic }));
+      
+      return NextResponse.json({
+        error: "OpenAI API Error",
+        diagnostic: {
+          upstreamStatus: response.status,
+          modelId: modelId,
+          agentId: request.metadata?.agentId,
+          taskId: request.metadata?.taskId,
+          requestId: diagnostic.requestId,
+          errorType: diagnostic.errorType,
+          errorCode: diagnostic.errorCode,
+          message: diagnostic.errorMessage || "Unknown error",
+        }
+      }, { status: 502 });
     }
 
     const data = await response.json();
     const content = data.choices[0]?.message?.content || "";
-    const tokensUsed = data.usage?.total_tokens || 0;
-    const durationMs = Date.now() - start;
+    diagnostic.success = true;
+    diagnostic.responseLength = content.length;
+    diagnostic.inputTokens = data.usage?.prompt_tokens || 0;
+    diagnostic.outputTokens = data.usage?.completion_tokens || 0;
+    
+    console.log(JSON.stringify({ diagnosticOpenAI: diagnostic }));
 
     const result: ModelResponse = {
       content,
-      tokensUsed,
+      tokensUsed: data.usage?.total_tokens || 0,
       modelId,
       tier: request.tier,
       provider: "openai",
-      durationMs,
+      durationMs: diagnostic.durationMs,
       correlationId: request.correlationId,
+      diagnostic: {
+        durationMs: diagnostic.durationMs,
+        requestId: diagnostic.requestId,
+        modelId,
+        upstreamStatus: 200,
+      }
     };
 
     return NextResponse.json(result);

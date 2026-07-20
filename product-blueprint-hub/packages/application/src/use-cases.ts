@@ -311,6 +311,10 @@ export class MissionUseCases {
   async getMissionEvents(missionId: EntityId) {
     return this.repos.runEvents.getByMissionId(missionId);
   }
+
+  async getMissionRuns(missionId: EntityId) {
+    return this.repos.runs.getByMissionId(missionId);
+  }
 }
 
 export class ConflictUseCases {

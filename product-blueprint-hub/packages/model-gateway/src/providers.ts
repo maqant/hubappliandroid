@@ -664,13 +664,17 @@ export class RemoteOpenAIProvider implements IModelProvider {
     
     if (!res.ok) {
       let errText = "Unknown error";
+      let diagnostic: any = null;
       try {
         const errJson = await res.json();
         errText = errJson.error || res.statusText;
+        diagnostic = errJson.diagnostic;
       } catch {
         errText = await res.text();
       }
-      throw new Error(`OpenAI Provider Error: ${errText}`);
+      const error: any = new Error(`OpenAI Provider Error: ${errText}`);
+      if (diagnostic) error.diagnostic = diagnostic;
+      throw error;
     }
 
     return res.json();

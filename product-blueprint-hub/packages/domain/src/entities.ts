@@ -537,7 +537,7 @@ export interface TaskOutput {
   readonly createdAt: string;
 }
 
-export type MissionStatus = "DRAFT" | "PLANNED" | "RUNNING" | "PAUSED" | "COMPLETED" | "FAILED";
+export type MissionStatus = "DRAFT" | "PLANNED" | "RUNNING" | "PAUSED" | "COMPLETED" | "FAILED" | "PARTIAL_FAILURE";
 
 export interface MissionManifest extends BaseEntity, Owned {
   readonly name: string;
@@ -567,6 +567,7 @@ export interface Run extends BaseEntity {
   readonly tokensUsed: number;
   readonly modelTier: ModelTier;
   readonly error: string | null;
+  readonly diagnostic?: Record<string, unknown> | null;
 }
 
 export type RunEventType =
