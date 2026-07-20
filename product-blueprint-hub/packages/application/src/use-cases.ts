@@ -164,7 +164,15 @@ export class BriefUseCases {
     }
 
     const briefItems: BriefItem[] = [];
+    const seen = new Set<string>();
+    const existing = await this.repos.briefItems.getByProjectId(projectId);
+    const existingKeys = new Set(existing.map((i: any) => i.statement.trim().toLowerCase()));
+
     for (const item of parsedItems) {
+      const key = item.statement.trim().toLowerCase();
+      if (seen.has(key) || existingKeys.has(key)) continue;
+      seen.add(key);
+
       const segment = defaultSource.segments[0];
       const briefItem = createBriefItem({
         projectId,

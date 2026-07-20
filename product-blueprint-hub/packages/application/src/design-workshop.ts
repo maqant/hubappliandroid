@@ -11,6 +11,21 @@ export class DesignWorkshopUseCases {
     return this.repos.designProposals.getByLayer(projectId, layer);
   }
 
+  async generateProposals(_projectId: EntityId, _ideaText?: string): Promise<any[]> {
+    // TODO: Connect to AI Model Provider
+    // Mock proposals for now to unblock UI
+    return [
+      {
+        title: "Architecture Microservices",
+        description: "Découpage en petits services indépendants.",
+      },
+      {
+        title: "Architecture Monolithe Modulaire",
+        description: "Un seul repo avec des modules bien séparés.",
+      }
+    ];
+  }
+
   async createProposal(params: {
     projectId: EntityId;
     layer: DesignLayer;

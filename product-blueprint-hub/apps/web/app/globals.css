@@ -249,6 +249,27 @@ a:hover {
   background: transparent;
   color: var(--color-neutral-600);
 }
+
+/* --- Cards --- */
+.platform-card {
+  padding: var(--space-4);
+  cursor: pointer;
+  border: 2px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  background: var(--color-neutral-0);
+  transition: all var(--transition-fast);
+}
+
+.platform-card:hover {
+  border-color: var(--color-primary-300);
+  background: var(--color-primary-50);
+}
+
+.platform-card.selected {
+  border-color: var(--color-primary-500);
+  background: var(--color-primary-50);
+  box-shadow: 0 0 0 1px var(--color-primary-500);
+}
 .btn-ghost:hover:not(:disabled) {
   background: var(--color-neutral-100);
 }

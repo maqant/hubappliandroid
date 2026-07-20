@@ -27,6 +27,7 @@ import {
   AuditUseCases,
   BaselineUseCases,
   PackageUseCases,
+  DesignWorkshopUseCases,
 } from "@pbh/application";
 import { createLocalRepositoryRegistry } from "@pbh/repositories";
 import { FakeModelProvider, ModelGateway, RemoteOpenAIProvider } from "@pbh/model-gateway";
@@ -66,6 +67,7 @@ function createServices() {
     audits: new AuditUseCases(repos, provider),
     baselines: new BaselineUseCases(repos),
     packages: new PackageUseCases(repos),
+    designWorkshop: new DesignWorkshopUseCases(repos),
   };
 }
 

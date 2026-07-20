@@ -24,7 +24,6 @@ const initialEdges: Edge[] = [{ id: 'e1-2', source: '1', target: '2' }];
 export default function DesignMapPage() {
   const { id } = useParams();
   const router = useRouter();
-  // const { designWorkshop } = useServices();
   const projectId = id as string;
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes);

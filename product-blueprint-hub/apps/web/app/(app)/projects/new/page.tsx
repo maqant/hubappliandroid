@@ -102,26 +102,26 @@ export default function NewProjectPage() {
           {/* Target Platform */}
           <div className="mb-6">
             <label className="label label-required">Quel type de produit souhaitez-vous concevoir ?</label>
-            <div className="grid grid-cols-2 gap-4 mt-2">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
               <div 
-                className={`card p-4 cursor-pointer border-2 transition-all ${targetPlatform === 'ANDROID_EXPO' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
+                className={`platform-card ${targetPlatform === 'ANDROID_EXPO' ? 'selected' : ''}`}
                 onClick={() => setTargetPlatform('ANDROID_EXPO')}
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="text-2xl">📱</div>
-                  <h3 className="font-semibold m-0">Application mobile Android</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '1.5rem' }}>📱</div>
+                  <h3 style={{ margin: 0, fontWeight: 600 }}>Application mobile Android</h3>
                 </div>
-                <p className="text-sm text-muted m-0">Application installée sur un téléphone Android, développée avec React Native et Expo.</p>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-neutral-500)' }}>Application installée sur un téléphone Android, développée avec React Native et Expo.</p>
               </div>
               <div 
-                className={`card p-4 cursor-pointer border-2 transition-all ${targetPlatform === 'WEB_NEXTJS' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
+                className={`platform-card ${targetPlatform === 'WEB_NEXTJS' ? 'selected' : ''}`}
                 onClick={() => setTargetPlatform('WEB_NEXTJS')}
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="text-2xl">🌐</div>
-                  <h3 className="font-semibold m-0">Application web</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '1.5rem' }}>🌐</div>
+                  <h3 style={{ margin: 0, fontWeight: 600 }}>Application web</h3>
                 </div>
-                <p className="text-sm text-muted m-0">Application React utilisée directement dans un navigateur et déployable sur le web.</p>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-neutral-500)' }}>Application React utilisée directement dans un navigateur et déployable sur le web.</p>
               </div>
             </div>
             {errors.targetPlatform && <div className="error-text mt-2">{errors.targetPlatform}</div>}

@@ -59,8 +59,9 @@ export default function ProjectDetailPage() {
   const [baselines, setBaselines] = useState<Baseline[]>([]);
   const [pkg, setPkg] = useState<ExecutionPackage | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
-
-  // UI states
+  
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [proposals, setProposals] = useState<any[]>([]); // To be refined  // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -242,6 +243,23 @@ export default function ProjectDetailPage() {
       load();
     } catch (err) {
       showToast("error", String(err));
+    }
+  };
+
+  const handleGenerateProposals = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setGenerationError(null);
+    try {
+      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, project?.ideaText);
+      setProposals(result);
+      showToast("success", "Propositions générées avec succès");
+      load();
+    } catch (e) {
+      setGenerationError("La génération a échoué. Réessayez.");
+      showToast("error", String(e));
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -774,11 +792,30 @@ export default function ProjectDetailPage() {
               <div className="card p-4 flex-1 bg-surface flex flex-col">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="font-semibold m-0">Propositions</h3>
-                  <button className="btn btn-primary btn-sm">✨ Générer</button>
+                  <button 
+                    className="btn btn-primary btn-sm"
+                    onClick={handleGenerateProposals}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? '⏳ Génération…' : '✨ Générer'}
+                  </button>
                 </div>
-                <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg">
-                  Sélectionnez une couche pour voir les propositions
-                </div>
+                {generationError && <p className="text-sm text-red-600 mb-2">{generationError}</p>}
+                
+                {proposals.length > 0 ? (
+                  <div className="flex-1 flex flex-col gap-2 overflow-auto">
+                    {proposals.map((p, idx) => (
+                      <div key={idx} className="p-3 border border-border rounded-md text-sm cursor-pointer hover:border-primary">
+                        <div className="font-medium">{p.title}</div>
+                        <div className="text-muted mt-1">{p.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg">
+                    Cliquez sur Générer pour obtenir des propositions
+                  </div>
+                )}
               </div>
 
               {/* Zone Détail */}
