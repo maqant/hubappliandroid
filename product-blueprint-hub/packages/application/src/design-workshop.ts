@@ -3,6 +3,7 @@ import type { EntityId, DesignGraph, DesignBaseline } from "@pbh/domain";
 import { createDesignGraph, createId } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
+import { safeParseModelJson } from "@pbh/model-gateway";
 
 export class DesignWorkshopUseCases {
   constructor(
@@ -213,14 +214,12 @@ export class DesignWorkshopUseCases {
     let parsedResult: any = null;
 
     try {
-      const match = finalResult.match(/\{[\s\S]*\}/);
-      const jsonStr = match ? match[0] : finalResult;
-      parsedResult = JSON.parse(jsonStr);
+      parsedResult = safeParseModelJson(finalResult);
       parseStatus = "SUCCESS";
-    } catch(e) {
+    } catch(e: any) {
       console.error("Failed to parse workshop output", e);
       parseStatus = "ERROR";
-      throw new Error(`La réponse IA n'a pas pu être interprétée. (Agent: ${lastAgentId}, Erreur: ${String(e)})`);
+      throw new Error(`La réponse IA n'a pas pu être interprétée. (Agent: ${lastAgentId}, Erreur: ${e.message || String(e)})`);
     }
 
     const diagnostic: any = {

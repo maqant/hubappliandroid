@@ -1,64 +1,117 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useServices } from "@/services";
 
 export default function AISettingsPage() {
-  const [health, setHealth] = useState<{ provider: string; configured: boolean } | null>(null);
+  const svc = useServices();
+  const [health, setHealth] = useState<{
+    provider: string;
+    configured: boolean;
+    openaiConfigured?: boolean;
+    keyPreview?: string | null;
+    models?: Record<string, string>;
+  } | null>(null);
+  const [activeMode, setActiveMode] = useState<"openai" | "fake">("fake");
 
-  useEffect(() => {
+  const checkHealth = () => {
     fetch("/api/ai/health")
       .then((res) => res.json())
       .then((data) => setHealth(data))
       .catch((err) => console.error(err));
+  };
+
+  useEffect(() => {
+    checkHealth();
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem("pbh.modelProvider") as "openai" | "fake" | null;
+      if (saved === "openai" || saved === "fake") {
+        setActiveMode(saved);
+      } else if (process.env.NEXT_PUBLIC_MODEL_PROVIDER === "openai") {
+        setActiveMode("openai");
+      }
+    }
   }, []);
 
-  const isOpenAI = process.env.NEXT_PUBLIC_MODEL_PROVIDER === "openai" && health?.provider === "openai";
+  const handleToggle = (mode: "openai" | "fake") => {
+    setActiveMode(mode);
+    svc.switchProviderMode(mode);
+  };
+
+  const isOpenAI = activeMode === "openai";
 
   return (
     <>
       <div className="page-header">
-        <h1>AI Settings</h1>
+        <h1>Paramètres & Diagnostic IA</h1>
       </div>
       <div className="page-content" style={{ maxWidth: 720 }}>
         <div className="card mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <span className={`badge ${isOpenAI ? "badge-openai" : "badge-demo"}`}>
-              {isOpenAI ? "OpenAI Active" : "Demo Mode Active"}
-            </span>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              <span className={`badge ${isOpenAI ? "badge-openai" : "badge-demo"}`}>
+                {isOpenAI ? "🟢 IA Réelle (OpenAI) Active" : "🟡 Mode Démo (Fake) Actif"}
+              </span>
+            </div>
+            <button className="btn btn-sm btn-secondary" onClick={checkHealth}>
+              🔄 Vérifier la connexion
+            </button>
           </div>
-          <h3 className="mb-2">Current Provider: {isOpenAI ? "RemoteOpenAIProvider" : "FakeModelProvider"}</h3>
+
+          <h3 className="mb-2">Moteur IA actif : {isOpenAI ? "RemoteOpenAIProvider" : "FakeModelProvider"}</h3>
           <p className="text-sm text-muted mb-4">
             {isOpenAI 
-              ? "The application is connected to real OpenAI via the secure backend."
-              : "The application is running with a deterministic fake AI provider. No API keys are required."}
+              ? "L'application effectue de vrais appels d'idéation auprès d'OpenAI (GPT-4o / GPT-4o-mini)."
+              : "L'application fonctionne en mode démo déterministe autonome sans consommation de jetons."}
           </p>
 
-          <div className="card" style={{ background: "var(--color-neutral-50)" }}>
-            <h4 className="mb-3">Provider Status</h4>
-            <div className="mb-2">
-              <div className="flex items-center gap-3">
-                <span className={`badge ${!isOpenAI ? "badge-completed" : "badge-pending"}`}>
-                  {!isOpenAI ? "Active" : "Inactive"}
-                </span>
-                <span className="font-semibold text-sm">Fake (Demo)</span>
-              </div>
-              <p className="text-xs text-muted">Deterministic, no network, always available</p>
+          {/* Toggle Provider Box */}
+          <div className="p-4 border border-border rounded-lg bg-surface mb-6 flex flex-col gap-3">
+            <h4 className="font-semibold text-sm">Sélection du Provider</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                className={`btn flex flex-col items-center justify-center p-3 text-center ${activeMode === 'fake' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => handleToggle('fake')}
+              >
+                <span className="font-bold text-base mb-1">🟡 Mode Démo (Fake)</span>
+                <span className="text-xs font-normal opacity-80">Zéro réseau, instantané, sans clé API</span>
+              </button>
+              <button 
+                className={`btn flex flex-col items-center justify-center p-3 text-center ${activeMode === 'openai' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => handleToggle('openai')}
+              >
+                <span className="font-bold text-base mb-1">🟢 IA Réelle (OpenAI)</span>
+                <span className="text-xs font-normal opacity-80">Appels distants GPT-4o / GPT-4o-mini</span>
+              </button>
             </div>
-            <div className="mb-2">
-              <div className="flex items-center gap-3">
-                <span className={`badge ${isOpenAI ? "badge-completed" : "badge-pending"}`}>
-                  {isOpenAI ? "Active" : "Not Configured"}
-                </span>
-                <span className="font-semibold text-sm">OpenAI</span>
+
+            {isOpenAI && !health?.openaiConfigured && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded text-xs text-amber-900 dark:text-amber-200 mt-2">
+                ⚠️ <strong>Clé OPENAI_API_KEY non détectée sur le serveur.</strong><br />
+                Définissez la variable <code>OPENAI_API_KEY=sk-...</code> dans votre fichier <code>.env</code> ou sur Vercel/Serveur puis redémarrez l&apos;application.
               </div>
-              <p className="text-xs text-muted">Set NEXT_PUBLIC_MODEL_PROVIDER=openai and OPENAI_API_KEY server-side to enable</p>
+            )}
+          </div>
+
+          <div className="card" style={{ background: "var(--color-neutral-50)" }}>
+            <h4 className="mb-3">Statut de Configuration Serveur</h4>
+            <div className="mb-3">
+              <div className="flex items-center gap-3 mb-1">
+                <span className={`badge ${health?.openaiConfigured ? "badge-completed" : "badge-pending"}`}>
+                  {health?.openaiConfigured ? "Configuré" : "Non Détecté"}
+                </span>
+                <span className="font-semibold text-sm">Clé API OpenAI</span>
+              </div>
+              <p className="text-xs text-muted">
+                {health?.keyPreview ? `Clé serveur active : ${health.keyPreview}` : "Aucune clé OPENAI_API_KEY renseignée dans le fichier .env"}
+              </p>
             </div>
           </div>
         </div>
 
         <div className="card">
-          <h3 className="mb-3">Model Routing</h3>
-          <div className="grid grid-3">
+          <h3 className="mb-3">Routage des Modèles IA</h3>
+          <div className="grid grid-3 gap-3">
             <div
               className="card"
               style={{
@@ -66,31 +119,40 @@ export default function AISettingsPage() {
                 border: "1px solid var(--color-primary-200)",
               }}
             >
-              <h4 className="text-sm" style={{ color: "var(--color-primary-700)" }}>
+              <h4 className="text-sm font-bold" style={{ color: "var(--color-primary-700)" }}>
                 🌙 LUNA
               </h4>
-              <p className="text-xs text-muted mt-1">
-                Narrow tasks, high volume, easy verification
+              <div className="text-xs font-mono my-1 font-bold text-gray-700">
+                {health?.models?.LUNA || "gpt-4o-mini"}
+              </div>
+              <p className="text-xs text-muted">
+                Tâches rapides et fréquentes, vérifications simples
               </p>
             </div>
             <div
               className="card"
               style={{ background: "var(--color-info-light)", border: "1px solid #93c5fd" }}
             >
-              <h4 className="text-sm" style={{ color: "#1e40af" }}>
+              <h4 className="text-sm font-bold" style={{ color: "#1e40af" }}>
                 🌍 TERRA
               </h4>
-              <p className="text-xs text-muted mt-1">Analysis and synthesis, default tier</p>
+              <div className="text-xs font-mono my-1 font-bold text-gray-700">
+                {health?.models?.TERRA || "gpt-4o-mini"}
+              </div>
+              <p className="text-xs text-muted">Analyse de brief et synthèse générale</p>
             </div>
             <div
               className="card"
               style={{ background: "var(--color-warning-light)", border: "1px solid #fbbf24" }}
             >
-              <h4 className="text-sm" style={{ color: "#92400e" }}>
+              <h4 className="text-sm font-bold" style={{ color: "#92400e" }}>
                 ☀️ SOL
               </h4>
-              <p className="text-xs text-muted mt-1">
-                Architecture, critical conflicts, final audits
+              <div className="text-xs font-mono my-1 font-bold text-gray-700">
+                {health?.models?.SOL || "gpt-4o"}
+              </div>
+              <p className="text-xs text-muted">
+                Architecture, essaimage complexe et audits critiques
               </p>
             </div>
           </div>

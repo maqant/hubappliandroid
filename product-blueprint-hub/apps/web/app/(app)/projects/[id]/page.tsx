@@ -686,17 +686,27 @@ export function ProjectDetailPageContent() {
           <h1>{project.name}</h1>
           {project.description && <p className="text-sm text-muted">{project.description}</p>}
         </div>
-        <span className={`badge badge-${project.status.toLowerCase()}`}>
-          {project.status === "ACTIVE"
-            ? lang === "fr"
-              ? "Actif"
-              : "Active"
-            : project.status === "ARCHIVED"
+        <div className="flex items-center gap-2">
+          <span 
+            className={`badge ${svc.provider.name === 'openai' ? 'badge-openai' : 'badge-demo'}`} 
+            onClick={() => router.push('/settings/ai')} 
+            style={{ cursor: 'pointer' }}
+            title="Cliquer pour configurer le provider IA dans les paramètres"
+          >
+            {svc.provider.name === 'openai' ? '🟢 IA Réelle (OpenAI)' : '🟡 Mode Démo (Fake)'}
+          </span>
+          <span className={`badge badge-${project.status.toLowerCase()}`}>
+            {project.status === "ACTIVE"
               ? lang === "fr"
-                ? "Archivé"
-                : "Archived"
-              : project.status}
-        </span>
+                ? "Actif"
+                : "Active"
+              : project.status === "ARCHIVED"
+                ? lang === "fr"
+                  ? "Archivé"
+                  : "Archived"
+                : project.status}
+          </span>
+        </div>
       </div>
 
       <div className="page-content">

@@ -53,16 +53,24 @@ function createServices() {
 
   const gateway = new ModelGateway();
   const fakeProvider = new FakeModelProvider();
-  gateway.registerProvider("fake", fakeProvider);
+  const openaiProvider = new RemoteOpenAIProvider();
   
-  if (process.env.NEXT_PUBLIC_MODEL_PROVIDER === "openai") {
-    const openaiProvider = new RemoteOpenAIProvider();
-    gateway.registerProvider("openai", openaiProvider);
-    gateway.setActiveProvider("openai");
-  } else {
-    gateway.setActiveProvider("fake");
+  gateway.registerProvider("fake", fakeProvider);
+  gateway.registerProvider("openai", openaiProvider);
+
+  let activeMode = "fake";
+  if (typeof window !== "undefined") {
+    const saved = window.localStorage.getItem("pbh.modelProvider");
+    if (saved === "openai" || saved === "fake") {
+      activeMode = saved;
+    } else if (process.env.NEXT_PUBLIC_MODEL_PROVIDER === "openai") {
+      activeMode = "openai";
+    }
+  } else if (process.env.NEXT_PUBLIC_MODEL_PROVIDER === "openai") {
+    activeMode = "openai";
   }
 
+  gateway.setActiveProvider(activeMode);
   const provider = gateway.getActiveProvider();
 
   return {
@@ -79,6 +87,12 @@ function createServices() {
     baselines: new BaselineUseCases(repos),
     packages: new PackageUseCases(repos),
     designWorkshop: new DesignWorkshopUseCases(repos, provider),
+    switchProviderMode: (mode: "openai" | "fake") => {
+      gateway.setActiveProvider(mode);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("pbh.modelProvider", mode);
+      }
+    },
   };
 }
 

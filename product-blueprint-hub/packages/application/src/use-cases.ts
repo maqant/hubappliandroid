@@ -16,6 +16,7 @@ import {
 } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
+import { safeParseModelJson } from "@pbh/model-gateway";
 import { planMission } from "@pbh/agent-runtime";
 import { MissionExecutor } from "@pbh/agent-runtime";
 
@@ -119,8 +120,8 @@ export class BriefUseCases {
     // Parse the response
     let rawItems: any[];
     try {
-      const parsed = JSON.parse(response.content);
-      rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+      const parsed = safeParseModelJson<any>(response.content);
+      rawItems = Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
     } catch {
       rawItems = [
         {

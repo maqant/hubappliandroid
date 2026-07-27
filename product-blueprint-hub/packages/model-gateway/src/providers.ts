@@ -1,5 +1,98 @@
 import type { IModelProvider, ModelRequest, ModelResponse } from "./gateway";
 
+export type AiErrorCode =
+  | "MISSING_API_KEY"
+  | "INVALID_API_KEY"
+  | "RATE_LIMIT"
+  | "UPSTREAM_ERROR"
+  | "TIMEOUT"
+  | "PARSE_ERROR";
+
+export class ModelProviderError extends Error {
+  readonly code: AiErrorCode;
+  readonly retryable: boolean;
+  readonly status?: number;
+  readonly diagnostic?: any;
+
+  constructor(code: AiErrorCode, message: string, retryable = false, status?: number, diagnostic?: any) {
+    super(message);
+    this.name = "ModelProviderError";
+    this.code = code;
+    this.retryable = retryable;
+    this.status = status;
+    this.diagnostic = diagnostic;
+  }
+}
+
+export function cleanJsonString(raw: string): string {
+  let s = (raw || "").trim();
+  const fenceMatch = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch && fenceMatch[1]) {
+    s = fenceMatch[1].trim();
+  }
+
+  const start = s.search(/[{[]/);
+  if (start === -1) {
+    throw new ModelProviderError("PARSE_ERROR", "La réponse du modèle ne contient aucun JSON exploitable.");
+  }
+
+  const openChar = s[start];
+  const closeChar = openChar === "{" ? "}" : "]";
+
+  let depth = 0;
+  let end = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c === "\\") {
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (c === openChar) depth++;
+    else if (c === closeChar) {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+
+  if (end === -1) {
+    const lastIndex = s.lastIndexOf(closeChar);
+    if (lastIndex > start) {
+      return s.slice(start, lastIndex + 1);
+    }
+    throw new ModelProviderError("PARSE_ERROR", "JSON tronqué dans la réponse du modèle IA.");
+  }
+
+  return s.slice(start, end + 1);
+}
+
+export function safeParseModelJson<T>(raw: string): T {
+  const cleaned = cleanJsonString(raw);
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch (err: any) {
+    throw new ModelProviderError(
+      "PARSE_ERROR",
+      `Échec du parsing JSON : ${err.message || String(err)}`
+    );
+  }
+}
+
 // ============================================
 // FakeModelProvider — deterministic, no network
 // ============================================
@@ -978,18 +1071,25 @@ export class RemoteOpenAIProvider implements IModelProvider {
         }
 
         if (!res.ok) {
-          let errText = "Unknown error";
+          let errText = "Erreur OpenAI";
+          let code: AiErrorCode = "UPSTREAM_ERROR";
           let diagnostic: any = null;
           try {
             const errJson = await res.json();
-            errText = errJson.error || res.statusText;
+            code = (errJson.code as AiErrorCode) || (res.status === 401 ? "INVALID_API_KEY" : res.status === 429 ? "RATE_LIMIT" : "UPSTREAM_ERROR");
+            errText = errJson.message || errJson.error || res.statusText;
             diagnostic = errJson.diagnostic;
           } catch {
             errText = await res.text();
           }
-          const error: any = new Error(`OpenAI Provider Error: ${errText}`);
-          if (diagnostic) error.diagnostic = diagnostic;
-          error.isNetworkError = false;
+
+          if (res.status === 500 && (errText.includes("API Key") || errText.includes("not configured"))) {
+            code = "MISSING_API_KEY";
+            errText = "La clé API OpenAI n'est pas configurée sur le serveur. Définissez OPENAI_API_KEY dans l'environnement serveur et vérifiez les Paramètres IA.";
+          }
+
+          const error = new ModelProviderError(code, errText, false, res.status, diagnostic);
+          (error as any).isNetworkError = false;
           throw error;
         }
 
