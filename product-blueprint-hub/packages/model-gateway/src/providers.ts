@@ -109,6 +109,11 @@ export class FakeModelProvider implements IModelProvider {
       return this.generateConflictResponse(prompt);
     }
 
+    // Workshop / Conception assistée ideation per layer
+    if (sys.includes("workshop") || sys.includes("atelier") || sys.includes("conception assistée") || sys.includes("synthétiseur") || sys.includes("interprète") || prompt.includes("COUCHE DEMANDÉE")) {
+      return this.generateWorkshopProposals(request);
+    }
+
     // Agent planning
     if (sys.includes("plan") || sys.includes("agent")) {
       return this.generatePlanResponse(prompt);
@@ -123,6 +128,291 @@ export class FakeModelProvider implements IModelProvider {
         "Validate technical feasibility of proposed architecture.",
       ],
       confidence: 0.85,
+    });
+  }
+
+  private generateWorkshopProposals(request: ModelRequest): string {
+    const prompt = request.prompt;
+    const sys = request.systemPrompt || "";
+
+    // Detect layer from prompt
+    let layer = "INTENTION";
+    if (prompt.includes("HYPOTHESIS")) layer = "HYPOTHESIS";
+    else if (prompt.includes("CAPABILITY")) layer = "CAPABILITY";
+    else if (prompt.includes("FEATURE")) layer = "FEATURE";
+    else if (prompt.includes("JOURNEY")) layer = "JOURNEY";
+    else if (prompt.includes("SCREEN")) layer = "SCREEN";
+
+    // Extract perspective
+    let perspective = "Visionnaire";
+    const perspMatch = sys.match(/perspective\s*:\s*([^\n]+)/i);
+    if (perspMatch && perspMatch[1]) {
+      perspective = perspMatch[1].trim();
+    }
+
+    // Determine domain context
+    const lowerPrompt = prompt.toLowerCase();
+    let domain = "l'application";
+    if (lowerPrompt.includes("vêtement") || lowerPrompt.includes("garde-robe") || lowerPrompt.includes("wardrobe") || lowerPrompt.includes("tenue")) {
+      domain = "la garde-robe intelligente";
+    } else if (lowerPrompt.includes("recette") || lowerPrompt.includes("cuisine") || lowerPrompt.includes("recipe")) {
+      domain = "le carnet de recettes interactif";
+    } else if (lowerPrompt.includes("tâche") || lowerPrompt.includes("todo") || lowerPrompt.includes("task")) {
+      domain = "le gestionnaire de tâches agile";
+    }
+
+    const proposalsByLayer: Record<string, any[]> = {
+      INTENTION: [
+        {
+          title: `Zéro friction vestimentaire matinale pour ${domain}`,
+          shortPitch: "Éliminer 100% de la fatigue décisionnelle chaque matin avant le départ.",
+          type: "INTENTION_PRIMAIRE",
+          description: `Permettre à l'utilisateur d'obtenir une recommandation optimale en moins de 3 secondes dès l'ouverture de ${domain}, basée sur sa météo exacte et son agenda du jour.`,
+          justification: "Le problème principal n'est pas le manque d'habits mais l'hésitation quotidienne au réveil.",
+          userValue: "Gain de 10 à 15 minutes chaque matin et sérénité vestimentaire.",
+          confidence: 0.95,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "S"
+        },
+        {
+          title: "Valorisation éco-responsable du dressing existant",
+          shortPitch: "Maximiser la rotation des vêtements sous-utilisés du dressing.",
+          type: "INTENTION_SECONDAIRE",
+          description: "Révéler les combinaisons vestimentaires oubliées dans le dressing au lieu de pousser à l'achat compulsif.",
+          justification: "En moyenne 70% d'un dressing n'est porté que 2 fois par an.",
+          userValue: "Économies financières et mode plus éco-responsable.",
+          confidence: 0.88,
+          originPerspective: perspective,
+          priority: "MEDIUM",
+          complexity: "M"
+        },
+        {
+          title: "Adaptation dynamique au style de vie et à la météo géolocalisée",
+          shortPitch: "Synchronisation automatique météo + trajets + style personnel.",
+          type: "INTENTION_STRATÉGIQUE",
+          description: "Garantir un confort thermique et esthétique en croisant la météo heure par heure avec le mode de transport (vélo, marche, métro).",
+          justification: "Une tenue adaptée au soleil du matin peut être totalement inadéquate pour la pluie du soir en vélo.",
+          userValue: "Confort thermique garanti toute la journée.",
+          confidence: 0.92,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        }
+      ],
+      HYPOTHESIS: [
+        {
+          title: "80% des tenues portées proviennent de 20% des vêtements possédés",
+          shortPitch: "La loi de Pareto s'applique à la garde-robe quotidienne.",
+          type: "HYPOTHÈSE_COMPORTEMENTALE",
+          description: "Les utilisateurs préfèrent la simplicité et répètent des ensembles 'valeurs sûres' plutôt que d'expérimenter sans filet.",
+          justification: "À valider par l'historique de validation des tenues proposées.",
+          userValue: "Permet de suggérer d'abord les associations à fort taux de succès.",
+          confidence: 0.90,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "S"
+        },
+        {
+          title: "La saisie manuelle initiale est le 1er facteur d'abandon",
+          shortPitch: "L'onboarding doit nécessiter moins de 2 minutes pour convertir.",
+          type: "HYPOTHÈSE_ADOPTION",
+          description: "Demander à l'utilisateur de photographier l'intégralité de son armoire le premier jour provoque l'abandon de l'application.",
+          justification: "Nécessite une importation progressive ou des presets de garde-robe type.",
+          userValue: "Onboarding fluide sans corvée d'inventaire.",
+          confidence: 0.94,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        },
+        {
+          title: "La météo locale perçue prime sur la température brute",
+          shortPitch: "Le vent et l'humidité influencent plus le choix vestimentaire que les degrés.",
+          type: "HYPOTHÈSE_USAGE",
+          description: "Un 15°C pluvieux avec du vent demande une tenue plus chaude qu'un 12°C ensoleillé et sec.",
+          justification: "Algorithme basé sur la température ressentie et le risque de précipitations.",
+          userValue: "Recommandations d'une grande justesse météo.",
+          confidence: 0.86,
+          originPerspective: perspective,
+          priority: "MEDIUM",
+          complexity: "M"
+        }
+      ],
+      CAPABILITY: [
+        {
+          title: "Moteur de recommandations météo-sensible prédictif",
+          shortPitch: "Calcul instantané de tenues adaptées à la température ressentie.",
+          type: "CAPACITÉ_MÉTIER",
+          description: "Capacité du système à consommer les prévisions météo heure par heure et à générer un score de compatibilité thermique pour chaque tenue.",
+          justification: "Socle algorithmique indispensable pour tenir la promesse d'intention.",
+          userValue: "Tenue garantie zéro coup de froid ou coup de chaud.",
+          confidence: 0.96,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        },
+        {
+          title: "Dressing virtuel avec catégorisation automatique",
+          shortPitch: "Inventaire dynamique et visuel des articles vestimentaires.",
+          type: "CAPACITÉ_GESTION",
+          description: "Capacité à classifier les vêtements par catégorie (haut, bas, chaussures, veste), saison, couleur et niveau de formalité.",
+          justification: "Nécessaire pour assembler des combinaisons logiques (1 haut + 1 bas + 1 veste + chaussures).",
+          userValue: "Vue d'ensemble claire et organisée de son armoire.",
+          confidence: 0.91,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        },
+        {
+          title: "Apprentissage continu des préférences et feedbacks",
+          shortPitch: "Affinement progressif des suggestions selon les choix validés.",
+          type: "CAPACITÉ_IA",
+          description: "Capacité à mémoriser les tenues acceptées ou refusées pour ajuster les recommandations futures au style personnel.",
+          justification: "Évite de proposer des tenues scientifiquement correctes mais stylistiquement rejetées par l'utilisateur.",
+          userValue: "Application qui s'adapte à mon goût au fil des jours.",
+          confidence: 0.89,
+          originPerspective: perspective,
+          priority: "MEDIUM",
+          complexity: "L"
+        }
+      ],
+      FEATURE: [
+        {
+          title: "Widget 'Tenue du Jour' 1-Clic sur l'écran d'accueil",
+          shortPitch: "La suggestion idéale affichée dès l'ouverture de l'application.",
+          type: "FONCTIONNALITÉ_CLEF",
+          description: "Affichage visuel de la tenue recommandée du matin avec bouton 'Valider la tenue' ou 'Proposer une alternative'.",
+          justification: "Réduit le temps d'interaction au strict minimum pour les utilisateurs pressés.",
+          userValue: "Décision prise en une seconde.",
+          confidence: 0.97,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "S"
+        },
+        {
+          title: "Générateur d'alternatives rapides 'Changer une pièce'",
+          shortPitch: "Remplacer le pantalon ou les chaussures en un swipe sans changer le reste.",
+          type: "FONCTIONNALITÉ_INTERACTION",
+          description: "Permet de verrouiller la veste et le haut mais de demander une alternative uniquement pour le bas.",
+          justification: "Offre de la souplesse quand une pièce spécifique est au lavage ou indisponible.",
+          userValue: "Contrôle sans repartir de zéro.",
+          confidence: 0.93,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        },
+        {
+          title: "Alerte météo vestimentaire matinale (Push Notification)",
+          shortPitch: "Notification programmable le matin : 'Aujourd'hui pluie prévue à 17h, prévoyez un imperméable'.",
+          type: "FONCTIONNALITÉ_ENGAGEMENT",
+          description: "Notification proactive quotidienne rappelant la tenue suggérée et les pièges météo de la journée.",
+          justification: "Génère l'habitude d'utilisation matinale avant de s'habiller.",
+          userValue: "Jamais pris au dépourvu par le temps.",
+          confidence: 0.90,
+          originPerspective: perspective,
+          priority: "MEDIUM",
+          complexity: "S"
+        }
+      ],
+      JOURNEY: [
+        {
+          title: "Parcours 'Routine du Matin en 10 Secondes'",
+          shortPitch: "Notification -> Ouverture Widget -> Validation de tenue -> Départ.",
+          type: "PARCOURS_PRINCIPAL",
+          description: "L'utilisateur reçoit la notification à 7h30, tape dessus, voit la tenue du jour adaptée à 18°C pluvieux, clique 'Je porte ça' et ferme l'app.",
+          justification: "Parcours nominal répété 300 jours par an par l'utilisateur actif.",
+          userValue: "Début de journée fluide et efficace.",
+          confidence: 0.95,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "S"
+        },
+        {
+          title: "Parcours 'Ajout Éclair d'un Nouveau Vêtement'",
+          shortPitch: "Photo de l'article -> Catégorisation auto -> Ajout au dressing.",
+          type: "PARCOURS_ENRICHISSEMENT",
+          description: "L'utilisateur prend une photo d'un nouveau pull. L'IA détoure le vêtement, identifie la couleur et la catégorie, et l'intègre immédiatement dans les combinaisons.",
+          justification: "Réduit la friction de saisie d'un nouvel achat.",
+          userValue: "Nouveau vêtement prêt à être porté dans les suggestions.",
+          confidence: 0.91,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        },
+        {
+          title: "Parcours 'Préparation de Valise de Voyage'",
+          shortPitch: "Sélection destination + dates -> Liste optimisée de tenues à emporter.",
+          type: "PARCOURS_OCCASIONNEL",
+          description: "L'utilisateur indique '3 jours à Lyon ce WE'. L'app vérifie la météo lyonnaise et sélectionne 5 pièces combinables pour faire 3 tenues complètes sans surcharger la valise.",
+          justification: "Résout le casse-tête fréquent des voyages et déplacements professionnels.",
+          userValue: "Valise légère et 100% adaptée.",
+          confidence: 0.88,
+          originPerspective: perspective,
+          priority: "MEDIUM",
+          complexity: "L"
+        }
+      ],
+      SCREEN: [
+        {
+          title: "Écran 'Aujourd'hui' (Dashboard Principal)",
+          shortPitch: "Vue synthétique météo + recommandation de tenue du jour.",
+          type: "ÉCRAN_ACCUEIL",
+          description: "Comprend la bannière météo dynamique (température, pluie, vent), l'avatar ou le visuel de la tenue complète suggérée, et les boutons d'action (Valider, Alternative, Détails).",
+          justification: "Écran d'atterrissage principal au lancement de l'application.",
+          userValue: "Information essentielle immédiatement lisible.",
+          confidence: 0.98,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        },
+        {
+          title: "Écran 'Dressing & Armoire Virtuelle'",
+          shortPitch: "Grille visuelle de tous les vêtements filtrable par saison/catégorie.",
+          type: "ÉCRAN_COLLECTION",
+          description: "Affiche les articles vestimentaires sous forme de vignettes de haute qualité, avec filtres rapides (Hauts, Bas, Vestes, Chaussures) et statut de fraîcheur/portage.",
+          justification: "Visualisation complète et agréable du dressing personnel.",
+          userValue: "Contrôle visuel total sur ses affaires.",
+          confidence: 0.94,
+          originPerspective: perspective,
+          priority: "HIGH",
+          complexity: "M"
+        },
+        {
+          title: "Écran 'Détail de la Tenue & Métriques Météo'",
+          shortPitch: "Fiche détaillée expliquant pourquoi cette tenue est recommandée.",
+          type: "ÉCRAN_DÉTAIL",
+          description: "Montre l'association pièce par pièce avec l'indice de confort thermique heure par heure (ex. 'Indice 9/10 pour 14°C à 8h, imperméable requis à 17h').",
+          justification: "Rassure l'utilisateur sur la pertinence scientifique de la recommandation.",
+          userValue: "Transparence totale sur la suggestion IA.",
+          confidence: 0.89,
+          originPerspective: perspective,
+          priority: "MEDIUM",
+          complexity: "S"
+        }
+      ]
+    };
+
+    const proposals = proposalsByLayer[layer] || proposalsByLayer["INTENTION"]!;
+
+    return JSON.stringify({
+      schemaVersion: "workshop-response-v1",
+      agentId: `WORKSHOP-${layer}`,
+      layer,
+      summary: `Synthèse d'idéation pour la couche ${layer} (${perspective}) : ${proposals.length} propositions divergentes générées avec succès.`,
+      proposals,
+      questions: [
+        {
+          statement: `Quelle est la tolérance de l'utilisateur aux notifications quotidiennes pour la couche ${layer} ?`,
+          importance: "IMPORTANT"
+        }
+      ],
+      assumptions: [
+        {
+          statement: `Les propositions de la couche ${layer} répondent aux contraintes principales du brief.`,
+          impact: "HIGH"
+        }
+      ],
+      warnings: []
     });
   }
 

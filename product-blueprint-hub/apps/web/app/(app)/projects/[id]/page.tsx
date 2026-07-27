@@ -45,6 +45,12 @@ const LAYER_INFO: Record<DesignLayer, { title: string; icon: string; desc: strin
   SCREEN: { title: "Écran", icon: "🖥️", desc: "Les vues et éléments d'interface affichés.", question: "Que voit et manipule l'utilisateur ?" },
 };
 
+const formatConfidence = (confidence?: number): string => {
+  if (confidence === undefined || confidence === null) return "80%";
+  const val = confidence <= 1 ? confidence * 100 : confidence;
+  return `${Math.round(val)}%`;
+};
+
 export function ProjectDetailPageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -407,13 +413,17 @@ export function ProjectDetailPageContent() {
     try {
       for (let i = 0; i < layers.length; i++) {
         const layer = layers[i]!;
+        setSelectedLayer(layer);
         setAgentStatuses(prev => ({ ...prev, [layer]: 'running' }));
         showToast("info", `Génération couche ${i + 1}/6 : ${layer}...`);
-        await svc.designWorkshop.generateProposals(projectId as EntityId, layer, ideationIntensity);
+        const result = await svc.designWorkshop.generateProposals(projectId as EntityId, layer, ideationIntensity, (agentId, status) => {
+          setAgentStatuses(prev => ({ ...prev, [`${layer}:${agentId}`]: status }));
+        });
+        setWorkshopResult(result);
         setAgentStatuses(prev => ({ ...prev, [layer]: 'done' }));
+        await loadProposals(); // Reload counts immediately!
       }
       showToast("success", "Essaimage complet de toutes les couches terminé avec succès !");
-      loadProposals();
     } catch (e: any) {
       setGenerationError(e.message || String(e));
       showToast("error", "Erreur lors de l'essaimage : " + (e.message || String(e)));
@@ -1186,7 +1196,7 @@ export function ProjectDetailPageContent() {
                                     </span>
                                   )}
                                   {p.type && <span className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-2 py-1 rounded">{p.type}</span>}
-                                  {p.confidence && <span className="text-xs text-muted">Confiance: {Math.round(p.confidence)}%</span>}
+                                  {p.confidence !== undefined && <span className="text-xs text-muted">Confiance: {formatConfidence(p.confidence)}</span>}
                                   {p.childrenIds && p.childrenIds.length > 0 && (
                                     <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">+{p.childrenIds.length} sous-idées</span>
                                   )}
