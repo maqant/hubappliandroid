@@ -329,6 +329,18 @@ export class DesignWorkshopUseCases {
     return updated;
   }
 
+  async submitUserFeedback(proposalId: EntityId, feedbackText: string): Promise<DesignProposal> {
+    const proposal = await this.repos.designProposals.getById(proposalId);
+    if (!proposal) throw new Error("Proposition introuvable");
+    const updated = {
+      ...proposal,
+      rationale: proposal.rationale ? `${proposal.rationale}\n\n[Critique Utilisateur] : ${feedbackText}` : `[Critique Utilisateur] : ${feedbackText}`,
+      updatedAt: new Date().toISOString()
+    };
+    await this.repos.designProposals.save(updated);
+    return updated;
+  }
+
   async getGraph(projectId: EntityId): Promise<DesignGraph> {
     let graph = await this.repos.designGraphs.getByProjectId(projectId);
     if (!graph) {

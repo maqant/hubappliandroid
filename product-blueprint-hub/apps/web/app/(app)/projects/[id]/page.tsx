@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useParams, useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   useServices,
   type Project,
@@ -36,15 +36,33 @@ type TabId =
   | "package"
   | "settings";
 
-export default function ProjectDetailPage() {
+const LAYER_INFO: Record<DesignLayer, { title: string; icon: string; desc: string; question: string }> = {
+  INTENTION: { title: "Intention", icon: "🎯", desc: "La vision et les objectifs métier fondamentaux.", question: "Pourquoi ce produit existe-t-il ?" },
+  HYPOTHESIS: { title: "Hypothèse", icon: "🔬", desc: "Les paris sur les utilisateurs et le marché à prouver.", question: "Que devons-nous valider ?" },
+  CAPABILITY: { title: "Capacité", icon: "⚙️", desc: "Les grandes aptitudes que le système doit offrir.", question: "De quoi le système doit-il être capable ?" },
+  FEATURE: { title: "Fonctionnalité", icon: "🧩", desc: "Les modules fonctionnels précis concrétisant les capacités.", question: "Comment le produit répond-il aux besoins ?" },
+  JOURNEY: { title: "Parcours", icon: "🗺️", desc: "Les étapes vécues par l'utilisateur de bout en bout.", question: "Comment l'utilisateur navigue-t-il ?" },
+  SCREEN: { title: "Écran", icon: "🖥️", desc: "Les vues et éléments d'interface affichés.", question: "Que voit et manipule l'utilisateur ?" },
+};
+
+export function ProjectDetailPageContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const projectId = params.id as string;
   const svc = useServices();
   const router = useRouter();
   const { t, lang } = useTranslation();
 
   const [project, setProject] = useState<Project | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("sources");
+  
+  const rawTab = searchParams.get("tab") as TabId | null;
+  const validTabs: TabId[] = ["sources", "brief", "design", "decisions", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
+  const activeTab: TabId = rawTab && validTabs.includes(rawTab) ? rawTab : "sources";
+
+  const handleTabChange = (newTab: TabId) => {
+    router.replace(`${pathname}?tab=${newTab}`, { scroll: false });
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lockConfirmItem, setLockConfirmItem] = useState<BriefItem | null>(null);
@@ -74,6 +92,8 @@ export default function ProjectDetailPage() {
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
   const [, setPersistedProposals] = useState<DesignProposal[]>([]);
   const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
+  const [userFeedbackText, setUserFeedbackText] = useState("");
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   
   // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -227,7 +247,7 @@ export default function ProjectDetailPage() {
           ? "Analyse terminée — examinez les éléments du brief ci-dessous"
           : "Analysis complete — review the brief items below",
       );
-      setActiveTab("brief");
+      handleTabChange("brief");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -293,7 +313,7 @@ export default function ProjectDetailPage() {
           ? "Mission planifiée — examinez l'organisation"
           : "Mission planned — review the agents and tasks",
       );
-      setActiveTab("organization");
+      handleTabChange("organization");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -364,10 +384,71 @@ export default function ProjectDetailPage() {
     setSelectedProposalIds(new Set());
   };
 
+  const handleFreezeDesignBaseline = async () => {
+    if (!window.confirm("Geler la baseline de conception ? Les propositions acceptées seront scellées comme référence pour la mission.")) return;
+    setIsFreezing(true);
+    try {
+      await svc.designWorkshop.freezeBaseline(projectId as EntityId, "v1", "User");
+      showToast("success", "Conception validée avec succès ! La mission peut maintenant être lancée dans l'onglet Organisation.");
+      await load(); // Reload project to update designStatus to 'VALIDATED'
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsFreezing(false);
+    }
+  };
+
+  const handleSwarmAll = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setGenerationError(null);
+    const layers: DesignLayer[] = ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'];
+    showToast("info", "Lancement de l'essaimage séquentiel sur les 6 couches...");
+    try {
+      for (let i = 0; i < layers.length; i++) {
+        const layer = layers[i]!;
+        setAgentStatuses(prev => ({ ...prev, [layer]: 'running' }));
+        showToast("info", `Génération couche ${i + 1}/6 : ${layer}...`);
+        await svc.designWorkshop.generateProposals(projectId as EntityId, layer, ideationIntensity);
+        setAgentStatuses(prev => ({ ...prev, [layer]: 'done' }));
+      }
+      showToast("success", "Essaimage complet de toutes les couches terminé avec succès !");
+      loadProposals();
+    } catch (e: any) {
+      setGenerationError(e.message || String(e));
+      showToast("error", "Erreur lors de l'essaimage : " + (e.message || String(e)));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!selectedProposalId || !userFeedbackText.trim() || isSubmittingFeedback) return;
+    setIsSubmittingFeedback(true);
+    try {
+      const updated = await svc.designWorkshop.submitUserFeedback(selectedProposalId as EntityId, userFeedbackText.trim());
+      setWorkshopResult((prev: any) => {
+        if (!prev?.proposals) return prev;
+        return {
+          ...prev,
+          proposals: prev.proposals.map((p: any) =>
+            p.id === selectedProposalId ? { ...p, justification: updated.rationale } : p
+          ),
+        };
+      });
+      setUserFeedbackText("");
+      showToast("success", "Votre critique a été enregistrée et intégrée à la proposition !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
+
   const runMission = async () => {
     console.log("runMission: Start clicked, missions length:", missions.length);
     if (missions.length === 0) return;
-    setActiveTab("control");
+    handleTabChange("control");
     setIsRunning(true);
     try {
       console.log("runMission: Calling executeMission for", missions[0]!.id);
@@ -466,7 +547,7 @@ export default function ProjectDetailPage() {
     try {
       await svc.audits.runAudits(missions[0]!.id);
       showToast("success", lang === "fr" ? "Audits terminés" : "Audits completed");
-      setActiveTab("audits");
+      handleTabChange("audits");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -481,7 +562,7 @@ export default function ProjectDetailPage() {
     try {
       await svc.baselines.freezeBaseline(missions[0]!.id);
       showToast("success", lang === "fr" ? "Version de référence gelée" : "Baseline frozen");
-      setActiveTab("baseline");
+      handleTabChange("baseline");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -496,7 +577,7 @@ export default function ProjectDetailPage() {
     try {
       await svc.packages.generatePackage(baselines[0]!.id);
       showToast("success", lang === "fr" ? "Paquet final généré avec succès" : "Package generated");
-      setActiveTab("package");
+      handleTabChange("package");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -615,7 +696,7 @@ export default function ProjectDetailPage() {
             <button
               key={t.id}
               className={`tab ${activeTab === t.id ? "tab-active" : ""}`}
-              onClick={() => setActiveTab(t.id)}
+              onClick={() => handleTabChange(t.id)}
             >
               {t.label}{" "}
               {t.count !== undefined && t.count > 0 && (
@@ -872,36 +953,70 @@ export default function ProjectDetailPage() {
         )}
         {activeTab === "design" && (
           <div className="tab-pane fade-in flex flex-col h-full" style={{ minHeight: "60vh" }}>
-            <div className="flex justify-between items-center mb-4">
-              <h2>Conception Assistée</h2>
-              <button className="btn btn-secondary" onClick={() => router.push(`/projects/${projectId}/design/map`)}>
-                🗺️ Voir la cartographie
-              </button>
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+              <div>
+                <h2>Conception Assistée</h2>
+                <p className="text-xs text-muted">Structurez votre produit par couches et validez les propositions générées par l&apos;essaim d&apos;IA.</p>
+              </div>
+              <div className="flex gap-2 items-center">
+                <button className="btn btn-secondary" onClick={() => router.push(`/projects/${projectId}/design/map`)}>
+                  🗺️ Cartographie d&apos;Impact
+                </button>
+                {project?.designStatus === "VALIDATED" ? (
+                  <span className="badge badge-success text-sm py-1.5 px-3">
+                    ✅ Conception Validée (Baseline Gelée)
+                  </span>
+                ) : (
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={handleFreezeDesignBaseline} 
+                    disabled={isFreezing}
+                  >
+                    {isFreezing ? "⏳ Validation..." : "📌 Valider la Conception (Geler la Baseline)"}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex gap-4 flex-1">
               {/* Zone Couches */}
               <div className="card p-4 w-64 bg-surface flex flex-col gap-2">
-                <h3 className="text-sm font-semibold mb-2">Couches</h3>
-                {(['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'] as const).map(layer => (
-                  <button 
-                    key={layer} 
-                    className={`btn text-left w-full justify-between ${selectedLayer === layer ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => {
-                      setSelectedLayer(layer);
-                      setWorkshopResult(null); // Clear so loadProposals can reload from DB
-                      setSelectedProposalId(null);
-                      setSelectedProposalIds(new Set());
-                    }}
-                  >
-                    {layer} <span className={`badge ${(layerProposalCounts[layer] || 0) > 0 ? 'badge-info' : ''}`}>{layerProposalCounts[layer] || 0}</span>
-                  </button>
-                ))}
+                <h3 className="text-sm font-semibold mb-2">Couches de Conception</h3>
+                {(['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'] as const).map(layer => {
+                  const info = LAYER_INFO[layer];
+                  const isSel = selectedLayer === layer;
+                  return (
+                    <button 
+                      key={layer} 
+                      className={`btn text-left w-full flex flex-col gap-1 ${isSel ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => {
+                        setSelectedLayer(layer);
+                        setWorkshopResult(null);
+                        setSelectedProposalId(null);
+                        setSelectedProposalIds(new Set());
+                      }}
+                    >
+                      <div className="flex justify-between items-center w-full">
+                        <span>{info.icon} {layer}</span>
+                        <span className={`badge ${(layerProposalCounts[layer] || 0) > 0 ? 'badge-info' : ''}`}>{layerProposalCounts[layer] || 0}</span>
+                      </div>
+                      <span className="text-[10px] opacity-75 font-normal text-left">{info.question}</span>
+                    </button>
+                  );
+                })}
+
+                <div className="mt-4 p-3 bg-muted rounded-md text-xs">
+                  <div className="font-semibold text-primary mb-1">
+                    {LAYER_INFO[selectedLayer].icon} {LAYER_INFO[selectedLayer].title}
+                  </div>
+                  <p className="text-muted mb-1">{LAYER_INFO[selectedLayer].desc}</p>
+                  <div className="italic text-gray-500">❓ {LAYER_INFO[selectedLayer].question}</div>
+                </div>
               </div>
 
               {/* Zone Propositions */}
               <div className="card p-4 flex-1 bg-surface flex flex-col">
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex gap-4 items-center">
+                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                  <div className="flex gap-4 items-center flex-wrap">
                     <h3 className="font-semibold m-0">Essaim d&apos;Idéation</h3>
                     <select 
                       className="input input-sm max-w-[200px]" 
@@ -912,18 +1027,26 @@ export default function ProjectDetailPage() {
                       <option value="ABUNDANT">Abondante (5 perspectives)</option>
                       <option value="EXHAUSTIVE">Exhaustive (8 perspectives)</option>
                     </select>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer" title="Affiche toutes les idées brutes en grille 2 colonnes sans filtrage">
                       <input type="checkbox" checked={brainstormingMode} onChange={e => setBrainstormingMode(e.target.checked)} />
                       Mode Brainstorming
                     </label>
                   </div>
                   <div className="flex gap-2">
                     <button 
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleSwarmAll}
+                      disabled={isGenerating}
+                      title="Génère des propositions pour les 6 couches dans l'ordre"
+                    >
+                      ⚡ Essaimer Tout (6 Couches)
+                    </button>
+                    <button 
                       className="btn btn-primary btn-sm"
                       onClick={handleGenerateProposals}
                       disabled={isGenerating}
                     >
-                      {isGenerating ? '⏳ Exploration…' : '✨ Essaimer'}
+                      {isGenerating ? '⏳ Exploration…' : `✨ Essaimer (${selectedLayer})`}
                     </button>
                   </div>
                 </div>
@@ -931,7 +1054,7 @@ export default function ProjectDetailPage() {
                 
                 {Object.keys(agentStatuses).length > 0 && isGenerating && (
                   <div className="mb-4 p-3 bg-muted rounded-md text-sm">
-                    <h4 className="font-semibold mb-2">Progression</h4>
+                    <h4 className="font-semibold mb-2">Progression de l&apos;Essaim</h4>
                     {Object.entries(agentStatuses).map(([agentId, status]) => (
                       <div key={agentId} className="flex justify-between items-center py-1 border-b border-border last:border-0">
                         <span>{agentId}</span>
@@ -948,6 +1071,22 @@ export default function ProjectDetailPage() {
                   </div>
                 )}
                 
+                {/* Encart Éléments de Brief Confirmés */}
+                {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED').length > 0 && (
+                  <div className="p-3 mb-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md text-xs">
+                    <div className="font-semibold text-indigo-900 dark:text-indigo-200 mb-1">
+                      💡 {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED').length} Élément(s) du Brief Confirmé(s) pris en compte par l&apos;Essaim :
+                    </div>
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED').slice(0, 4).map(b => (
+                        <li key={b.id} className="text-indigo-800 dark:text-indigo-300">
+                          <strong>[{b.type}]</strong> {b.statement}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {workshopResult ? (
                   <div className="flex-1 flex flex-col gap-4 overflow-auto">
                     {workshopResult.diagnostic && (
@@ -1110,8 +1249,9 @@ export default function ProjectDetailPage() {
 
                   </div>
                 ) : (
-                  <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg">
-                    Cliquez sur Générer pour obtenir des propositions
+                  <div className="flex-1 flex flex-col items-center justify-center text-muted border-2 border-dashed border-border rounded-lg p-6 text-center gap-2">
+                    <p className="text-base font-medium">Aucune proposition affichée pour la couche {selectedLayer}.</p>
+                    <p className="text-xs">Cliquez sur &quot;✨ Essaimer ({selectedLayer})&quot; ou &quot;⚡ Essaimer Tout (6 Couches)&quot; pour générer des idées.</p>
                   </div>
                 )}
               </div>
@@ -1144,7 +1284,7 @@ export default function ProjectDetailPage() {
                       {p.justification && (
                         <div>
                           <h5 className="font-semibold text-muted text-xs uppercase">Justification</h5>
-                          <p className="italic">{p.justification}</p>
+                          <p className="italic whitespace-pre-wrap">{p.justification}</p>
                         </div>
                       )}
 
@@ -1211,8 +1351,19 @@ export default function ProjectDetailPage() {
                         
                         <div className="mt-4">
                           <h5 className="font-semibold mb-1 text-xs uppercase text-muted">Ce que je voudrais changer</h5>
-                          <textarea className="input w-full text-sm h-20 mb-2" placeholder="Ex: C&#39;est bien mais trop complexe..."></textarea>
-                          <button className="btn btn-sm w-full">Envoyer ma critique</button>
+                          <textarea 
+                            className="input w-full text-sm h-20 mb-2" 
+                            placeholder="Ex: C&#39;est bien mais trop complexe pour le MVP..."
+                            value={userFeedbackText}
+                            onChange={(e) => setUserFeedbackText(e.target.value)}
+                          />
+                          <button 
+                            className="btn btn-sm w-full btn-secondary"
+                            onClick={handleSubmitFeedback}
+                            disabled={!userFeedbackText.trim() || isSubmittingFeedback}
+                          >
+                            {isSubmittingFeedback ? "⏳ Envoi..." : "📩 Envoyer ma critique"}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1395,7 +1546,7 @@ export default function ProjectDetailPage() {
                 <h3>{lang === "fr" ? "Aucune mission planifiée" : "No mission planned"}</h3>
                 <p>{t("empty.organization")}</p>
                 {briefItems.length > 0 && (
-                  <button className="btn btn-primary mt-4" onClick={() => setActiveTab("brief")}>
+                  <button className="btn btn-primary mt-4" onClick={() => handleTabChange("brief")}>
                     👈 {lang === "fr" ? "Aller au brief" : "Go to brief"}
                   </button>
                 )}
@@ -2042,5 +2193,18 @@ export default function ProjectDetailPage() {
         </div>
       )}
     </>
+  );
+}
+
+export default function ProjectDetailPage() {
+  return (
+    <Suspense fallback={
+      <div className="loading-state">
+        <div className="loading-spinner" />
+        <span>Chargement...</span>
+      </div>
+    }>
+      <ProjectDetailPageContent />
+    </Suspense>
   );
 }
