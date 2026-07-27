@@ -18,6 +18,7 @@ import {
   type RunEvent,
   type EntityId,
   type DesignLayer,
+  type DesignProposal,
 } from "@/services";
 import { useTranslation } from "@/i18n";
 
@@ -71,6 +72,8 @@ export default function ProjectDetailPage() {
   const [brainstormingMode, setBrainstormingMode] = useState(false);
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+  const [, setPersistedProposals] = useState<DesignProposal[]>([]);
+  const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
   
   // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -142,6 +145,61 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Load persisted proposals for the current layer
+  const loadProposals = useCallback(async () => {
+    try {
+      const proposals = await svc.designWorkshop.getProposals(projectId as EntityId, selectedLayer);
+      setPersistedProposals(proposals);
+      // If we have persisted proposals but no workshopResult, build a workshopResult from them
+      if (proposals.length > 0 && !workshopResult) {
+        setWorkshopResult({
+          proposals: proposals.map(p => ({
+            id: p.id,
+            title: p.title,
+            description: p.description,
+            shortPitch: p.shortPitch || p.title,
+            type: p.category,
+            originPerspective: p.originPerspective || 'Système',
+            confidence: p.confidence || 50,
+            priority: p.priority || 'MEDIUM',
+            complexity: p.complexity || 'M',
+            justification: p.rationale,
+            userValue: p.userValue || '',
+            dependencies: p.dependencyIds || [],
+            childrenIds: p.childrenIds || [],
+            parentId: p.parentId || null,
+            status: p.status,
+          })),
+          summary: `${proposals.length} propositions existantes pour la couche ${selectedLayer}`,
+          questions: [],
+          assumptions: [],
+          warnings: [],
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load proposals:', e);
+    }
+    // Also load counts for all layers
+    try {
+      const layers: DesignLayer[] = ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'];
+      const counts: Record<string, number> = {};
+      for (const layer of layers) {
+        const ps = await svc.designWorkshop.getProposals(projectId as EntityId, layer);
+        counts[layer] = ps.length;
+      }
+      setLayerProposalCounts(counts);
+    } catch (e) {
+      console.error('Failed to load layer counts:', e);
+    }
+  }, [projectId, selectedLayer, svc, workshopResult]);
+
+  // Load proposals when switching to design tab or changing layer
+  useEffect(() => {
+    if (activeTab === 'design') {
+      loadProposals();
+    }
+  }, [activeTab, selectedLayer, loadProposals]);
 
   // ---- Actions ----
 
@@ -269,12 +327,41 @@ export default function ProjectDetailPage() {
       setWorkshopResult(result);
       showToast("success", "Génération terminée avec succès");
       load();
+      loadProposals(); // Reload counts
     } catch (e: any) {
       setGenerationError(e.message || String(e));
       showToast("error", e.message || String(e));
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleProposalAction = async (proposalId: string, action: 'ACCEPTED' | 'REJECTED' | 'DEFERRED' | 'PROPOSED') => {
+    try {
+      await svc.designWorkshop.updateProposalStatus(proposalId as EntityId, action);
+      // Update workshopResult in-place for instant UI feedback
+      setWorkshopResult((prev: any) => {
+        if (!prev?.proposals) return prev;
+        return {
+          ...prev,
+          proposals: prev.proposals.map((p: any) =>
+            p.id === proposalId ? { ...p, status: action } : p
+          ),
+        };
+      });
+      const labels: Record<string, string> = { ACCEPTED: 'acceptée', REJECTED: 'refusée', DEFERRED: 'reportée' };
+      showToast("success", `Proposition ${labels[action] || action}`);
+      loadProposals(); // Reload counts
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleBulkAccept = async () => {
+    for (const id of selectedProposalIds) {
+      await handleProposalAction(id, 'ACCEPTED');
+    }
+    setSelectedProposalIds(new Set());
   };
 
   const runMission = async () => {
@@ -795,13 +882,18 @@ export default function ProjectDetailPage() {
               {/* Zone Couches */}
               <div className="card p-4 w-64 bg-surface flex flex-col gap-2">
                 <h3 className="text-sm font-semibold mb-2">Couches</h3>
-                {['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'].map(layer => (
+                {(['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'] as const).map(layer => (
                   <button 
                     key={layer} 
                     className={`btn text-left w-full justify-between ${selectedLayer === layer ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setSelectedLayer(layer as DesignLayer)}
+                    onClick={() => {
+                      setSelectedLayer(layer);
+                      setWorkshopResult(null); // Clear so loadProposals can reload from DB
+                      setSelectedProposalId(null);
+                      setSelectedProposalIds(new Set());
+                    }}
                   >
-                    {layer} <span className="badge">0</span>
+                    {layer} <span className={`badge ${(layerProposalCounts[layer] || 0) > 0 ? 'badge-info' : ''}`}>{layerProposalCounts[layer] || 0}</span>
                   </button>
                 ))}
               </div>
@@ -892,7 +984,7 @@ export default function ProjectDetailPage() {
                             <div className="flex gap-2">
                               <span className="text-sm font-medium pt-1 mr-2">{selectedProposalIds.size} sélectionnées</span>
                               <button className="btn btn-sm" onClick={() => setSelectedProposalIds(new Set())}>Effacer</button>
-                              <button className="btn btn-sm btn-primary">Accepter la sélection</button>
+                              <button className="btn btn-sm btn-primary" onClick={handleBulkAccept}>Accepter la sélection</button>
                             </div>
                           )}
                         </div>
@@ -936,6 +1028,17 @@ export default function ProjectDetailPage() {
                                       <div className="text-sm text-muted">{p.shortPitch || p.description?.substring(0, 100) + '...'}</div>
                                     </div>
                                   </div>
+                                  {p.status && p.status !== 'PROPOSED' && (
+                                    <span className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${
+                                      p.status === 'ACCEPTED' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                                      p.status === 'REJECTED' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                                      p.status === 'DEFERRED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                      p.status === 'LOCKED' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {p.status === 'ACCEPTED' ? '✅ Acceptée' : p.status === 'REJECTED' ? '❌ Refusée' : p.status === 'DEFERRED' ? '⏸️ Reportée' : p.status === 'LOCKED' ? '🔒 Verrouillée' : p.status}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex flex-wrap gap-2 mt-3 items-center">
                                   {p.originPerspective && (
@@ -1062,20 +1165,53 @@ export default function ProjectDetailPage() {
                       )}
 
                       <div className="border-t border-border pt-4 mt-2 flex flex-col gap-2">
-                        <h5 className="font-semibold">Actions</h5>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button className="btn btn-sm btn-primary">Accepter</button>
-                          <button className="btn btn-sm">Refuser</button>
-                          <button className="btn btn-sm">Reporter</button>
-                          <button className="btn btn-sm">Modifier</button>
+                        <div className="flex justify-between items-center">
+                          <h5 className="font-semibold">Actions</h5>
+                          {p.status && p.status !== 'PROPOSED' && (
+                            <span className={`text-xs font-medium px-2 py-1 rounded ${
+                              p.status === 'ACCEPTED' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                              p.status === 'REJECTED' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                              p.status === 'DEFERRED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              Statut : {p.status === 'ACCEPTED' ? 'Acceptée' : p.status === 'REJECTED' ? 'Refusée' : p.status === 'DEFERRED' ? 'Reportée' : p.status}
+                            </span>
+                          )}
                         </div>
-                        <button className="btn btn-sm mt-2 flex items-center justify-center gap-2">
-                          <span>🔍</span> Développer cette idée
-                        </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button 
+                            className="btn btn-sm btn-primary" 
+                            onClick={() => handleProposalAction(p.id, 'ACCEPTED')}
+                            disabled={p.status === 'ACCEPTED'}
+                          >
+                            ✅ Accepter
+                          </button>
+                          <button 
+                            className="btn btn-sm" 
+                            onClick={() => handleProposalAction(p.id, 'REJECTED')}
+                            disabled={p.status === 'REJECTED'}
+                          >
+                            ❌ Refuser
+                          </button>
+                          <button 
+                            className="btn btn-sm" 
+                            onClick={() => handleProposalAction(p.id, 'DEFERRED')}
+                            disabled={p.status === 'DEFERRED'}
+                          >
+                            ⏸️ Reporter
+                          </button>
+                          <button 
+                            className="btn btn-sm"
+                            onClick={() => handleProposalAction(p.id, 'PROPOSED')}
+                            disabled={p.status === 'PROPOSED' || !p.status}
+                          >
+                            ↩️ Réinitialiser
+                          </button>
+                        </div>
                         
                         <div className="mt-4">
                           <h5 className="font-semibold mb-1 text-xs uppercase text-muted">Ce que je voudrais changer</h5>
-                          <textarea className="input w-full text-sm h-20 mb-2" placeholder="Ex: C'est bien mais trop complexe..."></textarea>
+                          <textarea className="input w-full text-sm h-20 mb-2" placeholder="Ex: C&#39;est bien mais trop complexe..."></textarea>
                           <button className="btn btn-sm w-full">Envoyer ma critique</button>
                         </div>
                       </div>

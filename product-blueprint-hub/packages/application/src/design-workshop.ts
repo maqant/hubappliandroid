@@ -317,6 +317,18 @@ export class DesignWorkshopUseCases {
     return proposal;
   }
 
+  async updateProposalStatus(proposalId: EntityId, status: DesignProposal['status']): Promise<DesignProposal> {
+    const proposal = await this.repos.designProposals.getById(proposalId);
+    if (!proposal) throw new Error("Proposition introuvable");
+    const updated = {
+      ...proposal,
+      status,
+      updatedAt: new Date().toISOString()
+    };
+    await this.repos.designProposals.save(updated);
+    return updated;
+  }
+
   async getGraph(projectId: EntityId): Promise<DesignGraph> {
     let graph = await this.repos.designGraphs.getByProjectId(projectId);
     if (!graph) {

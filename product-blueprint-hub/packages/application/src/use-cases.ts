@@ -111,7 +111,7 @@ export class BriefUseCases {
     const response = await this.provider.complete({
       prompt: allContent,
       systemPrompt:
-        "Analyze the following content and extract brief items. Return JSON with an 'items' array.",
+        "Tu es un Product Manager expert. Analyse le contenu fourni et extrais les informations clés sous forme de Brief. Tu dois impérativement retourner un objet JSON contenant une propriété 'items' qui est un tableau. Chaque objet item DOIT avoir : 'type' (ex: VISION, OBJECTIVE, USER_ROLE, CONSTRAINT, FEATURE), 'statement' (la description claire), 'confidence' (nombre entre 0 et 1) et 'excerpt' (citation courte). N'inclus AUCUN texte avant ou après le JSON.",
       tier: "TERRA",
       correlationId: `analyze-${projectId}`,
     });
@@ -138,18 +138,24 @@ export class BriefUseCases {
       ];
     }
 
-    const parsedItems = rawItems.map((raw) => {
-      const statement = raw.statement?.trim() || raw.description?.trim() || raw.content?.trim() || "Information non définie";
-      if (!raw.statement?.trim()) {
-        console.warn(`[BriefUseCases] analyzeBrief: item IA réparé par fallback`, { raw });
-      }
-      return {
-        type: raw.type?.trim() || "non-catégorisé",
-        statement,
-        confidence: typeof raw.confidence === "number" ? raw.confidence : 0.8,
-        excerpt: raw.excerpt?.trim() || allContent.slice(0, 80),
-      };
-    });
+    const parsedItems = rawItems
+      .map((raw) => {
+        const statement = raw.statement?.trim() || raw.description?.trim() || raw.content?.trim() || "";
+        if (!statement) {
+          console.warn(`[BriefUseCases] analyzeBrief: item IA sans statement, ignoré`, { raw });
+          return null;
+        }
+        const validTypes = ["VISION", "OBJECTIVE", "USER_NEED", "DECISION", "SUGGESTION", "ASSUMPTION", "CONSTRAINT", "RISK", "QUESTION", "EXAMPLE"];
+        const rawType = (raw.type?.trim() || "").toUpperCase();
+        const type = validTypes.includes(rawType) ? rawType : "VISION";
+        return {
+          type,
+          statement,
+          confidence: typeof raw.confidence === "number" ? raw.confidence : 0.8,
+          excerpt: raw.excerpt?.trim() || statement.slice(0, 80),
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
     // Create a default source if none exists for linking
     let defaultSource = sources[0];
