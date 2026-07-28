@@ -88,8 +88,20 @@ export function ProjectDetailPageContent() {
   
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [workshopResult, setWorkshopResult] = useState<any>(null);
-  const [selectedLayer, setSelectedLayer] = useState<DesignLayer>("INTENTION");
-  const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({});
+  const [layerAgentStatuses, setLayerAgentStatuses] = useState<
+    Record<string, Record<string, string>>
+  >({});
+
+  const updateAgentStatus = (layer: string, agentId: string, status: string) => {
+    setLayerAgentStatuses((prev) => ({
+      ...prev,
+      [layer]: { ...(prev[layer] ?? {}), [agentId]: status },
+    }));
+  };
+
+  const resetLayerStatuses = (layer: string) => {
+    setLayerAgentStatuses((prev) => ({ ...prev, [layer]: {} }));
+  };
   
   // Ideation Swarm states
   const [ideationIntensity, setIdeationIntensity] = useState<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE'>('ABUNDANT');
@@ -345,11 +357,16 @@ export function ProjectDetailPageContent() {
     if (isGenerating) return;
     setIsGenerating(true);
     setGenerationError(null);
-    setAgentStatuses({});
+    resetLayerStatuses(selectedLayer);
     try {
-      const result = await svc.designWorkshop.generateProposals(projectId as EntityId, selectedLayer, ideationIntensity, (agentId, status) => {
-        setAgentStatuses(prev => ({ ...prev, [agentId]: status }));
-      });
+      const result = await svc.designWorkshop.generateProposals(
+        projectId as EntityId,
+        selectedLayer,
+        ideationIntensity,
+        (agentId, status) => {
+          updateAgentStatus(selectedLayer, agentId, status);
+        }
+      );
       setWorkshopResult(result);
       showToast("success", "Génération terminée avec succès");
       load();
@@ -414,13 +431,17 @@ export function ProjectDetailPageContent() {
       for (let i = 0; i < layers.length; i++) {
         const layer = layers[i]!;
         setSelectedLayer(layer);
-        setAgentStatuses(prev => ({ ...prev, [layer]: 'running' }));
+        resetLayerStatuses(layer);
         showToast("info", `Génération couche ${i + 1}/6 : ${layer}...`);
-        const result = await svc.designWorkshop.generateProposals(projectId as EntityId, layer, ideationIntensity, (agentId, status) => {
-          setAgentStatuses(prev => ({ ...prev, [`${layer}:${agentId}`]: status }));
-        });
+        const result = await svc.designWorkshop.generateProposals(
+          projectId as EntityId,
+          layer,
+          ideationIntensity,
+          (agentId, status) => {
+            updateAgentStatus(layer, agentId, status);
+          }
+        );
         setWorkshopResult(result);
-        setAgentStatuses(prev => ({ ...prev, [layer]: 'done' }));
         await loadProposals(); // Reload counts immediately!
       }
       showToast("success", "Essaimage complet de toutes les couches terminé avec succès !");
@@ -1111,24 +1132,45 @@ export function ProjectDetailPageContent() {
                 </div>
                 {generationError && <p className="text-sm text-red-600 mb-2">{generationError}</p>}
                 
-                {Object.keys(agentStatuses).length > 0 && isGenerating && (
-                  <div className="mb-4 p-3 bg-muted rounded-md text-sm">
-                    <h4 className="font-semibold mb-2">Progression de l&apos;Essaim</h4>
-                    {Object.entries(agentStatuses).map(([agentId, status]) => (
-                      <div key={agentId} className="flex justify-between items-center py-1 border-b border-border last:border-0">
-                        <span>{agentId}</span>
-                        <span className={`text-xs font-medium px-2 py-1 rounded ${
-                          status === 'done' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                          status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                          status === 'error' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
-                          'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
-                        }`}>
-                          {status === 'done' ? 'terminé' : status === 'running' ? 'en cours' : status === 'error' ? 'erreur' : 'en attente'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {(() => {
+                  const activeSwarmStatuses = layerAgentStatuses[selectedLayer] ?? {};
+                  const entries = Object.entries(activeSwarmStatuses);
+                  if (entries.length === 0) return null;
+                  return (
+                    <div className="mb-4 p-3 bg-muted rounded-md text-sm">
+                      <h4 className="font-semibold mb-2">
+                        Progression de l&apos;Essaim ({selectedLayer})
+                      </h4>
+                      {entries.map(([agentId, status]) => (
+                        <div
+                          key={agentId}
+                          className="flex justify-between items-center py-1 border-b border-border last:border-0"
+                        >
+                          <span>{agentId}</span>
+                          <span
+                            className={`text-xs font-medium px-2 py-1 rounded ${
+                              status === "done"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                : status === "running"
+                                ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                                : status === "error"
+                                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                                : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400"
+                            }`}
+                          >
+                            {status === "done"
+                              ? "terminé"
+                              : status === "running"
+                              ? "en cours"
+                              : status === "error"
+                              ? "erreur"
+                              : "en attente"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
                 
                 {/* Encart Éléments de Brief Confirmés */}
                 {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED' || b.status === 'CORRECTED').length > 0 && (
