@@ -1336,6 +1336,66 @@ export function ProjectDetailPageContent() {
                   );
                 })()}
                 
+                {/* Encart synthétique des Feature Paths générés */}
+                {featurePaths.length > 0 && (
+                  <div className="p-3 mb-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-md text-xs">
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="font-semibold text-emerald-900 dark:text-emerald-200">
+                        🚀 {featurePaths.length} Feature Path(s) fonctionnel(s) tissé(s) :
+                      </div>
+                      {selectedPathId && (
+                        <button
+                          className="text-emerald-700 underline text-xs"
+                          onClick={() => setSelectedPathId(null)}
+                        >
+                          Afficher tous les paths
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {featurePaths.map((fp) => {
+                        const isSel = selectedPathId === fp.id;
+                        return (
+                          <div
+                            key={fp.id}
+                            className={`p-2 rounded border cursor-pointer ${
+                              isSel ? 'border-emerald-600 bg-emerald-100 dark:bg-emerald-900/40' : 'border-emerald-200 bg-white dark:bg-neutral-800'
+                            }`}
+                            onClick={() => setSelectedPathId(isSel ? null : fp.id)}
+                          >
+                            <div className="font-medium text-emerald-900 dark:text-emerald-200">
+                              Capacité : {fp.capabilityProposal.title}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                              {fp.features.length} Fonct. • {fp.journeys.length} Parcours • {fp.screens.length} Écrans • [{fp.status}]
+                            </div>
+                            <div className="flex gap-1 mt-1">
+                              <button
+                                className="px-1.5 py-0.5 text-[10px] bg-emerald-600 text-white rounded"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleArbitratePath(fp.capabilityProposal.id, 'ACCEPT_PROPOSED');
+                                }}
+                              >
+                                Tout accepter
+                              </button>
+                              <button
+                                className="px-1.5 py-0.5 text-[10px] bg-amber-600 text-white rounded"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleArbitratePath(fp.capabilityProposal.id, 'DEFER_PROPOSED');
+                                }}
+                              >
+                                Reporter
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Encart Éléments de Brief Confirmés */}
                 {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED' || b.status === 'CORRECTED').length > 0 && (
                   <div className="p-3 mb-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md text-xs">
