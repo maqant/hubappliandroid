@@ -60,8 +60,6 @@ export function computeFeaturePaths(proposals: DesignProposal[]): FeaturePath[] 
   const journeys = proposals.filter((p) => p.layer === 'JOURNEY');
   const screens = proposals.filter((p) => p.layer === 'SCREEN');
   const intentions = proposals.filter((p) => p.layer === 'INTENTION');
-  const hypotheses = proposals.filter((p) => p.layer === 'HYPOTHESIS');
-
   return capabilities.map((cap) => {
     const warnings: string[] = [];
 
