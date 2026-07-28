@@ -664,9 +664,101 @@ function generatePackageFiles(
         a.content.toLowerCase().includes("spécification") ||
         a.content.toLowerCase().includes("vision") ||
         a.content.toLowerCase().includes("brouillon"),
-    );
+   const hiveGuidelineContent = isFr
+    ? `# 00-HIVE-GUIDELINE — ${mission.name}
+
+> **FICHIER PIVOT HIVE** — Point d'entrée obligatoire pour tout agent (Jules, Antigravity).
+> Généré automatiquement par Product Blueprint Hub le ${new Date().toISOString()}.
+> NE PAS supprimer. Les agents doivent le lire AVANT toute action sur le code.
+
+---
+
+## 1. Cycle de vie Hive de ce projet
+
+\`\`\`
+PBH (conception scellée) → Jules (implémentation) → Antigravity (debug + roadmap)
+\`\`\`
+
+| Agent | Rôle | Fichiers de référence |
+|---|---|---|
+| **Jules** | Implémentation autonome step-by-step | 01 → 14 (contrat, vision, plan) |
+| **Antigravity** | Debug, pair-programming, évolutions | 00 (ce fichier), 18, 19, .agents/AGENTS.md |
+
+## 2. Vision du Produit
+${getArtifactContent(artifacts, "PRODUCT_VISION", isFr)}
+
+## 3. Architecture Scellée (NON NÉGOCIABLE sans arbitrage humain)
+${getArtifactContent(artifacts, "ARCHITECTURE", isFr)}
+
+⚠️ Toute correction de bug ou évolution DOIT respecter ces décisions.
+En cas de conflit : STOP et demander l'arbitrage de l'utilisateur.
+
+## 4. Plan d'Implémentation (Résumé)
+${getArtifactContent(artifacts, "BACKLOG", isFr)}
+
+> Détail complet : voir \`14-IMPLEMENTATION-PLAN.txt\`.
+
+## 5. État d'Avancement
+> ⚠️ Section MUTABLE — à mettre à jour par l'agent actif en fin de session.
+
+- **Fait** : (aucun — export initial depuis PBH)
+- **En cours** : implémentation par Jules selon le plan 14
+- **Reste à faire** : voir \`19-ROADMAP-DEFERRED.md\` (features reportées)
+
+## 6. Protocole Agents
+- **Jules** : exécute le plan 14 étape par étape. À la fin, met à jour la section 5.
+- **Antigravity** : applique les règles de \`.agents/AGENTS.md\` (Hive Awareness Rule).
+  Quand les tâches courantes sont résolues, propose la prochaine feature DEFERRED.
+`
+    : `# 00-HIVE-GUIDELINE — ${mission.name}
+
+> **HIVE PIVOT FILE** — Mandatory entry point for any AI agent (Jules, Antigravity).
+> Generated automatically by Product Blueprint Hub on ${new Date().toISOString()}.
+
+---
+
+## 1. Hive Lifecycle
+PBH (sealed design) → Jules (implementation) → Antigravity (debug & roadmap continuation)
+
+## 2. Product Vision
+${getArtifactContent(artifacts, "PRODUCT_VISION", isFr)}
+
+## 3. Sealed Architecture
+${getArtifactContent(artifacts, "ARCHITECTURE", isFr)}
+
+## 4. Implementation Plan
+${getArtifactContent(artifacts, "BACKLOG", isFr)}
+`;
+
+  const deferredRoadmapContent = isFr
+    ? `# 19-ROADMAP-DEFERRED — ${mission.name}
+
+> Features volontairement reportées lors de la conception PBH.
+> Généré le ${new Date().toISOString()}.
+>
+> **Protocole Antigravity** : quand les tâches courantes sont résolues,
+> proposer la prochaine feature DEFERRED. Après implémentation, passer
+> son statut à DONE (avec date) dans CE fichier.
+
+---
+
+${getArtifactContent(artifacts, "DEFERRED_ROADMAP", isFr)}
+`
+    : `# 19-ROADMAP-DEFERRED — ${mission.name}
+
+> Features deferred during PBH design.
+> Generated on ${new Date().toISOString()}.
+
+---
+
+${getArtifactContent(artifacts, "DEFERRED_ROADMAP", isFr)}
+`;
 
   const fileSpecs = [
+    {
+      filename: "00-HIVE-GUIDELINE.md",
+      content: hiveGuidelineContent,
+    },
     {
       filename: "00-READ-FIRST.txt",
       content: isFr
@@ -741,8 +833,12 @@ function generatePackageFiles(
     {
       filename: "18-ANTIGRAVITY-INSTRUCTIONS.txt",
       content: isFr
-        ? "Instructions pour l'agent de développement IA.\n\nUtilisez ce paquet comme source unique de vérité pour l'implémentation.\nToutes les décisions sont verrouillées et traçables."
-        : "Instructions for AI development agent.\n\nUse this package as the single source of truth for implementation.\nAll decisions are locked and traceable.",
+        ? "PRIORITÉ 0 : Lis impérativement 00-HIVE-GUIDELINE.md et applique .agents/AGENTS.md.\n\nInstructions pour l'agent de développement IA (Antigravity).\nUtilisez ce paquet comme source unique de vérité pour l'implémentation et le débogage.\nToutes les décisions sont verrouillées et traçables."
+        : "PRIORITY 0: Read 00-HIVE-GUIDELINE.md first and apply .agents/AGENTS.md.\n\nInstructions for AI development agent (Antigravity).\nUse this package as the single source of truth for implementation and debugging.\nAll decisions are locked and traceable.",
+    },
+    {
+      filename: "19-ROADMAP-DEFERRED.md",
+      content: deferredRoadmapContent,
     },
   ];
 
