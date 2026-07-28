@@ -676,8 +676,10 @@ function generatePackageFiles(
       (a) =>
         a.content.toLowerCase().includes("spécification") ||
         a.content.toLowerCase().includes("vision") ||
-        a.content.toLowerCase().includes("brouillon"),
-   const hiveGuidelineContent = isFr
+        a.content.toLowerCase().includes("brouillon")
+    );
+
+    const hiveGuidelineContent = isFr
     ? `# 00-HIVE-GUIDELINE — ${mission.name}
 
 > **FICHIER PIVOT HIVE** — Point d'entrée obligatoire pour tout agent (Jules, Antigravity).
