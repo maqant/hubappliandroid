@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useParams, useRouter, useSearchParams, usePathname } from "next/navigation";
+import { analysisLogCollector } from "@/lib/export/analysis-log-collector";
 import {
   useServices,
   type Project,
@@ -109,8 +110,22 @@ export function ProjectDetailPageContent() {
   
   // Ideation Swarm states
   const [ideationIntensity, setIdeationIntensity] = useState<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE'>('ABUNDANT');
-  const [brainstormingMode, setBrainstormingMode] = useState(false);
+  const brainstormingMode = true; // Mode créatif unique et permanent
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [isVariationModalOpen, setIsVariationModalOpen] = useState(false);
+  const [isReplacementModalOpen, setIsReplacementModalOpen] = useState(false);
+  const [userDiversityFocus, setUserDiversityFocus] = useState("");
+  const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>("ALL");
+  const [generationSummaryModal, setGenerationSummaryModal] = useState<{
+    open: boolean;
+    title: string;
+    receivedCount: number;
+    addedCount: number;
+    duplicateCount: number;
+    invalidCount: number;
+    toReviewCount: number;
+    diversityFocus?: string | null;
+  } | null>(null);
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
   const [, setPersistedProposals] = useState<DesignProposal[]>([]);
   const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
@@ -409,7 +424,40 @@ export function ProjectDetailPageContent() {
     }
   };
 
-  const handleGenerateProposals = async () => {
+  const currentLayerProposals = useMemo(() => {
+    if (!workshopResult?.proposals) return [];
+    return workshopResult.proposals.filter((p: any) => p.layer === selectedLayer);
+  }, [workshopResult, selectedLayer]);
+
+  const batches = useMemo(() => {
+    const map = new Map<string, { id: string; label: string; count: number }>();
+    currentLayerProposals.forEach((p: any) => {
+      const bId = p.generationBatchId || 'LEGACY';
+      if (!map.has(bId)) {
+        let label = "Génération antérieure";
+        if (p.generationBatchId) {
+          if (p.generationMode === 'INITIAL' || p.variationIndex === 0) label = "Génération initiale";
+          else if (p.generationMode === 'REPLACEMENT') label = `Remplacement (Var ${p.variationIndex || 1})`;
+          else label = `Variation ${p.variationIndex || 1}`;
+        }
+        map.set(bId, { id: bId, label, count: 0 });
+      }
+      map.get(bId)!.count++;
+    });
+    return Array.from(map.values());
+  }, [currentLayerProposals]);
+
+  const lastBatch = useMemo(() => {
+    const valid = batches.filter(b => b.id !== 'LEGACY');
+    return valid.length > 0 ? valid[valid.length - 1] : null;
+  }, [batches]);
+
+  const filteredProposals = useMemo(() => {
+    if (selectedBatchFilter === 'ALL') return currentLayerProposals;
+    return currentLayerProposals.filter((p: any) => (p.generationBatchId || 'LEGACY') === selectedBatchFilter);
+  }, [currentLayerProposals, selectedBatchFilter]);
+
+  const executeGeneration = async (mode: 'INITIAL' | 'VARIATION' | 'REPLACEMENT' = 'INITIAL', focus?: string, sourceBatchId?: string | null) => {
     if (isGenerating) return;
     setIsGenerating(true);
     setGenerationError(null);
@@ -419,22 +467,66 @@ export function ProjectDetailPageContent() {
         projectId as EntityId,
         selectedLayer,
         ideationIntensity,
-        brainstormingMode,
+        true,
         (agentId, status) => {
           updateAgentStatus(selectedLayer, agentId, status);
+        },
+        {
+          generationMode: mode,
+          sourceBatchId: sourceBatchId || null,
+          userDiversityFocus: focus || undefined,
+          onLog: (event: any) => {
+            analysisLogCollector.addEntry({
+              timestamp: new Date().toISOString(),
+              level: "INFO",
+              category: event.category || "GENERATION",
+              message: event.message,
+              context: event.context
+            });
+          }
         }
       );
       setWorkshopResult(result);
-      showToast("success", "Génération terminée avec succès");
       load();
-      loadProposals(); // Reload counts
+      loadProposals();
+
+      const added = result.addedCount ?? result.proposals?.length ?? 0;
+      const received = result.receivedCount ?? result.proposals?.length ?? 0;
+      const dupes = result.duplicateCount ?? 0;
+      const invalid = result.diagnostic?.invalidCount ?? 0;
+
+      if (added === 0 && mode !== 'INITIAL') {
+        showToast("info", "Aucune proposition suffisamment différente n'a été trouvée. Essayez un angle d'exploration plus précis.");
+      } else {
+        showToast("success", mode === 'INITIAL' ? "Génération initiale terminée" : mode === 'REPLACEMENT' ? "Remplacement terminé" : "Nouvelle variation terminée");
+      }
+
+      setGenerationSummaryModal({
+        open: true,
+        title: mode === 'INITIAL' ? "Génération initiale terminée" : mode === 'REPLACEMENT' ? "Remplacement terminé" : "Nouvelle variation terminée",
+        receivedCount: received,
+        addedCount: added,
+        duplicateCount: dupes,
+        invalidCount: invalid,
+        toReviewCount: added,
+        diversityFocus: result.userDiversityFocus || focus || null
+      });
     } catch (e: any) {
       setGenerationError(e.message || String(e));
       showToast("error", e.message || String(e));
     } finally {
       setIsGenerating(false);
+      setIsVariationModalOpen(false);
+      setIsReplacementModalOpen(false);
+      setUserDiversityFocus("");
     }
   };
+
+  const handleGenerateProposals = () => executeGeneration(currentLayerProposals.length === 0 ? 'INITIAL' : 'VARIATION');
+  void isReplacementModalOpen;
+  void setSelectedBatchFilter;
+  void lastBatch;
+  void handleGenerateProposals;
 
   const handleProposalAction = async (proposalId: string, action: 'ACCEPTED' | 'REJECTED' | 'DEFERRED' | 'PROPOSED') => {
     try {
@@ -1194,10 +1286,6 @@ export function ProjectDetailPageContent() {
                       <option value="ABUNDANT">Abondante (5 perspectives)</option>
                       <option value="EXHAUSTIVE">Exhaustive (8 perspectives)</option>
                     </select>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer" title="Affiche toutes les idées brutes en grille 2 colonnes sans filtrage">
-                      <input type="checkbox" checked={brainstormingMode} onChange={e => setBrainstormingMode(e.target.checked)} />
-                      Mode Brainstorming
-                    </label>
                   </div>
                   <div className="flex gap-2 flex-wrap items-center">
                     {selectedLayer === 'FEATURE' && (() => {
@@ -1220,13 +1308,24 @@ export function ProjectDetailPageContent() {
                         </button>
                       );
                     })()}
-                    <button 
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleGenerateProposals}
-                      disabled={isGenerating}
-                    >
-                      {isGenerating ? '⏳ Exploration…' : `✨ Essaimer (${selectedLayer})`}
-                    </button>
+                    {currentLayerProposals.length === 0 ? (
+                      <button 
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => executeGeneration('INITIAL')}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? '⏳ Exploration…' : `✨ Essaimer (${selectedLayer})`}
+                      </button>
+                    ) : (
+                      <button 
+                        className="btn btn-primary btn-sm"
+                        onClick={() => setIsVariationModalOpen(true)}
+                        disabled={isGenerating}
+                        title="Explore de nouvelles propositions pour cette couche en tenant compte de celles déjà générées. Les propositions actuelles sont conservées."
+                      >
+                        {isGenerating ? '⏳ Exploration…' : '✨ Nouvelle variation'}
+                      </button>
+                    )}
                     <button
                       className="btn btn-secondary btn-sm"
                       onClick={() => setIsExportModalOpen(true)}
@@ -1430,11 +1529,11 @@ export function ProjectDetailPageContent() {
                       </div>
                     )}
 
-                    {workshopResult.proposals?.length > 0 && (
+                    {currentLayerProposals.length > 0 && (
                       <div>
                         <div className="flex justify-between items-center mb-2">
                           <h4 className="font-semibold text-lg">
-                            {brainstormingMode ? 'Toutes les Idées (Mode Brainstorming)' : 'Propositions / Interprétations'}
+                            Propositions ({filteredProposals.length})
                           </h4>
                           {selectedProposalIds.size > 0 && (
                             <div className="flex gap-2">
@@ -1444,8 +1543,8 @@ export function ProjectDetailPageContent() {
                             </div>
                           )}
                         </div>
-                        <div className={brainstormingMode ? "grid grid-cols-2 gap-4" : "flex flex-col gap-2"}>
-                          {workshopResult.proposals.map((p: any, idx: number) => {
+                        <div className="grid grid-cols-2 gap-4">
+                          {filteredProposals.map((p: any, idx: number) => {
                             const isSelected = selectedProposalId === p.id;
                             const isChecked = selectedProposalIds.has(p.id);
                             return (
@@ -2574,6 +2673,87 @@ export function ProjectDetailPageContent() {
         projectTitle={project?.name || (project as any)?.title}
         showToast={(msg) => showToast("info", msg)}
       />
+
+      {/* Modal Nouvelle Variation */}
+      {isVariationModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface p-6 rounded-lg max-w-md w-full border border-border shadow-xl space-y-4">
+            <h3 className="text-lg font-bold">Générer une nouvelle variation</h3>
+            <p className="text-sm text-muted">
+              L’IA cherchera de nouvelles propositions différentes de celles déjà générées pour cette couche. Les propositions actuelles seront conservées.
+            </p>
+            <div className="bg-muted p-3 rounded-md text-xs space-y-1">
+              <div><span className="font-semibold">Couche :</span> {selectedLayer}</div>
+              <div><span className="font-semibold">Propositions existantes conservées :</span> {currentLayerProposals.length}</div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Angle à explorer (optionnel)</label>
+              <input
+                type="text"
+                className="input w-full"
+                placeholder="Exemple : simplicité, automatisation, usage hors ligne, accessibilité…"
+                value={userDiversityFocus}
+                onChange={(e) => setUserDiversityFocus(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setIsVariationModalOpen(false);
+                  setUserDiversityFocus("");
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={isGenerating}
+                onClick={() => executeGeneration('VARIATION', userDiversityFocus)}
+              >
+                {isGenerating ? '⏳ Génération…' : '✨ Générer une nouvelle variation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Résumé de Génération */}
+      {generationSummaryModal && generationSummaryModal.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface p-6 rounded-lg max-w-md w-full border border-border shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-green-700 dark:text-green-400">{generationSummaryModal.title}</h3>
+            {generationSummaryModal.addedCount === 0 ? (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded-md text-sm">
+                Aucune proposition suffisamment différente n’a été trouvée. Essayez un angle d’exploration plus précis.
+              </div>
+            ) : (
+              <div className="space-y-2 text-sm">
+                {generationSummaryModal.diversityFocus && (
+                  <div className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 p-2 rounded">
+                    🎯 <strong>Angle d&apos;exploration :</strong> {generationSummaryModal.diversityFocus}
+                  </div>
+                )}
+                <ul className="divide-y divide-border border rounded-md text-xs">
+                  <li className="p-2 flex justify-between"><span>Propositions reçues :</span><span className="font-bold">{generationSummaryModal.receivedCount}</span></li>
+                  <li className="p-2 flex justify-between text-green-700 dark:text-green-400"><span>Nouvelles propositions ajoutées :</span><span className="font-bold">+{generationSummaryModal.addedCount}</span></li>
+                  <li className="p-2 flex justify-between text-amber-700 dark:text-amber-400"><span>Doublons écartés :</span><span className="font-bold">{generationSummaryModal.duplicateCount}</span></li>
+                  <li className="p-2 flex justify-between text-gray-500"><span>Propositions invalides écartées :</span><span className="font-bold">{generationSummaryModal.invalidCount}</span></li>
+                  <li className="p-2 flex justify-between font-bold border-t"><span>Propositions à examiner :</span><span>{generationSummaryModal.toReviewCount}</span></li>
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => setGenerationSummaryModal(null)}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

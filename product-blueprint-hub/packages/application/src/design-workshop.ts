@@ -130,6 +130,83 @@ export interface UpstreamContextPreview {
   hasUpstream: boolean;
 }
 
+export const DIVERGENCE_AXES = [
+  "simplicité d'usage",
+  "automatisation",
+  "personnalisation",
+  "accessibilité",
+  "fonctionnement hors ligne",
+  "réduction des actions répétitives",
+  "prévention des erreurs",
+  "collaboration",
+  "transparence utilisateur",
+  "rapidité",
+  "contrôle utilisateur",
+  "résilience",
+  "usages occasionnels",
+  "usages fréquents",
+  "cas limites",
+  "mutualisation"
+];
+
+function normalizeSimple(text: string): string {
+  return (text || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+export function checkForDuplicateProposal(
+  candidate: { title: string; description?: string; shortPitch?: string; parentId?: string | null; parentProposalIds?: string[] },
+  existingProposals: DesignProposal[]
+): { isDuplicate: boolean; level: 'CERTAIN' | 'PROBABLE' | 'NONE'; reason?: string } {
+  const candTitleNorm = normalizeSimple(candidate.title);
+  const candPitchNorm = candidate.shortPitch ? normalizeSimple(candidate.shortPitch) : candTitleNorm;
+  const candTokens = tokenize(`${candidate.title} ${candidate.description || ''} ${candidate.shortPitch || ''}`);
+  const candTokenSet = new Set(candTokens);
+
+  for (const existing of existingProposals) {
+    const exTitleNorm = normalizeSimple(existing.title);
+    const exPitchNorm = existing.shortPitch ? normalizeSimple(existing.shortPitch) : exTitleNorm;
+    
+    const sameParent = (candidate.parentId && candidate.parentId === existing.parentId) ||
+      (candidate.parentProposalIds && candidate.parentProposalIds.some(p => existing.parentProposalIds?.includes(p as EntityId)));
+
+    // Level 1: Certain Duplicate
+    if (candTitleNorm === exTitleNorm && (sameParent || candidate.parentId === existing.parentId)) {
+      return { isDuplicate: true, level: 'CERTAIN', reason: `Titre identique ("${existing.title}") pour le même parent` };
+    }
+    if (candPitchNorm === exPitchNorm && sameParent) {
+      return { isDuplicate: true, level: 'CERTAIN', reason: `Pitch identique ("${existing.title}") pour le même parent` };
+    }
+    if (candTitleNorm.length > 5 && candTitleNorm === exTitleNorm) {
+      return { isDuplicate: true, level: 'CERTAIN', reason: `Titre identique ("${existing.title}")` };
+    }
+
+    // Level 2: Probable Duplicate
+    const exTokens = tokenize(`${existing.title} ${existing.description || ''} ${existing.shortPitch || ''}`);
+    const exTokenSet = new Set(exTokens);
+
+    if (candTokenSet.size > 0 && exTokenSet.size > 0) {
+      let common = 0;
+      candTokenSet.forEach(t => { if (exTokenSet.has(t)) common++; });
+      const jaccard = common / new Set([...candTokenSet, ...exTokenSet]).size;
+      if (jaccard >= 0.75) {
+        return { isDuplicate: true, level: 'PROBABLE', reason: `Proximité sémantique (${Math.round(jaccard*100)}%) avec "${existing.title}"` };
+      }
+    }
+  }
+
+  return { isDuplicate: false, level: 'NONE' };
+}
+
+export interface GenerateProposalsOptions {
+  generationMode?: 'INITIAL' | 'VARIATION' | 'REPLACEMENT';
+  sourceBatchId?: string | null;
+  userDiversityFocus?: string | null;
+  onLog?: (event: { message: string; category: string; context?: any }) => void;
+}
+
 export class DesignWorkshopUseCases {
   constructor(
     private readonly repos: RepositoryRegistry,
@@ -435,9 +512,10 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
     projectId: EntityId,
     layer: DesignLayer,
     ideationIntensity: 'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE' = 'ABUNDANT',
-    brainstormingMode: boolean = false,
-    onProgress?: (agentId: string, status: "pending" | "running" | "done" | "error") => void
-  ): Promise<any[]> {
+    brainstormingMode: boolean = true, // Conservé pour compatibilité interne
+    onProgress?: (agentId: string, status: "pending" | "running" | "done" | "error") => void,
+    options?: GenerateProposalsOptions
+  ): Promise<any> {
     const LAYER_VOLUMETRY: Record<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE', Record<DesignLayer, { synthesizer: string; perAgent: string }>> = {
       STANDARD: {
         INTENTION:  { synthesizer: '1 à 3', perAgent: '2' },
@@ -466,13 +544,96 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
     };
 
     const vol = LAYER_VOLUMETRY[ideationIntensity]?.[layer] || LAYER_VOLUMETRY.ABUNDANT[layer];
-    const brainstormFlag = brainstormingMode ? "ON" : "OFF";
+    // Mode brainstorming unique permanent
+    void brainstormingMode; // Conservé pour compatibilité interne
+    const brainstormFlag = "ON";
+    let duplicateCount = 0;
     
     const ancestryContext = await this.buildAncestryContext(projectId, layer);
     const directParentContext = await this.buildDirectParentContext(projectId, layer);
     
     const existingLayerProps = await this.repos.designProposals.getByLayer(projectId, layer);
-    const existingSameLayerJson = JSON.stringify(existingLayerProps.map(p => ({ id: p.id, title: p.title, status: p.status })));
+    
+    // Batch identification & computation
+    const existingBatchIds = Array.from(new Set(existingLayerProps.map(p => p.generationBatchId).filter(Boolean)));
+    const variationIndex = existingBatchIds.length;
+    
+    let mode: 'INITIAL' | 'VARIATION' | 'REPLACEMENT' = options?.generationMode || (existingLayerProps.length === 0 ? 'INITIAL' : 'VARIATION');
+    const sourceBatchId = options?.sourceBatchId || null;
+    const generationBatchId = `batch-${layer.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const generatedAt = new Date().toISOString();
+
+    let diversityFocus = options?.userDiversityFocus || null;
+    if (!diversityFocus && mode !== 'INITIAL') {
+      diversityFocus = DIVERGENCE_AXES[variationIndex % DIVERGENCE_AXES.length];
+    }
+
+    let removedProposalCount = 0;
+    let protectedProposalCount = 0;
+
+    // Handle REPLACEMENT mode
+    if (mode === 'REPLACEMENT' && sourceBatchId) {
+      options?.onLog?.({
+        message: "GENERATION_BATCH_REPLACEMENT_STARTED",
+        category: "GENERATION",
+        context: { projectId, layer, generationBatchId, sourceBatchId, generationMode: mode, variationIndex, diversityFocus }
+      });
+
+      const batchProposals = existingLayerProps.filter(p => p.generationBatchId === sourceBatchId);
+      for (const p of batchProposals) {
+        const isProtected = p.status === 'ACCEPTED' || p.status === 'REJECTED' || p.status === 'DEFERRED' || p.decidedAt != null || p.generationBatchId == null;
+        if (isProtected) {
+          protectedProposalCount++;
+        } else {
+          await this.repos.designProposals.delete(p.id);
+          removedProposalCount++;
+        }
+      }
+
+      options?.onLog?.({
+        message: "GENERATION_BATCH_REPLACEMENT_COMPLETED",
+        category: "GENERATION",
+        context: { projectId, layer, generationBatchId, sourceBatchId, protectedProposalCount, removedProposalCount }
+      });
+    }
+
+    const currentPropsForAvoid = mode === 'REPLACEMENT' 
+      ? await this.repos.designProposals.getByLayer(projectId, layer)
+      : existingLayerProps;
+
+    const existingProposalsToAvoidJson = JSON.stringify(currentPropsForAvoid.map(p => ({
+      id: p.id,
+      title: p.title,
+      shortPitch: p.shortPitch || p.title,
+      description: p.description,
+      status: p.status,
+      parentId: p.parentId,
+      generationBatchId: p.generationBatchId || null
+    })));
+
+    const startLogMessage = mode === 'INITIAL' ? 'GENERATION_INITIAL_STARTED' : 'VARIATION_STARTED';
+    options?.onLog?.({
+      message: startLogMessage,
+      category: "GENERATION",
+      context: {
+        projectId,
+        layer,
+        generationBatchId,
+        sourceBatchId,
+        generationMode: mode,
+        variationIndex,
+        diversityFocus,
+        existingProposalCount: currentPropsForAvoid.length
+      }
+    });
+
+    options?.onLog?.({
+      message: "VARIATION_CONTEXT_BUILT",
+      category: "GENERATION",
+      context: { projectId, layer, generationBatchId, variationIndex, diversityFocus, avoidCount: currentPropsForAvoid.length }
+    });
+
+    const existingSameLayerJson = existingProposalsToAvoidJson;
     
     const allProjectProps = await this.repos.designProposals.getByProjectId(projectId);
     const deferredItems = allProjectProps.filter(p => p.status === 'DEFERRED').map(p => ({ id: p.id, title: p.title, layer: p.layer }));
@@ -576,6 +737,9 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
         .replace(/{{ANCESTRY_CONTEXT_JSON}}/g, ancestryContext)
         .replace(/{{DIRECT_PARENT_CONTEXT_JSON}}/g, directParentContext)
         .replace(/{{CURRENT_LAYER_PROPOSALS_JSON}}/g, existingSameLayerJson)
+        .replace(/{{EXISTING_PROPOSALS_TO_AVOID}}/g, existingSameLayerJson)
+        .replace(/{{VARIATION_INDEX}}/g, String(variationIndex))
+        .replace(/{{USER_DIVERSITY_FOCUS}}/g, diversityFocus || "N/A")
         .replace(/{{EXISTING_DOWNSTREAM_CONTEXT_JSON}}/g, "[]")
         .replace(/{{LAYER_CONTRACT}}/g, `Couche : ${layer}. Produire des propositions d'une densité et granularité propres à la couche.`)
         .replace(/{{CURRENT_LAYER}}/g, layer)
@@ -601,9 +765,13 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
 
       const userPrompt = hydratePrompt(promptTpl.userPromptTemplate, agentData);
 
+      const diversificationInstruction = (mode !== 'INITIAL')
+        ? `\n\n### CONSIGNE DE DIVERSIFICATION OBLIGATOIRE\nProduis une nouvelle variation réellement distincte des propositions existantes.\nChaque nouvelle proposition doit apporter au moins un élément substantiellement nouveau.\nUne reformulation, un synonyme ou un changement de priorité ne constitue pas une nouvelle proposition.` + (diversityFocus ? ` (Angle d'exploration : ${diversityFocus})` : '')
+        : '';
+
       const req = {
         prompt: userPrompt,
-        systemPrompt: promptTpl.systemPrompt + `\nTa perspective : ${agentData.perspective}`,
+        systemPrompt: promptTpl.systemPrompt + `\nTa perspective : ${agentData.perspective}` + diversificationInstruction,
         tier: "SOL" as any, 
         maxTokens: 4000,
         correlationId: `workshop-${projectId}-${layer}-${agentData.runId}`,
@@ -723,13 +891,37 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
           ? { parentId: null, lineage: [], linkSource: null, linkConfidence: null }
           : resolveProposalLinks(p as ParsedProposal, directParentsFlat);
 
-        // Filtrer les dependencyIds (qui peuvent venir de toute l'ascendance) et parentProposalIds (parents directs uniquement)
+        // Filtrer les dependencyIds et parentProposalIds
         const safeDependencyIds = (p.dependencies ?? []).filter((id: string) => validAncestryIds.has(id as EntityId));
         const safeParentProposalIds = (p.parentProposalIds || p.relatedProposalIds || [])
           .filter((id: string) => validDirectIds.has(id as EntityId) && id !== links.parentId);
         
         if (links.parentId && !safeParentProposalIds.includes(links.parentId)) {
           safeParentProposalIds.unshift(links.parentId);
+        }
+
+        // Détection des doublons avant persistance
+        const dupCheck = checkForDuplicateProposal(
+          { title: p.title, description: p.description, shortPitch: p.shortPitch, parentId: links.parentId as any, parentProposalIds: safeParentProposalIds as any },
+          [...currentPropsForAvoid, ...persistedProposals]
+        );
+
+        if (dupCheck.isDuplicate) {
+          duplicateCount++;
+          const dupLogMsg = dupCheck.level === 'CERTAIN' ? 'PROPOSAL_DUPLICATE_REJECTED' : 'PROPOSAL_PROBABLE_DUPLICATE_REJECTED';
+          options?.onLog?.({
+            message: dupLogMsg,
+            category: "VALIDATION",
+            context: {
+              projectId,
+              layer,
+              generationBatchId,
+              title: p.title,
+              level: dupCheck.level,
+              reason: dupCheck.reason
+            }
+          });
+          continue;
         }
 
         const dp = createDesignProposal({
@@ -760,7 +952,14 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
           alternatives: [],
           risks: [],
           parentProposalIds: safeParentProposalIds,
-          layerData: p.specificData || undefined
+          layerData: p.specificData || undefined,
+          generationBatchId,
+          generatedAt,
+          generationMode: mode,
+          variationIndex,
+          sourceBatchId,
+          userDiversityFocus: diversityFocus,
+          originOperationId: `op-${generationBatchId}`
         });
         await this.repos.designProposals.save(dp);
         persistedProposals.push(dp);
@@ -771,11 +970,62 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
       diagnostic.linkedCount = persistedProposals.filter(p => p.parentId).length;
       diagnostic.autoMatchedCount = persistedProposals.filter(p => p.linkSource === 'AUTO_MATCHED').length;
       diagnostic.aiLinkedCount = persistedProposals.filter(p => p.linkSource === 'AI').length;
+
+      options?.onLog?.({
+        message: "GENERATION_BATCH_CREATED",
+        category: "PERSISTENCE",
+        context: {
+          projectId,
+          layer,
+          generationBatchId,
+          sourceBatchId,
+          generationMode: mode,
+          variationIndex,
+          diversityFocus,
+          proposalCount: persistedProposals.length,
+          duplicateCount,
+          removedProposalCount,
+          protectedProposalCount,
+        }
+      });
+
+      const endLogMessage = mode === 'INITIAL' ? 'GENERATION_INITIAL_COMPLETED' : 'VARIATION_COMPLETED';
+      options?.onLog?.({
+        message: endLogMessage,
+        category: "GENERATION",
+        context: {
+          projectId,
+          layer,
+          generationBatchId,
+          sourceBatchId,
+          generationMode: mode,
+          variationIndex,
+          diversityFocus,
+          receivedCount: parsedResult?.proposals?.length || 0,
+          persistedCount: persistedProposals.length,
+          duplicateCount,
+        }
+      });
     }
+
+    diagnostic.generationBatchId = generationBatchId;
+    diagnostic.generationMode = mode;
+    diagnostic.variationIndex = variationIndex;
+    diagnostic.userDiversityFocus = diversityFocus;
+    diagnostic.receivedCount = parsedResult?.proposals?.length || 0;
+    diagnostic.addedCount = persistedProposals.length;
+    diagnostic.duplicateCount = duplicateCount;
 
     return {
       ...parsedResult,
-      proposals: parsedResult.proposals, // Use the one with updated IDs
+      proposals: persistedProposals,
+      generationBatchId,
+      generationMode: mode,
+      variationIndex,
+      userDiversityFocus: diversityFocus,
+      receivedCount: parsedResult?.proposals?.length || 0,
+      addedCount: persistedProposals.length,
+      duplicateCount,
       diagnostic
     };
   }
@@ -1345,7 +1595,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     impactScope: string[];
     reviewState: string;
     warnings: string[];
-    stepUsages: Array<{ journeyId: EntityId; stepNumber: number; stepAction: string }>;
+    stepUsages: { journeyId: EntityId; stepNumber: number; stepAction: string }[];
   }> {
     const proposal = await this.repos.designProposals.getById(proposalId);
     if (!proposal) throw new Error("Proposition introuvable");
@@ -1363,7 +1613,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     const directChildren = allProps.filter(p => p.parentId === proposalId || (p.parentProposalIds || []).includes(proposalId));
     const directChildIds = directChildren.map(c => c.id);
 
-    const stepUsages: Array<{ journeyId: EntityId; stepNumber: number; stepAction: string }> = [];
+    const stepUsages: { journeyId: EntityId; stepNumber: number; stepAction: string }[] = [];
     allProps.filter(p => p.layer === 'JOURNEY').forEach(j => {
       const jData = j.layerData as any;
       const steps = Array.isArray(jData?.steps) ? jData.steps : [];

@@ -12,7 +12,8 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@pbh/domain": "*"
+    "@pbh/domain": "*",
+    "@pbh/application": "*"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

@@ -184,6 +184,14 @@ export interface DesignProposal extends BaseEntity, Owned {
   readonly linkConfidence?: number | null;
   // Données spécialisées par couche
   readonly layerData?: IntentionLayerData | HypothesisLayerData | CapabilityLayerData | FeatureLayerData | JourneyLayerData | ScreenLayerData;
+  // Métadonnées de lot de génération
+  readonly generationBatchId?: string | null;
+  readonly generatedAt?: string | null;
+  readonly generationMode?: 'INITIAL' | 'VARIATION' | 'REPLACEMENT' | null;
+  readonly variationIndex?: number | null;
+  readonly sourceBatchId?: string | null;
+  readonly userDiversityFocus?: string | null;
+  readonly originOperationId?: string | null;
 }
 
 export function createDesignProposal(params: Omit<DesignProposal, 'id' | 'version' | 'createdAt' | 'updatedAt'>): DesignProposal {

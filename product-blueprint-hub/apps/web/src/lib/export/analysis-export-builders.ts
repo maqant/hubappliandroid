@@ -272,6 +272,33 @@ export function buildDiagnosticTechniqueJson(ctx: ExportBuildContext): any {
   const stats = calculateStats(ctx.proposals, ctx.paths);
   const orphans = ctx.proposals.filter((p) => p.layer !== "INTENTION" && !p.parentId && (!p.parentProposalIds || p.parentProposalIds.length === 0));
 
+  const batchMap = new Map<string, any>();
+  (ctx.proposals || []).forEach((p) => {
+    if (p.generationBatchId) {
+      if (!batchMap.has(p.generationBatchId)) {
+        batchMap.set(p.generationBatchId, {
+          generationBatchId: p.generationBatchId,
+          layer: p.layer,
+          generationMode: p.generationMode || 'INITIAL',
+          variationIndex: p.variationIndex ?? 0,
+          sourceBatchId: p.sourceBatchId || null,
+          diversityFocus: p.userDiversityFocus || null,
+          proposalCount: 0,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          deferredCount: 0,
+          replacedCount: 0,
+          createdAt: p.generatedAt || p.createdAt || new Date().toISOString(),
+        });
+      }
+      const b = batchMap.get(p.generationBatchId);
+      b.proposalCount++;
+      if (p.status === "ACCEPTED") b.acceptedCount++;
+      if (p.status === "REJECTED") b.rejectedCount++;
+      if (p.status === "DEFERRED") b.deferredCount++;
+    }
+  });
+
   return {
     applicationVersion: ctx.appVersion,
     exportedAt: new Date().toISOString(),
@@ -283,6 +310,7 @@ export function buildDiagnosticTechniqueJson(ctx: ExportBuildContext): any {
     },
     activePrompts: ctx.activePrompts || [],
     generationStatistics: stats,
+    generationBatches: Array.from(batchMap.values()),
     warnings: ctx.hasMapImage ? [] : ["PNG_CAPTURE_FAILED"],
     errors: ctx.mapImageError ? [ctx.mapImageError] : [],
     orphanNodes: orphans.map((o) => ({ id: o.id, title: o.title, layer: o.layer })),
