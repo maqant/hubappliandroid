@@ -113,8 +113,6 @@ export function ProjectDetailPageContent() {
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
   const [, setPersistedProposals] = useState<DesignProposal[]>([]);
   const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
-  const [userFeedbackText, setUserFeedbackText] = useState("");
-  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [featurePaths, setFeaturePaths] = useState<import("@pbh/domain").FeaturePath[]>([]);
   const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
@@ -582,30 +580,6 @@ export function ProjectDetailPageContent() {
       setFeaturePaths(updatedPaths);
     } catch (e: any) {
       showToast("error", e.message || String(e));
-    }
-  };
-
-  const handleSubmitFeedback = async () => {
-    if (!selectedProposalId || !userFeedbackText.trim() || isSubmittingFeedback) return;
-    setIsSubmittingFeedback(true);
-    try {
-      const updated = await svc.designWorkshop.submitUserFeedback(selectedProposalId as EntityId, userFeedbackText.trim());
-      setWorkshopResult((prev: any) => {
-        if (!prev?.proposals) return prev;
-        return {
-          ...prev,
-          proposals: prev.proposals.map((p: any) =>
-            p.id === selectedProposalId ? { ...p, justification: updated.rationale } : p
-          ),
-        };
-      });
-      setUserFeedbackText("");
-      showToast("success", "Votre critique a été enregistrée et intégrée à la proposition !");
-    } catch (e: any) {
-      showToast("error", e.message || String(e));
-    } finally {
-      setIsSubmittingFeedback(false);
-    }
   };
 
   const runMission = async () => {
