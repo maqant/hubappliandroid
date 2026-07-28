@@ -46,11 +46,16 @@ import { createLocalRepositoryRegistry, seedPrompts } from "@pbh/repositories";
 import { FakeModelProvider, ModelGateway, RemoteOpenAIProvider } from "@pbh/model-gateway";
 import { createContext, useContext, useMemo } from "react";
 
+import { analysisLogCollector } from "./lib/export/analysis-log-collector";
+
 // ============================================
 // Initialize services (singleton)
 // ============================================
 
 function createServices() {
+  if (typeof window !== "undefined") {
+    analysisLogCollector.init();
+  }
   const repos = createLocalRepositoryRegistry();
   
   // Seed initial prompts asynchronously

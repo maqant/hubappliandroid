@@ -23,6 +23,7 @@ import {
   type UpstreamContextPreview,
 } from "@/services";
 import { useTranslation } from "@/i18n";
+import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 
 type TabId =
   | "sources"
@@ -133,6 +134,7 @@ export function ProjectDetailPageContent() {
   const [correctionText, setCorrectionText] = useState<Record<string, string>>({});
   const [resolveRationale, setResolveRationale] = useState("");
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const showToast = (type: string, message: string) => {
     setToast({ type, message });
@@ -1217,6 +1219,13 @@ export function ProjectDetailPageContent() {
                       disabled={isGenerating}
                     >
                       {isGenerating ? '⏳ Exploration…' : `✨ Essaimer (${selectedLayer})`}
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setIsExportModalOpen(true)}
+                      title="Télécharge la conception, les paths, la cartographie et les diagnostics dans un fichier ZIP."
+                    >
+                      📦 Exporter pour analyse
                     </button>
                   </div>
                   {deferredCount > 0 && (
@@ -2549,6 +2558,15 @@ export function ProjectDetailPageContent() {
           <div className={`toast toast-${toast.type}`}>{toast.message}</div>
         </div>
       )}
+
+      {/* Export Modal */}
+      <ExportAnalysisModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        projectId={projectId as EntityId}
+        projectTitle={project?.name || (project as any)?.title}
+        showToast={(msg) => showToast("info", msg)}
+      />
     </>
   );
 }

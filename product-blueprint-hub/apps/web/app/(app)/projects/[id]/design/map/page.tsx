@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactFlow, { 
   Background, 
@@ -23,6 +23,8 @@ import {
   type FeaturePath,
   projectFeaturePathsToVisualNodes
 } from "@/services";
+import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
+import { exportMapImageOnly } from "@/lib/export/analysis-export";
 
 type ProjectionMode = 'EXPERIENCE_PATHS' | 'STRATEGIC_MAP' | 'GLOBAL_GRAPH';
 
@@ -64,6 +66,11 @@ export default function DesignMapPage() {
   const [showOrphans, setShowOrphans] = useState(true);
   const [isolatedPathId, setIsolatedPathId] = useState<string | null>(null);
 
+  // Export & Canvas Ref
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [project, setProject] = useState<any>(null);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 6000);
@@ -72,6 +79,9 @@ export default function DesignMapPage() {
   const loadGraphData = useCallback(async () => {
     setIsLoading(true);
     try {
+      const p = await svc.repos.projects.getById(projectId as EntityId);
+      setProject(p);
+
       const proposals = await svc.repos.designProposals.getByProjectId(projectId as EntityId);
       setAllProposals(proposals);
 
@@ -561,13 +571,35 @@ export default function DesignMapPage() {
           <button className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-md font-medium" onClick={loadGraphData}>
             🔄 Rafraîchir
           </button>
+          <button
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium flex items-center gap-1.5"
+            onClick={() => setIsExportModalOpen(true)}
+            title="Télécharge la conception, les paths, la cartographie et les diagnostics dans un fichier ZIP."
+          >
+            📦 Exporter pour analyse
+          </button>
+          <button
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-md font-medium"
+            onClick={async () => {
+              showToast("🖼️ Génération de l'image de la cartographie...");
+              const res = await exportMapImageOnly(project?.title, () => canvasRef.current);
+              if (res.success) {
+                showToast(`✅ Image téléchargée : ${res.fileName}`);
+              } else {
+                showToast(`❌ Échec de la capture : ${res.error}`);
+              }
+            }}
+            title="Télécharge uniquement l'image complète de la cartographie"
+          >
+            🖼️ Télécharger l&apos;image
+          </button>
         </div>
       </div>
 
       {/* Main Canvas & Details Side Panels */}
       <div className="flex-1 flex relative overflow-hidden">
         {/* ReactFlow Canvas Workspace */}
-        <div className="flex-1 relative" style={{ height: 'calc(100vh - 120px)' }}>
+        <div className="flex-1 relative" ref={canvasRef} style={{ height: 'calc(100vh - 120px)' }}>
           {isLoading ? (
             <div className="flex items-center justify-center h-full text-slate-500">
               <span>Chargement des Paths d&apos;Expérience...</span>
@@ -805,6 +837,16 @@ export default function DesignMapPage() {
           </div>
         )}
       </div>
+
+      {/* Export Modal */}
+      <ExportAnalysisModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        projectId={projectId as EntityId}
+        projectTitle={project?.title}
+        getMapElement={() => canvasRef.current}
+        showToast={(msg) => showToast(msg)}
+      />
     </div>
   );
 }
