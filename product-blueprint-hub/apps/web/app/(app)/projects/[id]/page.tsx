@@ -88,6 +88,7 @@ export function ProjectDetailPageContent() {
   
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [workshopResult, setWorkshopResult] = useState<any>(null);
+  const [selectedLayer, setSelectedLayer] = useState<DesignLayer>("INTENTION");
   const [layerAgentStatuses, setLayerAgentStatuses] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -363,6 +364,7 @@ export function ProjectDetailPageContent() {
         projectId as EntityId,
         selectedLayer,
         ideationIntensity,
+        brainstormingMode,
         (agentId, status) => {
           updateAgentStatus(selectedLayer, agentId, status);
         }
@@ -437,6 +439,7 @@ export function ProjectDetailPageContent() {
           projectId as EntityId,
           layer,
           ideationIntensity,
+          brainstormingMode,
           (agentId, status) => {
             updateAgentStatus(layer, agentId, status);
           }

@@ -15,12 +15,59 @@ export class DesignWorkshopUseCases {
     return this.repos.designProposals.getByLayer(projectId, layer);
   }
 
+  private async buildUpstreamContext(projectId: EntityId, layer: DesignLayer): Promise<string> {
+    const UPSTREAM_LAYERS: Record<DesignLayer, DesignLayer[]> = {
+      INTENTION:  [],
+      HYPOTHESIS: ['INTENTION'],
+      CAPABILITY: ['INTENTION', 'HYPOTHESIS'],
+      FEATURE:    ['CAPABILITY'],
+      JOURNEY:    ['FEATURE'],
+      SCREEN:     ['JOURNEY', 'FEATURE'],
+    };
+
+    const upstream = UPSTREAM_LAYERS[layer] || [];
+    if (upstream.length === 0) {
+      return "N/A — Couche initiale. Dérivez vos propositions à partir des éléments de brief confirmés.";
+    }
+
+    const sections: Record<string, any[]> = {};
+    for (const upLayer of upstream) {
+      const proposals = await this.repos.designProposals.getByLayer(projectId, upLayer);
+      const validProposals = proposals.filter((p) => p.status === "ACCEPTED" || p.status === "PROPOSED");
+      if (validProposals.length > 0) {
+        sections[upLayer] = validProposals.slice(0, 20).map((p) => ({
+          id: p.id,
+          title: p.title,
+          summary: p.description.length > 220 ? p.description.slice(0, 220) + "..." : p.description,
+          category: p.category || p.originPerspective,
+        }));
+      }
+    }
+
+    if (Object.keys(sections).length === 0) {
+      return "AUCUNE PROPOSITION AMONT VALIDÉE. Fallback : dérivez vos propositions des éléments confirmés du brief, en respectant STRICTEMENT la nature de la couche " + layer + ".";
+    }
+
+    return JSON.stringify(sections, null, 2);
+  }
+
   async generateProposals(
     projectId: EntityId,
     layer: DesignLayer,
     ideationIntensity: 'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE' = 'ABUNDANT',
+    brainstormingMode: boolean = false,
     onProgress?: (agentId: string, status: "pending" | "running" | "done" | "error") => void
   ): Promise<any[]> {
+    const VOLUMETRY: Record<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE', { synthesizer: string; perAgent: string }> = {
+      STANDARD:   { synthesizer: '4 à 6',   perAgent: '2 à 3' },
+      ABUNDANT:   { synthesizer: '8 à 10',  perAgent: '3 à 4' },
+      EXHAUSTIVE: { synthesizer: '12 à 16', perAgent: '4 à 5' },
+    };
+
+    const vol = VOLUMETRY[ideationIntensity] || VOLUMETRY.ABUNDANT;
+    const brainstormFlag = brainstormingMode ? "ON" : "OFF";
+    const upstreamContext = await this.buildUpstreamContext(projectId, layer);
+
     // 1. Déterminer les agents à appeler selon la couche
     let baseAgents: string[] = [];
     if (layer === "INTENTION") baseAgents = ["WORKSHOP-INTENT"];
@@ -132,10 +179,12 @@ export class DesignWorkshopUseCases {
         .replace(/{{SOURCE_TEXT}}/g, project?.ideaText || "")
         .replace(/{{CONFIRMED_ITEMS_JSON}}/g, JSON.stringify(confirmedItems.map(i => i.statement)))
         .replace(/{{CURRENT_LAYER}}/g, layer)
-        .replace(/{{UPSTREAM_OUTPUTS_JSON}}/g, "N/A") // First layer
+        .replace(/{{UPSTREAM_OUTPUTS_JSON}}/g, upstreamContext)
         .replace(/{{OUTPUT_SCHEMA_JSON}}/g, OUTPUT_SCHEMA_JSON)
         .replace(/{{IDEATION_PERSPECTIVE}}/g, agentData.perspective)
         .replace(/{{IDEATION_INTENSITY}}/g, ideationIntensity)
+        .replace(/{{BRAINSTORMING_MODE}}/g, brainstormFlag)
+        .replace(/{{TARGET_PROPOSAL_COUNT}}/g, vol.perAgent)
         .replace(/{{[A-Z_]+}}/g, "N/A"); 
 
       const req = {
@@ -184,6 +233,8 @@ export class DesignWorkshopUseCases {
         .replace(/{{OUTPUT_SCHEMA_JSON}}/g, OUTPUT_SCHEMA_JSON)
         .replace(/{{IDEATION_PERSPECTIVE}}/g, agentData.perspective)
         .replace(/{{IDEATION_INTENSITY}}/g, ideationIntensity)
+        .replace(/{{BRAINSTORMING_MODE}}/g, brainstormFlag)
+        .replace(/{{TARGET_PROPOSAL_COUNT}}/g, vol.synthesizer)
         .replace(/{{[A-Z_]+}}/g, "N/A");
 
       if (agentData.runId === agentsToCall[agentsToCall.length - 1].runId) {

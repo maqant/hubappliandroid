@@ -25,3 +25,13 @@ export function createPromptTemplate(params: Omit<PromptTemplate, "id" | "versio
     updatedAt: now,
   };
 }
+
+export const WORKSHOP_PROMPT_VARIABLES = [
+  "PROJECT_BRIEF",
+  "LAYER_NAME",
+  "CONFIRMED_ITEMS_JSON",
+  "UPSTREAM_OUTPUTS_JSON",
+  "IDEATION_INTENSITY",
+  "BRAINSTORMING_MODE",
+  "TARGET_PROPOSAL_COUNT",
+] as const;
