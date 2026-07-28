@@ -15,12 +15,12 @@ export interface PromptTemplate extends Timestamped, Versioned {
   changelog?: string;
 }
 
-export function createPromptTemplate(params: Omit<PromptTemplate, "id" | "version" | "createdAt" | "updatedAt">): PromptTemplate {
+export function createPromptTemplate(params: Omit<PromptTemplate, "id" | "version" | "createdAt" | "updatedAt"> & { version?: number }): PromptTemplate {
   const now = new Date().toISOString();
   return {
     ...params,
     id: createId(),
-    version: 1,
+    version: params.version ?? 1,
     createdAt: now,
     updatedAt: now,
   };

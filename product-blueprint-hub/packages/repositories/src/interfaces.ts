@@ -132,10 +132,21 @@ export interface IUserRepository extends IRepository<User> {
   getByEmail(email: string): Promise<User | null>;
 }
 
+export interface PromptDiagnostic {
+  agentId: string;
+  promptId: string;
+  version: number;
+  source: 'DEFAULT' | 'MIGRATED' | 'USER_OVERRIDE';
+  length: number;
+  enabled: boolean;
+  systemPromptSnippet?: string;
+}
+
 export interface IPromptRepository extends IRepository<PromptTemplate> {
   getByAgentId(agentId: string): Promise<PromptTemplate[]>;
   getByPromptIdAndVersion(promptId: string, version: number): Promise<PromptTemplate | null>;
   getActivePrompt(agentId: string): Promise<PromptTemplate | null>;
+  getPromptDiagnostic(agentId: string): Promise<PromptDiagnostic | null>;
 }
 
 // ============================================

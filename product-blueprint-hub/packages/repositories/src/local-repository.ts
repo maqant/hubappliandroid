@@ -361,14 +361,37 @@ class LocalPromptRepository extends LocalRepo<PromptTemplate> implements IPrompt
   }
 
   async getActivePrompt(agentId: string): Promise<PromptTemplate | null> {
-    // Retours le prompt actif avec la plus haute version
+    // Retourne le prompt actif avec la plus haute version (en priorité USER_OVERRIDE puis version système)
     let all = await this.filter((p) => p.agentId === agentId && p.enabled);
     if (all.length === 0) {
       all = DEFAULT_PROMPTS.filter((p) => p.agentId === agentId && p.enabled);
     }
     if (all.length === 0) return null;
-    all.sort((a, b) => b.version - a.version);
+    all.sort((a, b) => {
+      // USER_OVERRIDE a la priorité absolue
+      if (a.changelog === 'USER_OVERRIDE' && b.changelog !== 'USER_OVERRIDE') return -1;
+      if (b.changelog === 'USER_OVERRIDE' && a.changelog !== 'USER_OVERRIDE') return 1;
+      return b.version - a.version;
+    });
     return all[0];
+  }
+
+  async getPromptDiagnostic(agentId: string): Promise<import("./interfaces").PromptDiagnostic | null> {
+    const active = await this.getActivePrompt(agentId);
+    if (!active) return null;
+    
+    const isUserOverride = active.changelog === 'USER_OVERRIDE';
+    const isDefault = DEFAULT_PROMPTS.some(d => d.id === active.id);
+    
+    return {
+      agentId: active.agentId,
+      promptId: active.promptId,
+      version: active.version,
+      source: isUserOverride ? 'USER_OVERRIDE' : isDefault ? 'DEFAULT' : 'MIGRATED',
+      length: (active.systemPrompt?.length || 0) + (active.userPromptTemplate?.length || 0),
+      enabled: active.enabled,
+      systemPromptSnippet: active.systemPrompt.slice(0, 150) + '...',
+    };
   }
 }
 

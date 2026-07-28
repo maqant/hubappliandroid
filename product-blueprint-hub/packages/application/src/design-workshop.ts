@@ -140,52 +140,101 @@ export class DesignWorkshopUseCases {
     return this.repos.designProposals.getByLayer(projectId, layer);
   }
 
-  // Source unique de vérité du contexte amont (utilisée par buildUpstreamContext ET getUpstreamContextPreview)
-  private async selectUpstreamProposals(
-    projectId: EntityId,
-    layer: DesignLayer
-  ): Promise<{ layer: DesignLayer; proposals: DesignProposal[] }[]> {
-    const UPSTREAM_LAYERS: Record<DesignLayer, DesignLayer[]> = {
-      INTENTION:  [],
-      HYPOTHESIS: ['INTENTION'],
-      CAPABILITY: ['INTENTION', 'HYPOTHESIS'],
-      FEATURE:    ['CAPABILITY'],
-      JOURNEY:    ['FEATURE'],
-      SCREEN:     ['JOURNEY', 'FEATURE'],
-    };
-    const upstream = UPSTREAM_LAYERS[layer] || [];
-    const result: { layer: DesignLayer; proposals: DesignProposal[] }[] = [];
-    for (const upLayer of upstream) {
-      const proposals = await this.repos.designProposals.getByLayer(projectId, upLayer);
-      const valid = proposals
-        .filter(p => p.status === 'ACCEPTED' || p.status === 'PROPOSED')
-        .slice(0, 20);
-      if (valid.length > 0) {
-        result.push({ layer: upLayer, proposals: valid });
-      }
+// Selection des parents directs autorisés par couche (Règle B du contrat)
+private async selectDirectParents(
+  projectId: EntityId,
+  layer: DesignLayer
+): Promise<{ layer: DesignLayer; proposals: DesignProposal[] }[]> {
+  const DIRECT_PARENT_LAYERS: Record<DesignLayer, DesignLayer[]> = {
+    INTENTION:  [],
+    HYPOTHESIS: ['INTENTION'],
+    CAPABILITY: ['INTENTION', 'HYPOTHESIS'],
+    FEATURE:    ['CAPABILITY'],
+    JOURNEY:    ['FEATURE'],
+    SCREEN:     ['JOURNEY'],
+  };
+  const upstream = DIRECT_PARENT_LAYERS[layer] || [];
+  const result: { layer: DesignLayer; proposals: DesignProposal[] }[] = [];
+  for (const upLayer of upstream) {
+    const proposals = await this.repos.designProposals.getByLayer(projectId, upLayer);
+    const valid = proposals
+      .filter(p => p.status === 'ACCEPTED' || p.status === 'PROPOSED')
+      .slice(0, 30);
+    if (valid.length > 0) {
+      result.push({ layer: upLayer, proposals: valid });
     }
-    return result;
   }
+  return result;
+}
 
-  private async buildUpstreamContext(projectId: EntityId, layer: DesignLayer): Promise<string> {
-    const groups = await this.selectUpstreamProposals(projectId, layer);
-    if (groups.length === 0) {
-      if (layer === 'INTENTION') {
-        return "N/A — Couche initiale. Dérivez vos propositions à partir des éléments de brief confirmés.";
-      }
-      return "AUCUNE PROPOSITION AMONT VALIDÉE. Fallback : dérivez vos propositions des éléments confirmés du brief, en respectant STRICTEMENT la nature de la couche " + layer + ".";
+// Selection de toute l'ascendance (Règle A du contrat)
+private async selectAncestryProposals(
+  projectId: EntityId,
+  layer: DesignLayer
+): Promise<{ layer: DesignLayer; proposals: DesignProposal[] }[]> {
+  const ANCESTRY_LAYERS: Record<DesignLayer, DesignLayer[]> = {
+    INTENTION:  [],
+    HYPOTHESIS: ['INTENTION'],
+    CAPABILITY: ['INTENTION', 'HYPOTHESIS'],
+    FEATURE:    ['INTENTION', 'HYPOTHESIS', 'CAPABILITY'],
+    JOURNEY:    ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE'],
+    SCREEN:     ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY'],
+  };
+  const upstream = ANCESTRY_LAYERS[layer] || [];
+  const result: { layer: DesignLayer; proposals: DesignProposal[] }[] = [];
+  for (const upLayer of upstream) {
+    const proposals = await this.repos.designProposals.getByLayer(projectId, upLayer);
+    const valid = proposals
+      .filter(p => p.status === 'ACCEPTED' || p.status === 'PROPOSED')
+      .slice(0, 30);
+    if (valid.length > 0) {
+      result.push({ layer: upLayer, proposals: valid });
     }
-    const sections: Record<string, any[]> = {};
-    for (const { layer: upLayer, proposals } of groups) {
-      sections[upLayer] = proposals.map(p => ({
-        id: p.id,
-        title: p.title,
-        summary: p.description.length > 220 ? p.description.slice(0, 220) + '...' : p.description,
-        category: p.category || p.originPerspective,
-      }));
-    }
-    return JSON.stringify(sections, null, 2);
   }
+  return result;
+}
+
+private async buildDirectParentContext(projectId: EntityId, layer: DesignLayer): Promise<string> {
+  const groups = await this.selectDirectParents(projectId, layer);
+  if (groups.length === 0) {
+    if (layer === 'INTENTION') {
+      return "Aucun (couche racine).";
+    }
+    return "AUCUN PARENT DIRECT TROUVÉ.";
+  }
+  const sections: Record<string, any[]> = {};
+  for (const { layer: upLayer, proposals } of groups) {
+    sections[upLayer] = proposals.map(p => ({
+      id: p.id,
+      title: p.title,
+      summary: p.description.length > 220 ? p.description.slice(0, 220) + '...' : p.description,
+      category: p.category || p.originPerspective,
+    }));
+  }
+  return JSON.stringify(sections, null, 2);
+}
+
+private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Promise<string> {
+  const groups = await this.selectAncestryProposals(projectId, layer);
+  if (groups.length === 0) {
+    return "Aucune ascendance spécifique.";
+  }
+  const sections: Record<string, any[]> = {};
+  for (const { layer: upLayer, proposals } of groups) {
+    sections[upLayer] = proposals.map(p => ({
+      id: p.id,
+      title: p.title,
+      summary: p.description.length > 150 ? p.description.slice(0, 150) + '...' : p.description,
+    }));
+  }
+  return JSON.stringify(sections, null, 2);
+}
+
+async getPromptDiagnostic(agentId: string): Promise<any> {
+  return this.repos.prompts.getPromptDiagnostic(agentId);
+}
+
+
 
   async getUpstreamContextPreview(projectId: EntityId, layer: DesignLayer): Promise<UpstreamContextPreview> {
     const UPSTREAM_LAYERS: Record<DesignLayer, DesignLayer[]> = {
@@ -197,7 +246,7 @@ export class DesignWorkshopUseCases {
       SCREEN:     ['JOURNEY', 'FEATURE'],
     };
     const upstreamLayers = UPSTREAM_LAYERS[layer] || [];
-    const groups = await this.selectUpstreamProposals(projectId, layer);
+    const groups = await this.selectAncestryProposals(projectId, layer);
     const items = groups.flatMap(g =>
       g.proposals.map(p => ({ id: p.id, layer: g.layer, title: p.title, status: p.status }))
     );
@@ -251,15 +300,46 @@ export class DesignWorkshopUseCases {
     brainstormingMode: boolean = false,
     onProgress?: (agentId: string, status: "pending" | "running" | "done" | "error") => void
   ): Promise<any[]> {
-    const VOLUMETRY: Record<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE', { synthesizer: string; perAgent: string }> = {
-      STANDARD:   { synthesizer: '4 à 6',   perAgent: '2 à 3' },
-      ABUNDANT:   { synthesizer: '8 à 10',  perAgent: '3 à 4' },
-      EXHAUSTIVE: { synthesizer: '12 à 16', perAgent: '4 à 5' },
+    const LAYER_VOLUMETRY: Record<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE', Record<DesignLayer, { synthesizer: string; perAgent: string }>> = {
+      STANDARD: {
+        INTENTION:  { synthesizer: '1 à 3', perAgent: '2' },
+        HYPOTHESIS: { synthesizer: '2 à 5', perAgent: '3' },
+        CAPABILITY: { synthesizer: '2 à 6', perAgent: '3' },
+        FEATURE:    { synthesizer: '4 à 12', perAgent: '5' },
+        JOURNEY:    { synthesizer: '1 à 5', perAgent: '3' },
+        SCREEN:     { synthesizer: '1 à 8', perAgent: '4' },
+      },
+      ABUNDANT: {
+        INTENTION:  { synthesizer: '2 à 4', perAgent: '3' },
+        HYPOTHESIS: { synthesizer: '4 à 8', perAgent: '4' },
+        CAPABILITY: { synthesizer: '4 à 10', perAgent: '5' },
+        FEATURE:    { synthesizer: '6 à 18', perAgent: '6' },
+        JOURNEY:    { synthesizer: '3 à 10', perAgent: '4' },
+        SCREEN:     { synthesizer: '3 à 15', perAgent: '5' },
+      },
+      EXHAUSTIVE: {
+        INTENTION:  { synthesizer: '2 à 5', perAgent: '4' },
+        HYPOTHESIS: { synthesizer: '6 à 12', perAgent: '5' },
+        CAPABILITY: { synthesizer: '6 à 14', perAgent: '6' },
+        FEATURE:    { synthesizer: '8 à 25', perAgent: '8' },
+        JOURNEY:    { synthesizer: '5 à 15', perAgent: '5' },
+        SCREEN:     { synthesizer: '5 à 20', perAgent: '6' },
+      },
     };
 
-    const vol = VOLUMETRY[ideationIntensity] || VOLUMETRY.ABUNDANT;
+    const vol = LAYER_VOLUMETRY[ideationIntensity]?.[layer] || LAYER_VOLUMETRY.ABUNDANT[layer];
     const brainstormFlag = brainstormingMode ? "ON" : "OFF";
-    const upstreamContext = await this.buildUpstreamContext(projectId, layer);
+    
+    const ancestryContext = await this.buildAncestryContext(projectId, layer);
+    const directParentContext = await this.buildDirectParentContext(projectId, layer);
+    
+    const existingLayerProps = await this.repos.designProposals.getByLayer(projectId, layer);
+    const existingSameLayerJson = JSON.stringify(existingLayerProps.map(p => ({ id: p.id, title: p.title, status: p.status })));
+    
+    const allProjectProps = await this.repos.designProposals.getByProjectId(projectId);
+    const deferredItems = allProjectProps.filter(p => p.status === 'DEFERRED').map(p => ({ id: p.id, title: p.title, layer: p.layer }));
+    const rejectedItems = allProjectProps.filter(p => p.status === 'REJECTED').map(p => ({ id: p.id, title: p.title, layer: p.layer }));
+    const lockedDecisions = await this.repos.decisions.getByProjectId(projectId);
 
     // 1. Déterminer les agents à appeler selon la couche
     let baseAgents: string[] = [];
@@ -295,13 +375,14 @@ export class DesignWorkshopUseCases {
     const confirmedItems = briefItems.filter((b) => b.status === "LOCKED" || b.status === "ACCEPTED" || b.status === "CORRECTED");
     
     const OUTPUT_SCHEMA_JSON = JSON.stringify({
-      schemaVersion: "workshop-response-v1",
+      schemaVersion: "workshop-response-v2",
       agentId: "string",
       layer: "string",
       summary: "string",
       proposals: [{
         id: "string",
-        parentId: "string (optional)",
+        parentId: "string (must be from allowed_direct_parents)",
+        parentProposalIds: ["string"],
         rootProposalId: "string (optional)",
         title: "string",
         shortPitch: "string",
@@ -319,24 +400,13 @@ export class DesignWorkshopUseCases {
         relatedProposalIds: ["string"],
         dependencies: ["string"],
         consequenceIds: ["string"],
-        actions: ["string"]
+        specificData: "object (layer specific detailed attributes)"
       }],
-      questions: [{
-        statement: "string",
-        importance: "string"
-      }],
-      assumptions: [{
-        statement: "string",
-        impact: "string"
-      }],
-      warnings: [{
-        message: "string",
-        severity: "string"
-      }],
-      graphOperations: [{
-        type: "string",
-        node: "string"
-      }]
+      diagnostics: {
+        code: "string",
+        step: "string",
+        reasons: ["string"]
+      }
     }, null, 2);
 
     let upstreamOutputs = "";
@@ -353,6 +423,33 @@ export class DesignWorkshopUseCases {
     let parseStatus = "PENDING";
     let lastAgentId = "";
 
+    const hydratePrompt = (templateStr: string, agentData: { perspective: string }) => {
+      return templateStr
+        .replace(/{{LANGUAGE}}/g, "fr")
+        .replace(/{{TARGET_PLATFORM}}/g, project?.targetPlatforms?.join(", ") || "WEB_NEXTJS")
+        .replace(/{{TARGET_FRAMEWORK}}/g, "React / Next.js")
+        .replace(/{{PROJECT_TITLE}}/g, project?.name || "")
+        .replace(/{{PROJECT_ID}}/g, projectId)
+        .replace(/{{SOURCE_TEXT}}/g, project?.ideaText || "")
+        .replace(/{{CONFIRMED_ITEMS_JSON}}/g, JSON.stringify(confirmedItems.map(i => i.statement)))
+        .replace(/{{LOCKED_DECISIONS_JSON}}/g, JSON.stringify(lockedDecisions.map(d => d.title)))
+        .replace(/{{REJECTED_ITEMS_JSON}}/g, JSON.stringify(rejectedItems))
+        .replace(/{{DEFERRED_ITEMS_JSON}}/g, JSON.stringify(deferredItems))
+        .replace(/{{ANCESTRY_CONTEXT_JSON}}/g, ancestryContext)
+        .replace(/{{DIRECT_PARENT_CONTEXT_JSON}}/g, directParentContext)
+        .replace(/{{CURRENT_LAYER_PROPOSALS_JSON}}/g, existingSameLayerJson)
+        .replace(/{{EXISTING_DOWNSTREAM_CONTEXT_JSON}}/g, "[]")
+        .replace(/{{LAYER_CONTRACT}}/g, `Couche : ${layer}. Produire des propositions d'une densité et granularité propres à la couche.`)
+        .replace(/{{CURRENT_LAYER}}/g, layer)
+        .replace(/{{UPSTREAM_OUTPUTS_JSON}}/g, upstreamOutputs || directParentContext)
+        .replace(/{{OUTPUT_SCHEMA_JSON}}/g, OUTPUT_SCHEMA_JSON)
+        .replace(/{{IDEATION_PERSPECTIVE}}/g, agentData.perspective)
+        .replace(/{{IDEATION_INTENSITY}}/g, ideationIntensity)
+        .replace(/{{BRAINSTORMING_MODE}}/g, brainstormFlag)
+        .replace(/{{TARGET_PROPOSAL_COUNT}}/g, vol.perAgent)
+        .replace(/{{[A-Z_]+}}/g, "N/A");
+    };
+
     // We will run divergent agents in parallel
     const divergentPromises = divergentAgentsToCall.map(async (agentData) => {
       if (onProgress) onProgress(agentData.runId, "running");
@@ -364,21 +461,7 @@ export class DesignWorkshopUseCases {
         return null;
       }
 
-      let userPrompt = promptTpl.userPromptTemplate
-        .replace(/{{LANGUAGE}}/g, promptTpl.language)
-        .replace(/{{TARGET_PLATFORM}}/g, project?.targetPlatforms?.join(", ") || "WEB_NEXTJS")
-        .replace(/{{PROJECT_TITLE}}/g, project?.name || "")
-        .replace(/{{PROJECT_ID}}/g, projectId)
-        .replace(/{{SOURCE_TEXT}}/g, project?.ideaText || "")
-        .replace(/{{CONFIRMED_ITEMS_JSON}}/g, JSON.stringify(confirmedItems.map(i => i.statement)))
-        .replace(/{{CURRENT_LAYER}}/g, layer)
-        .replace(/{{UPSTREAM_OUTPUTS_JSON}}/g, upstreamContext)
-        .replace(/{{OUTPUT_SCHEMA_JSON}}/g, OUTPUT_SCHEMA_JSON)
-        .replace(/{{IDEATION_PERSPECTIVE}}/g, agentData.perspective)
-        .replace(/{{IDEATION_INTENSITY}}/g, ideationIntensity)
-        .replace(/{{BRAINSTORMING_MODE}}/g, brainstormFlag)
-        .replace(/{{TARGET_PROPOSAL_COUNT}}/g, vol.perAgent)
-        .replace(/{{[A-Z_]+}}/g, "N/A"); 
+      const userPrompt = hydratePrompt(promptTpl.userPromptTemplate, agentData);
 
       const req = {
         prompt: userPrompt,
@@ -414,21 +497,7 @@ export class DesignWorkshopUseCases {
         continue;
       }
 
-      let userPrompt = promptTpl.userPromptTemplate
-        .replace(/{{LANGUAGE}}/g, promptTpl.language)
-        .replace(/{{TARGET_PLATFORM}}/g, project?.targetPlatforms?.join(", ") || "WEB_NEXTJS")
-        .replace(/{{PROJECT_TITLE}}/g, project?.name || "")
-        .replace(/{{PROJECT_ID}}/g, projectId)
-        .replace(/{{SOURCE_TEXT}}/g, project?.ideaText || "")
-        .replace(/{{CONFIRMED_ITEMS_JSON}}/g, JSON.stringify(confirmedItems.map(i => i.statement)))
-        .replace(/{{CURRENT_LAYER}}/g, layer)
-        .replace(/{{UPSTREAM_OUTPUTS_JSON}}/g, upstreamOutputs)
-        .replace(/{{OUTPUT_SCHEMA_JSON}}/g, OUTPUT_SCHEMA_JSON)
-        .replace(/{{IDEATION_PERSPECTIVE}}/g, agentData.perspective)
-        .replace(/{{IDEATION_INTENSITY}}/g, ideationIntensity)
-        .replace(/{{BRAINSTORMING_MODE}}/g, brainstormFlag)
-        .replace(/{{TARGET_PROPOSAL_COUNT}}/g, vol.synthesizer)
-        .replace(/{{[A-Z_]+}}/g, "N/A");
+      let userPrompt = hydratePrompt(promptTpl.userPromptTemplate, agentData);
 
       if (agentData.runId === agentsToCall[agentsToCall.length - 1].runId) {
         systemPromptLength = promptTpl.systemPrompt.length;
@@ -497,22 +566,33 @@ export class DesignWorkshopUseCases {
     // ================================================================
     const persistedProposals: DesignProposal[] = [];
     if (parsedResult?.proposals) {
-      // Charger les propositions amont pour le PostProcessor
-      const upstreamGroups = layer === 'INTENTION'
+      // Charger les parents directs autorisés pour le PostProcessor
+      const directParentGroups = layer === 'INTENTION'
         ? []
-        : await this.selectUpstreamProposals(projectId, layer);
-      const upstreamFlat: DesignProposal[] = upstreamGroups.flatMap(g => g.proposals);
-      const validUpstreamIds = new Set(upstreamFlat.map(u => u.id));
+        : await this.selectDirectParents(projectId, layer);
+      const directParentsFlat: DesignProposal[] = directParentGroups.flatMap(g => g.proposals);
+      const validDirectIds = new Set(directParentsFlat.map(u => u.id));
+
+      const allAncestryGroups = layer === 'INTENTION'
+        ? []
+        : await this.selectAncestryProposals(projectId, layer);
+      const allAncestryFlat: DesignProposal[] = allAncestryGroups.flatMap(g => g.proposals);
+      const validAncestryIds = new Set(allAncestryFlat.map(u => u.id));
 
       for (const p of parsedResult.proposals) {
         // Résolution des liens (Prompt as best effort, PostProcessor as guarantee)
         const links: LinkResolution = layer === 'INTENTION'
           ? { parentId: null, lineage: [], linkSource: null, linkConfidence: null }
-          : resolveProposalLinks(p as ParsedProposal, upstreamFlat);
+          : resolveProposalLinks(p as ParsedProposal, directParentsFlat);
 
-        // Filtrer les dependencyIds et parentProposalIds hallucinés
-        const safeDependencyIds = (p.dependencies ?? []).filter((id: string) => validUpstreamIds.has(id as EntityId));
-        const safeParentProposalIds = (p.parentProposalIds || p.relatedProposalIds || []).filter((id: string) => validUpstreamIds.has(id as EntityId) && id !== links.parentId);
+        // Filtrer les dependencyIds (qui peuvent venir de toute l'ascendance) et parentProposalIds (parents directs uniquement)
+        const safeDependencyIds = (p.dependencies ?? []).filter((id: string) => validAncestryIds.has(id as EntityId));
+        const safeParentProposalIds = (p.parentProposalIds || p.relatedProposalIds || [])
+          .filter((id: string) => validDirectIds.has(id as EntityId) && id !== links.parentId);
+        
+        if (links.parentId && !safeParentProposalIds.includes(links.parentId)) {
+          safeParentProposalIds.unshift(links.parentId);
+        }
 
         const dp = createDesignProposal({
           projectId,
@@ -541,7 +621,8 @@ export class DesignWorkshopUseCases {
           category: p.type || "General",
           alternatives: [],
           risks: [],
-          parentProposalIds: safeParentProposalIds
+          parentProposalIds: safeParentProposalIds,
+          layerData: p.specificData || undefined
         });
         await this.repos.designProposals.save(dp);
         persistedProposals.push(dp);
@@ -848,9 +929,11 @@ export class DesignWorkshopUseCases {
     projectId: EntityId,
     proposalId: EntityId,
     mode: "expand" | "alternatives" = "expand"
-  ): Promise<any[]> {
+  ): Promise<{ proposals: DesignProposal[]; diagnostic?: any }> {
     const sourceProposal = await this.repos.designProposals.getById(proposalId);
-    if (!sourceProposal) throw new Error("Proposal not found");
+    if (!sourceProposal) {
+      throw new Error("Proposition introuvable");
+    }
 
     if (sourceProposal.lineage && sourceProposal.lineage.length >= 5) {
       throw new Error("Profondeur maximale de tissage (5 niveaux) atteinte pour cette branche.");
@@ -877,9 +960,34 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     };
 
     const res = await this.provider.complete(req);
-    const parsed = safeParseModelJson(res.content) as any;
+    let parsed: any = null;
+    try {
+      parsed = safeParseModelJson(res.content) as any;
+    } catch {
+      parsed = null;
+    }
+
     const rawProposals = parsed?.proposals || [];
-    if (!Array.isArray(rawProposals) || rawProposals.length === 0) return [];
+    if (!Array.isArray(rawProposals) || rawProposals.length === 0) {
+      // Diagnostic structuré en cas de 0 résultat
+      return {
+        proposals: [],
+        diagnostic: {
+          code: "NO_PROPOSALS_GENERATED",
+          step: mode === "alternatives" ? "ALTERNATIVES_GENERATION" : "DEEPEN_GENERATION",
+          agentId,
+          promptFound: !!promptTpl,
+          parsedCount: 0,
+          rejectedCount: 0,
+          persistenceCount: 0,
+          reasons: [
+            `L'agent ${agentId} n'a pas pu produire de variante valide pour "${sourceProposal.title}".`,
+            `La proposition source (${sourceProposal.layer}) manque peut-être de détails pour faire émerger de nouvelles déclinons.`
+          ],
+          invalidReferences: []
+        }
+      };
+    }
 
     const nextLayerMap: Record<DesignLayer, DesignLayer> = {
       INTENTION: "HYPOTHESIS",
@@ -890,7 +998,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
       SCREEN: "SCREEN",
     };
 
-    const targetLayer = nextLayerMap[sourceProposal.layer] || "SCREEN";
+    const targetLayer = mode === "alternatives" ? sourceProposal.layer : (nextLayerMap[sourceProposal.layer] || "SCREEN");
 
     const newProposals: DesignProposal[] = [];
     for (const raw of rawProposals) {
@@ -914,12 +1022,25 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
         parentId: sourceProposal.id,
         rootProposalId: sourceProposal.rootProposalId || sourceProposal.id,
         lineage: [...(sourceProposal.lineage || []), sourceProposal.id],
+        layerData: raw.specificData || undefined,
       });
       await this.repos.designProposals.save(prop);
       newProposals.push(prop);
     }
 
-    return newProposals;
+    return {
+      proposals: newProposals,
+      diagnostic: {
+        code: "SUCCESS",
+        step: mode === "alternatives" ? "ALTERNATIVES_GENERATION" : "DEEPEN_GENERATION",
+        agentId,
+        promptFound: true,
+        parsedCount: rawProposals.length,
+        rejectedCount: 0,
+        persistenceCount: newProposals.length,
+        reasons: []
+      }
+    };
   }
 
   async getFeaturePaths(projectId: EntityId): Promise<import("@pbh/domain").FeaturePath[]> {

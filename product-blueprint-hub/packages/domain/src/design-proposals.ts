@@ -34,6 +34,114 @@ export interface FeatureAlternative {
 
 export type LinkSource = 'AI' | 'AUTO_MATCHED' | 'MANUAL' | null;
 
+export interface IntentionLayerData {
+  problem?: string;
+  expectedOutcome?: string;
+  beneficiaries?: string[];
+  usageContext?: string;
+  successSignals?: string[];
+}
+
+export interface HypothesisLayerData {
+  assumption?: string;
+  hypothesisCategory?: 'DESIRABILITY' | 'USABILITY' | 'DATA' | 'FEASIBILITY' | 'VIABILITY' | 'TRUST';
+  supportingEvidenceExpected?: string;
+  invalidationSignal?: string;
+  impactIfFalse?: string;
+  validationMethod?: string;
+  criticality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+}
+
+export interface CapabilityLayerData {
+  responsibility?: string;
+  inputs?: string[];
+  processing?: string[];
+  outputs?: string[];
+  constraints?: string[];
+  servedIntentIds?: EntityId[];
+  relatedHypothesisIds?: EntityId[];
+  verificationCriteria?: string[];
+}
+
+export interface FeatureLayerData {
+  initiator?: 'USER' | 'SYSTEM' | 'HYBRID';
+  trigger?: string;
+  preconditions?: string[];
+  inputs?: string[];
+  businessRules?: string[];
+  dataRead?: string[];
+  dataWritten?: string[];
+  result?: string;
+  states?: {
+    initial?: string;
+    loading?: string;
+    success?: string;
+    empty?: string;
+    error?: string;
+  };
+  exceptions?: string[];
+  userControl?: string;
+  acceptanceCriteria?: string[];
+  servedCapabilityIds?: EntityId[];
+}
+
+export interface JourneyStep {
+  order: number;
+  userAction: string;
+  visibleInformation: string;
+  systemResponse: string;
+  featureIds: EntityId[];
+  decision?: string;
+  stepOutcome?: string;
+}
+
+export interface JourneyLayerData {
+  actorContext?: string;
+  trigger?: string;
+  goal?: string;
+  preconditions?: string[];
+  steps?: JourneyStep[];
+  variants?: string[];
+  errors?: string[];
+  recovery?: string[];
+  cancellation?: string[];
+  finalOutcome?: string;
+  usedFeatureIds?: EntityId[];
+}
+
+export interface ScreenLayerData {
+  role?: string;
+  journeyIds?: EntityId[];
+  exposedFeatureIds?: EntityId[];
+  entryPoints?: string[];
+  exitPoints?: string[];
+  displayedInformation?: string[];
+  primaryActions?: string[];
+  secondaryActions?: string[];
+  components?: string[];
+  navigationFrom?: string[];
+  navigationTo?: string[];
+  uiStates?: {
+    initial?: string;
+    loading?: string;
+    empty?: string;
+    success?: string;
+    error?: string;
+  };
+  permissions?: string[];
+  accessibilityNotes?: string[];
+  distinctScreenJustification?: string;
+  shared?: boolean;
+}
+
+export type LayerSpecificData = 
+  | { layer: 'INTENTION'; data: IntentionLayerData }
+  | { layer: 'HYPOTHESIS'; data: HypothesisLayerData }
+  | { layer: 'CAPABILITY'; data: CapabilityLayerData }
+  | { layer: 'FEATURE'; data: FeatureLayerData }
+  | { layer: 'JOURNEY'; data: JourneyLayerData }
+  | { layer: 'SCREEN'; data: ScreenLayerData };
+
 export interface DesignProposal extends BaseEntity, Owned {
   readonly layer: DesignLayer;
   readonly title: string;
@@ -70,6 +178,8 @@ export interface DesignProposal extends BaseEntity, Owned {
   readonly linkSource?: LinkSource;
   // Score de confiance [0..1] si linkSource === 'AUTO_MATCHED', sinon null
   readonly linkConfidence?: number | null;
+  // Données spécialisées par couche
+  readonly layerData?: IntentionLayerData | HypothesisLayerData | CapabilityLayerData | FeatureLayerData | JourneyLayerData | ScreenLayerData;
 }
 
 export function createDesignProposal(params: Omit<DesignProposal, 'id' | 'version' | 'createdAt' | 'updatedAt'>): DesignProposal {
