@@ -52,7 +52,7 @@ export class DesignWorkshopUseCases {
 
     const project = await this.repos.projects.getById(projectId);
     const briefItems = await this.repos.briefItems.getByProjectId(projectId);
-    const confirmedItems = briefItems.filter((b) => b.status === "LOCKED" || b.status === "ACCEPTED");
+    const confirmedItems = briefItems.filter((b) => b.status === "LOCKED" || b.status === "ACCEPTED" || b.status === "CORRECTED");
     
     const OUTPUT_SCHEMA_JSON = JSON.stringify({
       schemaVersion: "workshop-response-v1",

@@ -846,103 +846,142 @@ export function ProjectDetailPageContent() {
               </div>
             ) : (
               <div>
-                {briefItems.map((item) => (
-                  <div key={item.id} className="card mb-4">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`badge badge-${item.status.toLowerCase()}`}>
-                        {item.status}
-                      </span>
-                      <span className="badge badge-info">{item.type}</span>
-                      <span className="text-xs text-muted">
-                        {lang === "fr" ? "Confiance : " : "Confidence: "}
-                        {Math.round(item.confidence * 100)}%
-                      </span>
-                    </div>
-                    <p className="font-semibold mb-2">{item.statement}</p>
-                    {item.excerpt && (
-                      <p className="text-xs text-muted mb-3">
-                        Source: &quot;{item.excerpt.slice(0, 100)}...&quot;
-                      </p>
-                    )}
+                {(() => {
+                  const activeCounts = briefItems.reduce((acc, b) => {
+                    if (b.status !== "REJECTED") {
+                      const key = b.statement.trim().toLowerCase();
+                      acc[key] = (acc[key] || 0) + 1;
+                    }
+                    return acc;
+                  }, {} as Record<string, number>);
 
-                    {item.status !== "LOCKED" && (
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => handleBriefAction(item.id, "accept")}
-                          disabled={item.status === "ACCEPTED"}
-                        >
-                          ✅ {t("action.accept")}
-                        </button>
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => handleBriefAction(item.id, "reject")}
-                        >
-                          ❌ {t("action.reject")}
-                        </button>
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => setLockConfirmItem(item)}
-                          disabled={item.status !== "ACCEPTED" && item.status !== "CORRECTED"}
-                        >
-                          🔒 {t("action.lock")}
-                        </button>
-                      </div>
-                    )}
-                    {item.status === "LOCKED" && (
-                      <span className="text-xs text-muted">
-                        🔒{" "}
-                        {lang === "fr"
-                          ? "Cet élément est verrouillé. Il sert de référence pour la conception."
-                          : "This item is locked. It serves as reference for design."}
-                      </span>
-                    )}
+                  return briefItems.map((item) => {
+                    const isDuplicate =
+                      (activeCounts[item.statement.trim().toLowerCase()] || 0) > 1;
+                    return (
+                      <div key={item.id} className="card mb-4">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <span className={`badge badge-${item.status.toLowerCase()}`}>
+                            {item.status}
+                          </span>
+                          <span className="badge badge-info">{item.type}</span>
+                          <span className="text-xs text-muted">
+                            {lang === "fr" ? "Confiance : " : "Confidence: "}
+                            {Math.round(item.confidence * 100)}%
+                          </span>
+                          {item.status === "CORRECTED" && (
+                            <span className="badge badge-success text-xs">
+                              ✨{" "}
+                              {lang === "fr"
+                                ? "Version active transmise à l'IA"
+                                : "Active version sent to AI"}
+                            </span>
+                          )}
+                          {isDuplicate && (
+                            <span
+                              className="badge badge-warning text-xs"
+                              title={
+                                lang === "fr"
+                                  ? "Élément en doublon. Cliquez sur Refuser (❌) sur l'un des deux."
+                                  : "Duplicate item. Click Reject (❌) on one of them."
+                              }
+                            >
+                              ⚠️ {lang === "fr" ? "Doublon potentiel" : "Potential duplicate"}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold mb-2">{item.statement}</p>
+                        {item.excerpt && (
+                          <p className="text-xs text-muted mb-3">
+                            Source: &quot;{item.excerpt.slice(0, 100)}...&quot;
+                          </p>
+                        )}
 
-                    {/* Correction */}
-                    {item.status !== "LOCKED" && (
-                      <div className="flex gap-2 mt-3">
-                        <input
-                          className="input"
-                          style={{ flex: 1 }}
-                          placeholder={
-                            lang === "fr" ? "Saisir une correction..." : "Enter correction..."
-                          }
-                          value={correctionText[item.id] ?? ""}
-                          onChange={(e) =>
-                            setCorrectionText((p) => ({ ...p, [item.id]: e.target.value }))
-                          }
-                        />
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => handleBriefAction(item.id, "correct")}
-                          disabled={!correctionText[item.id]?.trim()}
-                        >
-                          ✏️ {t("action.correct")}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Version history */}
-                    {item.previousVersions.length > 0 && (
-                      <details className="mt-3">
-                        <summary className="text-xs text-muted" style={{ cursor: "pointer" }}>
-                          {lang === "fr"
-                            ? `Historique des versions (${item.previousVersions.length})`
-                            : `Version history (${item.previousVersions.length})`}
-                        </summary>
-                        {item.previousVersions.map((v, i) => (
-                          <div
-                            key={i}
-                            className="text-xs text-muted mt-1"
-                            style={{ paddingLeft: 16 }}
-                          >
-                            v{v.version}: [{v.status}] {v.statement}
+                        {item.status !== "LOCKED" && (
+                          <div className="flex gap-2 flex-wrap">
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => handleBriefAction(item.id, "accept")}
+                              disabled={item.status === "ACCEPTED"}
+                            >
+                              ✅ {t("action.accept")}
+                            </button>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => handleBriefAction(item.id, "reject")}
+                            >
+                              ❌ {t("action.reject")}
+                            </button>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => setLockConfirmItem(item)}
+                              disabled={item.status !== "ACCEPTED" && item.status !== "CORRECTED"}
+                            >
+                              🔒 {t("action.lock")}
+                            </button>
                           </div>
-                        ))}
-                      </details>
-                    )}
-                  </div>
-                ))}
+                        )}
+                        {item.status === "LOCKED" && (
+                          <span className="text-xs text-muted">
+                            🔒{" "}
+                            {lang === "fr"
+                              ? "Cet élément est verrouillé. Il sert de référence pour la conception."
+                              : "This item is locked. It serves as reference for design."}
+                          </span>
+                        )}
+
+                        {/* Correction */}
+                        {item.status !== "LOCKED" && (
+                          <div className="flex gap-2 mt-3">
+                            <input
+                              className="input"
+                              style={{ flex: 1 }}
+                              placeholder={
+                                lang === "fr" ? "Saisir une correction..." : "Enter correction..."
+                              }
+                              value={correctionText[item.id] ?? ""}
+                              onChange={(e) =>
+                                setCorrectionText((p) => ({ ...p, [item.id]: e.target.value }))
+                              }
+                            />
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => handleBriefAction(item.id, "correct")}
+                              disabled={!correctionText[item.id]?.trim()}
+                            >
+                              ✏️ {t("action.correct")}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Version history */}
+                        {item.previousVersions.length > 0 && (
+                          <details className="mt-3">
+                            <summary className="text-xs text-muted" style={{ cursor: "pointer" }}>
+                              {lang === "fr"
+                                ? `Historique des versions (${item.previousVersions.length})`
+                                : `Version history (${item.previousVersions.length})`}
+                            </summary>
+                            <p className="text-xs text-muted mt-1 italic">
+                              {lang === "fr"
+                                ? "💡 Seule la version active ci-dessus est prise en compte par l'IA. Les anciennes versions ci-dessous sont conservées comme archive."
+                                : "💡 Only the active version above is used by AI. Older versions below are archived."}
+                            </p>
+                            {item.previousVersions.map((v, i) => (
+                              <div
+                                key={i}
+                                className="text-xs text-muted mt-1"
+                                style={{ paddingLeft: 16 }}
+                              >
+                                v{v.version}: [{v.status}] {v.statement}
+                              </div>
+                            ))}
+                          </details>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             )}
 
@@ -1092,13 +1131,13 @@ export function ProjectDetailPageContent() {
                 )}
                 
                 {/* Encart Éléments de Brief Confirmés */}
-                {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED').length > 0 && (
+                {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED' || b.status === 'CORRECTED').length > 0 && (
                   <div className="p-3 mb-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md text-xs">
                     <div className="font-semibold text-indigo-900 dark:text-indigo-200 mb-1">
-                      💡 {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED').length} Élément(s) du Brief Confirmé(s) pris en compte par l&apos;Essaim :
+                      💡 {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED' || b.status === 'CORRECTED').length} Élément(s) du Brief Confirmé(s) pris en compte par l&apos;Essaim :
                     </div>
                     <ul className="list-disc pl-4 space-y-0.5">
-                      {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED').slice(0, 4).map(b => (
+                      {briefItems.filter(b => b.status === 'LOCKED' || b.status === 'ACCEPTED' || b.status === 'CORRECTED').slice(0, 4).map(b => (
                         <li key={b.id} className="text-indigo-800 dark:text-indigo-300">
                           <strong>[{b.type}]</strong> {b.statement}
                         </li>
