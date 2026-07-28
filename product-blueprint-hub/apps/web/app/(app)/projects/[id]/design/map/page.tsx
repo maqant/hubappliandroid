@@ -68,8 +68,8 @@ export default function DesignMapPage() {
 
           const isAccepted = n.status === 'ACCEPTED';
           const isSelected = n.id === selectedNodeId;
-          // Un nœud orphelin n'a pas de parentId ET n'est pas en couche INTENTION
           const isOrphan = !n.parentId && n.layer !== 'INTENTION';
+          const isShared = (n.parentProposalIds && n.parentProposalIds.length > 1);
 
           return {
             id: n.id,
@@ -80,13 +80,18 @@ export default function DesignMapPage() {
                   <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '4px', color: '#1e293b' }}>
                     {n.layer === 'SCREEN' ? '🖥️ ' : n.layer === 'JOURNEY' ? '🗺️ ' : ''}{n.title}
                   </div>
-                  <div className="flex justify-between items-center gap-1">
+                  <div className="flex justify-between items-center gap-1 flex-wrap">
                     <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px' }}>
                       {n.layer}
                     </span>
                     {isAccepted && (
                       <span style={{ fontSize: '10px', background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
                         ✅ Validée
+                      </span>
+                    )}
+                    {isShared && (
+                      <span style={{ fontSize: '10px', background: '#e0e7ff', color: '#3730a3', padding: '1px 6px', borderRadius: '4px' }} title="Élément mutualisé / partagé entre plusieurs parcours">
+                        🔗 Partagé
                       </span>
                     )}
                     {isOrphan && (

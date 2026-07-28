@@ -116,6 +116,8 @@ export function ProjectDetailPageContent() {
   const [userFeedbackText, setUserFeedbackText] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  const [featurePaths, setFeaturePaths] = useState<import("@pbh/domain").FeaturePath[]>([]);
+  const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
   const [upstreamPreview, setUpstreamPreview] = useState<UpstreamContextPreview | null>(null);
   const [upstreamPanelOpen, setUpstreamPanelOpen] = useState(false);
   const [deferredCount, setDeferredCount] = useState(0);
@@ -546,6 +548,41 @@ export function ProjectDetailPageContent() {
       showToast("error", "Erreur lors de l'essaimage : " + (e.message || String(e)));
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateVerticalPaths = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setGenerationError(null);
+    showToast("info", "🚀 Lancement de l'essaimage vertical (CAPABILITY -> FEATURE -> JOURNEY -> SCREEN)...");
+    try {
+      const res = await svc.designWorkshop.generateVerticalPathsFromCapabilities(
+        projectId as EntityId,
+        ideationIntensity,
+        brainstormingMode
+      );
+      setFeaturePaths(res.paths);
+      showToast("success", res.summary);
+      await loadProposals();
+    } catch (e: any) {
+      setGenerationError(e.message || String(e));
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleArbitratePath = async (capabilityId: EntityId, action: 'ACCEPT_PROPOSED' | 'DEFER_PROPOSED' | 'REJECT_BRANCH') => {
+    try {
+      const res = await svc.designWorkshop.arbitratePath(projectId as EntityId, capabilityId, action);
+      const labels = { ACCEPT_PROPOSED: 'acceptées', DEFER_PROPOSED: 'reportées à la roadmap', REJECT_BRANCH: 'refusées' };
+      showToast("success", `${res.updatedCount} proposition(s) du path ${labels[action]}`);
+      await loadProposals();
+      const updatedPaths = await svc.designWorkshop.getFeaturePaths(projectId as EntityId);
+      setFeaturePaths(updatedPaths);
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
     }
   };
 
@@ -1210,7 +1247,27 @@ export function ProjectDetailPageContent() {
                       Mode Brainstorming
                     </label>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap items-center">
+                    {(() => {
+                      const hasAcceptedIntention = briefItems.some(b => b.status === 'ACCEPTED' || b.status === 'LOCKED');
+                      const hasAcceptedCapability = (layerProposalCounts['CAPABILITY'] || 0) > 0;
+                      const canSwarmPaths = hasAcceptedIntention && hasAcceptedCapability;
+
+                      return (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={handleGenerateVerticalPaths}
+                          disabled={isGenerating || !canSwarmPaths}
+                          title={
+                            !canSwarmPaths
+                              ? "Pour débloquer l'essaim vertical : validez au moins 1 Intention et 1 Capacité (CAPABILITY) dans l'atelier !"
+                              : "Tisse automatiquement les fonctionnalités, parcours et écrans de bout en bout sous forme de Feature Paths"
+                          }
+                        >
+                          {isGenerating ? '⏳ Tissage vertical…' : '🚀 Générer les paths fonctionnels (Cascades 4→6)'}
+                        </button>
+                      );
+                    })()}
                     <button 
                       className="btn btn-secondary btn-sm"
                       onClick={handleSwarmAll}
@@ -1220,7 +1277,7 @@ export function ProjectDetailPageContent() {
                       ⚡ Essaimer Tout (6 Couches)
                     </button>
                     <button 
-                      className="btn btn-primary btn-sm"
+                      className="btn btn-secondary btn-sm"
                       onClick={handleGenerateProposals}
                       disabled={isGenerating}
                     >

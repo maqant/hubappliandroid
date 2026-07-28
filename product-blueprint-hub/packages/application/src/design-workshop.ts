@@ -902,4 +902,87 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
 
     return newProposals;
   }
+
+  async getFeaturePaths(projectId: EntityId): Promise<import("@pbh/domain").FeaturePath[]> {
+    const proposals = await this.repos.designProposals.getByProjectId(projectId);
+    return computeFeaturePaths(proposals);
+  }
+
+  async arbitratePath(
+    projectId: EntityId,
+    capabilityId: EntityId,
+    action: 'ACCEPT_PROPOSED' | 'DEFER_PROPOSED' | 'REJECT_BRANCH'
+  ): Promise<{ updatedCount: number; path: import("@pbh/domain").FeaturePath }> {
+    const allProposals = await this.repos.designProposals.getByProjectId(projectId);
+    const paths = computeFeaturePaths(allProposals);
+    const targetPath = paths.find(p => p.capabilityProposal.id === capabilityId);
+    if (!targetPath) throw new Error("Feature Path non trouvé pour cette capacité.");
+
+    let updatedCount = 0;
+
+    // Seuls les nœuds avec statut PROPOSED du path sont modifiables collectivement
+    const modifiableProposals = [
+      ...targetPath.features.map(f => f.proposal),
+      ...targetPath.journeys.map(j => j.proposal),
+      ...targetPath.screens.map(s => s.proposal),
+    ].filter(p => p.status === 'PROPOSED');
+
+    const targetStatus = action === 'ACCEPT_PROPOSED' ? 'ACCEPTED' : action === 'DEFER_PROPOSED' ? 'DEFERRED' : 'REJECTED';
+
+    for (const prop of modifiableProposals) {
+      await this.updateProposalStatus(prop.id, targetStatus);
+      updatedCount++;
+    }
+
+    const refreshProposals = await this.repos.designProposals.getByProjectId(projectId);
+    const updatedPaths = computeFeaturePaths(refreshProposals);
+    const updatedPath = updatedPaths.find(p => p.capabilityProposal.id === capabilityId)!;
+
+    return { updatedCount, path: updatedPath };
+  }
+
+  /**
+   * Essaim Vertical : Génère en cascade séquentielle de bout en bout les sous-couches 
+   * (CAPABILITY -> FEATURE -> JOURNEY -> SCREEN) sous forme de Feature Paths fonctionnels.
+   */
+  async generateVerticalPathsFromCapabilities(
+    projectId: EntityId,
+    ideationIntensity: 'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE' = 'ABUNDANT',
+    brainstormingMode: boolean = false
+  ): Promise<{ paths: import("@pbh/domain").FeaturePath[]; summary: string; generatedCount: number }> {
+    const allProposals = await this.repos.designProposals.getByProjectId(projectId);
+
+    // 1. Vérification stricte des conditions d'activation
+    const acceptedIntentions = allProposals.filter(p => p.layer === 'INTENTION' && (p.status === 'ACCEPTED' || p.status === 'LOCKED'));
+    const acceptedCapabilities = allProposals.filter(p => p.layer === 'CAPABILITY' && (p.status === 'ACCEPTED' || p.status === 'LOCKED'));
+
+    if (acceptedIntentions.length === 0) {
+      throw new Error("Activation impossible : Vous devez d'abord valider au moins une INTENTION dans le brief ou l'atelier.");
+    }
+    if (acceptedCapabilities.length === 0) {
+      throw new Error("Activation impossible : Vous devez d'abord valider au moins une CAPACITÉ (CAPABILITY) avant de déclencher l'essaim vertical.");
+    }
+
+    // 2. Étape A — Génération séquentielle : CAPABILITY -> FEATURE
+    const featureResult = await this.generateProposals(projectId, 'FEATURE', ideationIntensity, brainstormingMode);
+    const newFeaturesCount = featureResult.proposals?.length || 0;
+
+    // 3. Étape B — Génération séquentielle : FEATURE -> JOURNEY
+    const journeyResult = await this.generateProposals(projectId, 'JOURNEY', ideationIntensity, brainstormingMode);
+    const newJourneysCount = journeyResult.proposals?.length || 0;
+
+    // 4. Étape C — Génération séquentielle : JOURNEY -> SCREEN (avec recherche de mutualisation)
+    const screenResult = await this.generateProposals(projectId, 'SCREEN', ideationIntensity, brainstormingMode);
+    const newScreensCount = screenResult.proposals?.length || 0;
+
+    // 5. Calcul déterministe des Feature Paths mis à jour
+    const updatedProposals = await this.repos.designProposals.getByProjectId(projectId);
+    const paths = computeFeaturePaths(updatedProposals);
+
+    const generatedCount = newFeaturesCount + newJourneysCount + newScreensCount;
+    const summary = `Essaim vertical terminé avec succès ! ${generatedCount} proposition(s) générée(s) (${newFeaturesCount} Fonctionnalités, ${newJourneysCount} Parcours, ${newScreensCount} Écrans) réparties sur ${paths.length} path(s) fonctionnel(s).`;
+
+    return { paths, summary, generatedCount };
+  }
 }
+
