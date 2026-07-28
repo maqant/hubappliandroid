@@ -73,7 +73,7 @@ export function ProjectDetailPageContent() {
   };
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lockConfirmItem, setLockConfirmItem] = useState<BriefItem | null>(null);
+  const [isAcceptingAll, setIsAcceptingAll] = useState(false);
 
   // Data states
   const [sources, setSources] = useState<Source[]>([]);
@@ -304,14 +304,32 @@ export function ProjectDetailPageContent() {
     }
   };
 
+  const handleAcceptAllBriefItems = async () => {
+    if (isAcceptingAll) return;
+    setIsAcceptingAll(true);
+    try {
+      await svc.brief.acceptAllProposed(projectId as EntityId);
+      showToast(
+        "success",
+        lang === "fr"
+          ? "Tous les éléments du brief ont été acceptés !"
+          : "All brief items accepted!",
+      );
+      load();
+    } catch (err) {
+      showToast("error", String(err));
+    } finally {
+      setIsAcceptingAll(false);
+    }
+  };
+
   const handleBriefAction = async (
     itemId: string,
-    action: "accept" | "correct" | "reject" | "lock",
+    action: "accept" | "correct" | "reject",
   ) => {
     try {
       if (action === "accept") await svc.brief.acceptItem(itemId as EntityId);
       else if (action === "reject") await svc.brief.rejectItem(itemId as EntityId);
-      else if (action === "lock") await svc.brief.lockItem(itemId as EntityId);
       else if (action === "correct") {
         const text = correctionText[itemId];
         if (!text?.trim()) {
@@ -897,12 +915,33 @@ export function ProjectDetailPageContent() {
 
         {activeTab === "brief" && (
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2>
-                {lang === "fr" ? "Compréhension du Brief" : "Brief — What the Hub Understood"}
-              </h2>
-              <span className="badge badge-demo">AI Demo</span>
-            </div>
+            {(() => {
+              const proposedCount = briefItems.filter((b) => b.status === "PROPOSED").length;
+              return (
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                  <h2>
+                    {lang === "fr" ? "Compréhension du Brief" : "Brief — What the Hub Understood"}
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    {briefItems.length > 0 && (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleAcceptAllBriefItems}
+                        disabled={proposedCount === 0 || isAcceptingAll}
+                        title={
+                          lang === "fr"
+                            ? "Accepte d'un seul clic tous les éléments proposés"
+                            : "Accept all proposed items with a single click"
+                        }
+                      >
+                        {isAcceptingAll ? "⏳..." : `⚡ ${lang === "fr" ? "Tout Accepter" : "Accept All"}${proposedCount > 0 ? ` (${proposedCount})` : ""}`}
+                      </button>
+                    )}
+                    <span className="badge badge-demo">AI Demo</span>
+                  </div>
+                </div>
+              );
+            })()}
             {briefItems.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon">💡</div>
@@ -966,62 +1005,43 @@ export function ProjectDetailPageContent() {
                           </p>
                         )}
 
-                        {item.status !== "LOCKED" && (
-                          <div className="flex gap-2 flex-wrap">
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => handleBriefAction(item.id, "accept")}
-                              disabled={item.status === "ACCEPTED"}
-                            >
-                              ✅ {t("action.accept")}
-                            </button>
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => handleBriefAction(item.id, "reject")}
-                            >
-                              ❌ {t("action.reject")}
-                            </button>
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => setLockConfirmItem(item)}
-                              disabled={item.status !== "ACCEPTED" && item.status !== "CORRECTED"}
-                            >
-                              🔒 {t("action.lock")}
-                            </button>
-                          </div>
-                        )}
-                        {item.status === "LOCKED" && (
-                          <span className="text-xs text-muted">
-                            🔒{" "}
-                            {lang === "fr"
-                              ? "Cet élément est verrouillé. Il sert de référence pour la conception."
-                              : "This item is locked. It serves as reference for design."}
-                          </span>
-                        )}
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => handleBriefAction(item.id, "accept")}
+                            disabled={item.status === "ACCEPTED" || item.status === "LOCKED"}
+                          >
+                            ✅ {t("action.accept")}
+                          </button>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => handleBriefAction(item.id, "reject")}
+                          >
+                            ❌ {t("action.reject")}
+                          </button>
+                        </div>
 
                         {/* Correction */}
-                        {item.status !== "LOCKED" && (
-                          <div className="flex gap-2 mt-3">
-                            <input
-                              className="input"
-                              style={{ flex: 1 }}
-                              placeholder={
-                                lang === "fr" ? "Saisir une correction..." : "Enter correction..."
-                              }
-                              value={correctionText[item.id] ?? ""}
-                              onChange={(e) =>
-                                setCorrectionText((p) => ({ ...p, [item.id]: e.target.value }))
-                              }
-                            />
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => handleBriefAction(item.id, "correct")}
-                              disabled={!correctionText[item.id]?.trim()}
-                            >
-                              ✏️ {t("action.correct")}
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex gap-2 mt-3">
+                          <input
+                            className="input"
+                            style={{ flex: 1 }}
+                            placeholder={
+                              lang === "fr" ? "Saisir une correction..." : "Enter correction..."
+                            }
+                            value={correctionText[item.id] ?? ""}
+                            onChange={(e) =>
+                              setCorrectionText((p) => ({ ...p, [item.id]: e.target.value }))
+                            }
+                          />
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => handleBriefAction(item.id, "correct")}
+                            disabled={!correctionText[item.id]?.trim()}
+                          >
+                            ✏️ {t("action.correct")}
+                          </button>
+                        </div>
 
                         {/* Version history */}
                         {item.previousVersions.length > 0 && (
@@ -2415,44 +2435,7 @@ export function ProjectDetailPageContent() {
         )}
       </div>
 
-      {/* Brief Lock Confirmation Modal */}
-      {lockConfirmItem && (
-        <div className="modal-overlay" onClick={() => setLockConfirmItem(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{t("lock.confirm.title")}</h3>
-            </div>
-            <div className="modal-body">
-              <p style={{ marginBottom: "var(--space-3)" }}>{t("lock.confirm.desc")}</p>
-              <div
-                className="card text-sm"
-                style={{
-                  background: "rgba(255,255,255,0.02)",
-                  borderLeft: "4px solid var(--color-primary-500)",
-                  padding: "var(--space-3)",
-                }}
-              >
-                <strong>[{lockConfirmItem.type}]</strong> {lockConfirmItem.statement}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setLockConfirmItem(null)}>
-                {t("action.cancel")}
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={async () => {
-                  const id = lockConfirmItem.id;
-                  setLockConfirmItem(null);
-                  await handleBriefAction(id, "lock");
-                }}
-              >
-                {t("action.confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Toast */}
       {toast && (

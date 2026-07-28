@@ -233,6 +233,19 @@ export class BriefUseCases {
     return updated;
   }
 
+  async acceptAllProposed(projectId: EntityId): Promise<BriefItem[]> {
+    const items = await this.repos.briefItems.getByProjectId(projectId);
+    const proposed = items.filter((i) => i.status === "PROPOSED");
+    const updatedItems: BriefItem[] = [];
+    for (const item of proposed) {
+      const updated = acceptBriefItem(item);
+      await this.repos.briefItems.save(updated);
+      updatedItems.push(updated);
+    }
+    return updatedItems;
+  }
+
+  /** @deprecated Fusionné avec acceptItem — le verrouillage UI séparé a été supprimé. */
   async lockItem(itemId: EntityId): Promise<BriefItem> {
     const item = await this.repos.briefItems.getById(itemId);
     if (!item) throw new Error("BriefItem not found");

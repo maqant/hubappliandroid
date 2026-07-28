@@ -121,7 +121,7 @@ const translations = {
     "org.stats.remaining": "À examiner :",
     "org.planBtn": "Planifier la mission",
     "org.startBtn": "Lancer la mission",
-    "org.cannotPlan": "Vous devez d'abord accepter ou verrouiller au moins un élément du brief.",
+    "org.cannotPlan": "Vous devez d'abord accepter au moins un élément du brief.",
     "org.agentsList": "Agents de conception assignés",
     "org.tasksList": "Graphe des tâches de conception",
     "org.budget": "Budget virtuel simulé :",

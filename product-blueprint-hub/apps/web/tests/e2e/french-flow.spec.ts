@@ -83,13 +83,8 @@ test("Product Blueprint Hub French E2E Flow", async ({ page }) => {
   // 13. Clic sur "Refuser" pour le troisième brief item
   await page.locator("button:has-text('Refuser'):not([disabled])").first().click();
 
-  // 14. Verrouiller le premier item (nécessite acceptation/correction au préalable)
-  await page.locator("button:has-text('Verrouiller'):not([disabled])").first().click();
-
-  // Attente de la modal de confirmation
-  await expect(page.locator("h3:has-text('Verrouiller la référence')")).toBeVisible();
-  // Clic sur Confirmer
-  await page.getByRole("button", { name: "Confirmer" }).click();
+  // 14. Tout Accepter les brief items proposés
+  await page.locator("button:has-text('Tout Accepter')").click();
 
   // 15. Vérification de l'explication du cycle de décision (onglet Décisions)
   const decisionsTab = page.getByRole("button", { name: /Décisions/ });
