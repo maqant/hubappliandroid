@@ -16,6 +16,7 @@ import {
   type Baseline,
   type ExecutionPackage,
   type RunEvent,
+  type EntityId,
   type DesignLayer,
   type DesignProposal,
   type DesignBaselineSummary,

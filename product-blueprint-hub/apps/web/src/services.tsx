@@ -23,6 +23,8 @@ import type {
   DesignGraph,
   DesignBaseline,
   DesignLayer,
+  DesignBaselineSummary,
+  WeavingEdge,
 } from "@pbh/domain";
 import {
   ProjectUseCases,
@@ -135,4 +137,6 @@ export type {
   DesignGraph,
   DesignBaseline,
   DesignLayer,
+  DesignBaselineSummary,
+  WeavingEdge,
 };
