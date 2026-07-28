@@ -12,9 +12,12 @@ import ReactFlow, {
   useEdgesState,
   addEdge,
   Connection,
-  MarkerType
+  MarkerType,
+  ReactFlowProvider,
+  useReactFlow
 } from "reactflow";
 import "reactflow/dist/style.css";
+import { analysisLogCollector } from "@/lib/export/analysis-log-collector";
 import { 
   useServices, 
   type DesignLayer, 
@@ -37,11 +40,32 @@ const LAYER_CONFIG: Record<DesignLayer, { label: string; icon: string; bg: strin
   SCREEN:     { label: 'Écran', icon: '🖥️', bg: '#f1f5f9', border: '#64748b' },
 };
 
-export default function DesignMapPage() {
+
+function FitViewHelper({ nodeCount }: { nodeCount: number }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    if (nodeCount > 0) {
+      setTimeout(() => {
+        fitView({ padding: 0.2, duration: 800 });
+        analysisLogCollector.addEntry({
+          timestamp: new Date().toISOString(),
+          level: "INFO",
+          category: "CARTOGRAPHY",
+          message: "CARTOGRAPHY_FITVIEW_EXECUTED",
+          context: { fitViewExecuted: true }
+        });
+      }, 100);
+    }
+  }, [nodeCount, fitView]);
+  return null;
+}
+
+function DesignMapPageContent() {
   const { id } = useParams();
   const router = useRouter();
   const projectId = id as string;
   const svc = useServices();
+  const { fitView } = useReactFlow();
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -79,6 +103,7 @@ export default function DesignMapPage() {
   const loadGraphData = useCallback(async () => {
     setIsLoading(true);
     try {
+      analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_DATA_LOADED" });
       const p = await svc.repos.projects.getById(projectId as EntityId);
       setProject(p);
 
@@ -87,7 +112,7 @@ export default function DesignMapPage() {
 
       const paths = await svc.designWorkshop.getFeaturePaths(projectId as EntityId);
       setFeaturePaths(paths);
-
+      analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_PATHS_COMPUTED", context: { pathCount: paths.length, proposalCount: proposals.length } });
       const { edges: rawEdges } = await svc.designWorkshop.getWeavingGraph(projectId as EntityId);
 
       const proposalMap = new Map(proposals.map(p => [p.id, p]));
@@ -114,6 +139,7 @@ export default function DesignMapPage() {
         });
 
         const allVisualNodes = projectFeaturePathsToVisualNodes(activePaths, allProposals);
+        analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_PROJECTION_STARTED", context: { projection: 'EXPERIENCE_PATHS', selectedPathCount: activePaths.length } });
 
         activePaths.forEach((path, pathIdx) => {
           const corridorX = pathIdx * 340;
@@ -261,11 +287,11 @@ export default function DesignMapPage() {
 
         // Corridor vertical flow edges
         activePaths.forEach(path => {
-          const connectCorridorLayers = (sourceLayerItems: DesignProposal[], targetLayerItems: DesignProposal[], sLayer: string, tLayer: string) => {
+          const connectCorridorLayers = (sourceLayerItems: DesignProposal[], targetLayerItems: DesignProposal[]) => {
             sourceLayerItems.forEach(sItem => {
               targetLayerItems.forEach(tItem => {
-                const sId = `${path.id}-${sItem.id}-${sLayer}`;
-                const tId = `${path.id}-${tItem.id}-${tLayer}`;
+                const sId = `${path.id}__${sItem.id}`;
+                const tId = `${path.id}__${tItem.id}`;
                 generatedEdges.push({
                   id: `edge-${sId}-${tId}`,
                   source: sId,
@@ -278,13 +304,13 @@ export default function DesignMapPage() {
             });
           };
 
-          connectCorridorLayers(path.intentions, path.hypotheses, 'INTENTION', 'HYPOTHESIS');
+          connectCorridorLayers(path.intentions, path.hypotheses);
           if (path.capabilities) {
-            connectCorridorLayers(path.hypotheses, path.capabilities, 'HYPOTHESIS', 'CAPABILITY');
-            connectCorridorLayers(path.capabilities, path.features.map(f => f.proposal), 'CAPABILITY', 'FEATURE');
+            connectCorridorLayers(path.hypotheses, path.capabilities);
+            connectCorridorLayers(path.capabilities, path.features.map(f => f.proposal));
           }
-          connectCorridorLayers(path.features.map(f => f.proposal), path.journeys.map(j => j.proposal), 'FEATURE', 'JOURNEY');
-          connectCorridorLayers(path.journeys.map(j => j.proposal), path.screens.map(s => s.proposal), 'JOURNEY', 'SCREEN');
+          connectCorridorLayers(path.features.map(f => f.proposal), path.journeys.map(j => j.proposal));
+          connectCorridorLayers(path.journeys.map(j => j.proposal), path.screens.map(s => s.proposal));
         });
       }
 
@@ -414,6 +440,7 @@ export default function DesignMapPage() {
 
       setNodes(generatedNodes);
       setEdges(generatedEdges);
+      analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_PROJECTION_COMPLETED", context: { projectedNodeCount: generatedNodes.length, projectedEdgeCount: generatedEdges.length, projection: projectionMode } });
     } catch (e) {
       console.error("Failed to load graph data:", e);
     } finally {
@@ -571,6 +598,9 @@ export default function DesignMapPage() {
           <button className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-md font-medium" onClick={loadGraphData}>
             🔄 Rafraîchir
           </button>
+          <button className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-medium border border-slate-300" onClick={() => { fitView({ padding: 0.2, duration: 800 }); analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_FITVIEW_EXECUTED", context: { fitViewExecuted: true }}); }}>
+            🔍 Ajuster à l&apos;écran
+          </button>
           <button
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium flex items-center gap-1.5"
             onClick={() => setIsExportModalOpen(true)}
@@ -582,7 +612,13 @@ export default function DesignMapPage() {
             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-md font-medium"
             onClick={async () => {
               showToast("🖼️ Génération de l'image de la cartographie...");
+              analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_PNG_CAPTURE_STARTED" });
               const res = await exportMapImageOnly(project?.title, () => canvasRef.current);
+              if (res.success) {
+                analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_PNG_CAPTURE_COMPLETED" });
+              } else {
+                analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "ERROR", category: "CARTOGRAPHY", message: "CARTOGRAPHY_PNG_CAPTURE_FAILED", context: { reason: res.error, nodeCount: nodes.length, edgeCount: edges.length, containerWidth: canvasRef.current?.offsetWidth, containerHeight: canvasRef.current?.offsetHeight } });
+              }
               if (res.success) {
                 showToast(`✅ Image téléchargée : ${res.fileName}`);
               } else {
@@ -604,15 +640,21 @@ export default function DesignMapPage() {
             <div className="flex items-center justify-center h-full text-slate-500">
               <span>Chargement des Paths d&apos;Expérience...</span>
             </div>
-          ) : nodes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-              <p className="text-slate-500 text-lg">Aucune proposition générée dans l&apos;Atelier.</p>
-              <button className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg" onClick={() => router.push(`/projects/${projectId}?tab=design`)}>
+
+          ) : featurePaths.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8 bg-slate-50">
+              <p className="text-slate-500 text-lg font-medium">Aucun path d’expérience n’a pu être calculé.</p>
+              <button className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow" onClick={() => router.push(`/projects/${projectId}?tab=design`)}>
                 ✨ Ouvrir l&apos;Atelier de Conception
               </button>
             </div>
+          ) : nodes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8 bg-slate-50">
+              <p className="text-slate-500 text-lg font-medium">Les paths existent, mais aucun nœud visuel n’a pu être construit. Consultez les diagnostics.</p>
+            </div>
           ) : (
             <ReactFlow
+
               nodes={nodes}
               edges={edges}
               onNodesChange={onNodesChange}
@@ -625,6 +667,7 @@ export default function DesignMapPage() {
               }}
               fitView
             >
+              <FitViewHelper nodeCount={nodes.length} />
               <Background />
               <Controls />
               <MiniMap />
@@ -848,5 +891,14 @@ export default function DesignMapPage() {
         showToast={(msg) => showToast(msg)}
       />
     </div>
+  );
+}
+
+
+export default function DesignMapPage() {
+  return (
+    <ReactFlowProvider>
+      <DesignMapPageContent />
+    </ReactFlowProvider>
   );
 }
