@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createDesignProposal, DesignProposal } from "./design-proposals";
-import { computeFeaturePaths } from "./feature-paths";
+import { computeFeaturePaths, projectFeaturePathsToVisualNodes } from "./feature-paths";
 
 describe("computeFeaturePaths v0.15.0", () => {
   it("TEST A & D: Calcul d'un Path autonome sans duplication de persistance", () => {
@@ -92,5 +92,25 @@ describe("computeFeaturePaths v0.15.0", () => {
     const path = paths[0]!;
     expect(path.status).toBe("INCOMPLETE");
     expect(path.warnings).toContain("Parcours sans étapes structurées.");
+  });
+
+  it("TEST H: Projections utilisent les mêmes canonicalNodeId mais des projectionId distincts si partagés", () => {
+    const projectId = "proj-H" as any;
+    const feat = createDesignProposal({ projectId, layer: "FEATURE", title: "F1", status: "ACCEPTED" });
+    const j1 = createDesignProposal({ projectId, layer: "JOURNEY", title: "J1", parentProposalIds: [feat.id], layerData: { steps: [{ featureIds: [feat.id] }] } as any, status: "ACCEPTED" });
+    const j2 = createDesignProposal({ projectId, layer: "JOURNEY", title: "J2", parentProposalIds: [feat.id], layerData: { steps: [{ featureIds: [feat.id] }] } as any, status: "ACCEPTED" });
+    
+    const proposals = [feat, j1, j2];
+    const paths = computeFeaturePaths(proposals);
+    const visualNodes = projectFeaturePathsToVisualNodes(paths, proposals);
+
+    // feat is shared between j1 and j2 (so 2 paths)
+    const featNodes = visualNodes.filter(n => n.canonicalNodeId === feat.id);
+    expect(featNodes.length).toBe(2);
+    expect(featNodes[0]!.projectionId).not.toBe(featNodes[1]!.projectionId);
+    expect(featNodes[0]!.isShared).toBe(true);
+    
+    // Check that canonical is identical
+    expect(featNodes[0]!.canonicalNodeId).toBe(featNodes[1]!.canonicalNodeId);
   });
 });

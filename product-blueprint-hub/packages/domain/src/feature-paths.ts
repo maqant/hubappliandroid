@@ -1,5 +1,5 @@
 import type { EntityId } from "./entities";
-import type { DesignProposal, JourneyStep } from "./design-proposals";
+import type { DesignProposal, JourneyStep, DesignLayer } from "./design-proposals";
 
 export interface FeaturePathNode {
   readonly proposal: DesignProposal;
@@ -312,4 +312,76 @@ export function computeFeaturePaths(proposals: DesignProposal[]): FeaturePath[] 
   }
 
   return paths;
+}
+
+export interface ProjectedPathNode {
+  readonly projectionId: string;
+  readonly canonicalNodeId: EntityId;
+  readonly pathId: string;
+  readonly layer: DesignLayer;
+  readonly title: string;
+  readonly status: string;
+  readonly reviewState: string;
+  readonly isVisualReference: boolean;
+  readonly isShared: boolean;
+  readonly sharedUsageCount: number;
+  readonly sharedAcrossPathIds: string[];
+  readonly isOrphan: boolean;
+  readonly positionRole: 'ROOT' | 'MIDDLE' | 'LEAF' | 'ISOLATED';
+}
+
+export function projectFeaturePathsToVisualNodes(paths: FeaturePath[], proposals: DesignProposal[]): ProjectedPathNode[] {
+  const proposalMap = new Map<EntityId, DesignProposal>();
+  proposals.forEach((p) => proposalMap.set(p.id, p));
+
+  const visualNodes: ProjectedPathNode[] = [];
+
+  // 1. Calculate global shared usage
+  const usagesByNodeId = new Map<EntityId, Set<string>>();
+  paths.forEach(path => {
+    path.canonicalNodeIds.forEach(nodeId => {
+      if (!usagesByNodeId.has(nodeId)) usagesByNodeId.set(nodeId, new Set());
+      usagesByNodeId.get(nodeId)!.add(path.id);
+    });
+  });
+
+  paths.forEach(path => {
+    path.canonicalNodeIds.forEach(nodeId => {
+      const proposal = proposalMap.get(nodeId);
+      if (!proposal) return;
+
+      const pathUsages = usagesByNodeId.get(nodeId);
+      const sharedAcrossPathIds = pathUsages ? Array.from(pathUsages) : [];
+      const sharedUsageCount = sharedAcrossPathIds.length;
+      const isShared = sharedUsageCount > 1;
+
+      // Un nœud est visuellement une référence dupliquée s'il est partagé.
+      const projectionId = `${path.id}__${nodeId}`;
+
+      let positionRole: 'ROOT' | 'MIDDLE' | 'LEAF' | 'ISOLATED' = 'MIDDLE';
+      if (!proposal.parentId && (!proposal.parentProposalIds || proposal.parentProposalIds.length === 0)) {
+        positionRole = 'ROOT';
+      }
+      
+      const isOrphan = path.orphanNodeIds.includes(nodeId);
+
+      visualNodes.push({
+        projectionId,
+        canonicalNodeId: nodeId,
+        pathId: path.id,
+        layer: proposal.layer,
+        title: proposal.title,
+        status: proposal.status,
+        reviewState: proposal.status,
+        isVisualReference: isShared,
+        isShared,
+        sharedUsageCount,
+        sharedAcrossPathIds,
+        isOrphan,
+        positionRole
+      });
+    });
+  });
+
+  return visualNodes;
 }

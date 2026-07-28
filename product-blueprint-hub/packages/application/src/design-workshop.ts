@@ -230,11 +230,149 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
   return JSON.stringify(sections, null, 2);
 }
 
-async getPromptDiagnostic(agentId: string): Promise<any> {
-  return this.repos.prompts.getPromptDiagnostic(agentId);
-}
+  async getPromptDiagnostic(agentId: string): Promise<any> {
+    return this.repos.prompts.getPromptDiagnostic(agentId);
+  }
 
 
+
+  async composeFeaturesIntoJourneyContexts(projectId: EntityId) {
+    const allProposals = await this.repos.designProposals.getByProjectId(projectId);
+    const features = allProposals.filter(p => p.layer === 'FEATURE' && p.status !== 'REJECTED' && p.status !== 'DEFERRED');
+    
+    const grouped = new Map<EntityId, DesignProposal[]>();
+    features.forEach(f => {
+      const parentId = f.parentId || (f.parentProposalIds && f.parentProposalIds[0]) || ('orphan' as EntityId);
+      if (!grouped.has(parentId)) grouped.set(parentId, []);
+      grouped.get(parentId)!.push(f);
+    });
+
+    const groups: any[] = [];
+    grouped.forEach((groupFeatures, capId) => {
+      const cap = allProposals.find(p => p.id === capId);
+      groups.push({
+        userGoal: cap ? cap.title : "Objectif général",
+        trigger: "Déclenchement standard",
+        featureIds: groupFeatures.map(f => f.id),
+        capabilityIds: cap ? [cap.id] : [],
+        context: cap ? cap.description : "Contexte générique",
+        expectedOutcome: "Succès du parcours",
+      });
+    });
+
+    const createdJourneys: DesignProposal[] = [];
+    for (const group of groups) {
+      if (group.featureIds.length === 0) continue;
+      
+      const journey = createDesignProposal({
+        projectId,
+        layer: 'JOURNEY',
+        title: `Parcours pour ${group.userGoal}`,
+        description: `Parcours généré pour englober les fonctionnalités de ${group.userGoal}`,
+        status: 'PROPOSED',
+        origin: 'AI_ASSISTED',
+        rationale: 'Regroupement automatique',
+        alternatives: [],
+        risks: [],
+        targetPlatforms: ["WEB_NEXTJS"],
+        category: "GENERATED",
+        parentProposalIds: group.featureIds,
+        layerData: {
+          goal: group.userGoal,
+          trigger: group.trigger,
+          usedFeatureIds: group.featureIds,
+          steps: group.featureIds.map((fid: EntityId, idx: number) => ({
+            order: idx + 1,
+            stepNumber: idx + 1,
+            userAction: "Action utilisateur " + (idx + 1),
+            systemResponse: "Réponse système",
+            featureIds: [fid],
+          })),
+        }
+      });
+      await this.repos.designProposals.save(journey);
+      createdJourneys.push(journey);
+    }
+
+    return createdJourneys;
+  }
+
+  async materializeJourneyStepsIntoScreens(projectId: EntityId) {
+    const allProposals = await this.repos.designProposals.getByProjectId(projectId);
+    const journeys = allProposals.filter(p => p.layer === 'JOURNEY' && p.status !== 'REJECTED');
+    const existingScreens = allProposals.filter(p => p.layer === 'SCREEN' && p.status !== 'REJECTED');
+
+    const createdScreens: DesignProposal[] = [];
+
+    for (const journey of journeys) {
+      const data = journey.layerData as any;
+      if (!data || !data.steps) continue;
+
+      let updated = false;
+      for (const step of data.steps) {
+        if (!step.featureIds || step.featureIds.length === 0) continue;
+
+        const compatibleScreen = existingScreens.find(s => {
+          const sData = s.layerData as any;
+          const exposed = sData?.exposedFeatureIds || [];
+          return step.featureIds.some((fid: EntityId) => exposed.includes(fid));
+        });
+
+        if (compatibleScreen) {
+          step.screenIds = [compatibleScreen.id];
+          step.screenId = compatibleScreen.id;
+          
+          const sData = compatibleScreen.layerData as any;
+          if (!sData.journeyIds) sData.journeyIds = [];
+          if (!sData.journeyIds.includes(journey.id)) sData.journeyIds.push(journey.id);
+          
+          if (!compatibleScreen.parentProposalIds) {
+            (compatibleScreen as any).parentProposalIds = [];
+          }
+          if (!compatibleScreen.parentProposalIds.includes(journey.id)) {
+            compatibleScreen.parentProposalIds.push(journey.id);
+          }
+          
+          await this.repos.designProposals.save(compatibleScreen);
+          updated = true;
+        } else {
+          const newScreen = createDesignProposal({
+            projectId,
+            layer: 'SCREEN',
+            title: `Écran pour étape ${step.stepNumber}`,
+            description: `Écran généré pour l'étape ${step.stepNumber} de ${journey.title}`,
+            status: 'PROPOSED',
+            origin: 'AI_ASSISTED',
+            rationale: 'Génération automatique',
+            alternatives: [],
+            risks: [],
+            targetPlatforms: ["WEB_NEXTJS"],
+            category: "GENERATED",
+            parentId: journey.id,
+            parentProposalIds: [journey.id],
+            layerData: {
+              role: "Interface utilisateur",
+              journeyIds: [journey.id],
+              exposedFeatureIds: step.featureIds,
+            }
+          });
+          await this.repos.designProposals.save(newScreen);
+          existingScreens.push(newScreen);
+          createdScreens.push(newScreen);
+
+          step.screenIds = [newScreen.id];
+          step.screenId = newScreen.id;
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        await this.repos.designProposals.save(journey);
+      }
+    }
+
+    return createdScreens;
+  }
 
   async getUpstreamContextPreview(projectId: EntityId, layer: DesignLayer): Promise<UpstreamContextPreview> {
     const UPSTREAM_LAYERS: Record<DesignLayer, DesignLayer[]> = {
@@ -968,26 +1106,6 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     }
 
     const rawProposals = parsed?.proposals || [];
-    if (!Array.isArray(rawProposals) || rawProposals.length === 0) {
-      // Diagnostic structuré en cas de 0 résultat
-      return {
-        proposals: [],
-        diagnostic: {
-          code: "NO_PROPOSALS_GENERATED",
-          step: mode === "alternatives" ? "ALTERNATIVES_GENERATION" : "DEEPEN_GENERATION",
-          agentId,
-          promptFound: !!promptTpl,
-          parsedCount: 0,
-          rejectedCount: 0,
-          persistenceCount: 0,
-          reasons: [
-            `L'agent ${agentId} n'a pas pu produire de variante valide pour "${sourceProposal.title}".`,
-            `La proposition source (${sourceProposal.layer}) manque peut-être de détails pour faire émerger de nouvelles déclinons.`
-          ],
-          invalidReferences: []
-        }
-      };
-    }
 
     const nextLayerMap: Record<DesignLayer, DesignLayer> = {
       INTENTION: "HYPOTHESIS",
@@ -999,6 +1117,32 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     };
 
     const targetLayer = mode === "alternatives" ? sourceProposal.layer : (nextLayerMap[sourceProposal.layer] || "SCREEN");
+
+    if (!Array.isArray(rawProposals) || rawProposals.length === 0) {
+      return {
+        proposals: [],
+        diagnostic: {
+          code: "NO_PROPOSALS_GENERATED",
+          step: mode === "alternatives" ? "ALTERNATIVES_GENERATION" : "DEEPEN_GENERATION",
+          agentId,
+          promptId: promptTpl?.id || "N/A",
+          promptVersion: promptTpl?.version || "N/A",
+          sourceProposalId: proposalId,
+          targetLayer,
+          parsedCount: 0,
+          rejectedCount: 0,
+          invalidReferenceCount: 0,
+          persistenceCount: 0,
+          persistedProposalIds: [],
+          reasons: [
+            `L'agent ${agentId} n'a pas pu produire de variante valide pour "${sourceProposal.title}".`,
+            `La proposition source (${sourceProposal.layer}) manque peut-être de détails pour faire émerger de nouvelles déclinaisons.`
+          ],
+        }
+      };
+    }
+
+
 
     const newProposals: DesignProposal[] = [];
     for (const raw of rawProposals) {
@@ -1034,10 +1178,15 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
         code: "SUCCESS",
         step: mode === "alternatives" ? "ALTERNATIVES_GENERATION" : "DEEPEN_GENERATION",
         agentId,
-        promptFound: true,
+        promptId: promptTpl?.id || "N/A",
+        promptVersion: promptTpl?.version || "N/A",
+        sourceProposalId: proposalId,
+        targetLayer,
         parsedCount: rawProposals.length,
         rejectedCount: 0,
+        invalidReferenceCount: 0,
         persistenceCount: newProposals.length,
+        persistedProposalIds: newProposals.map(p => p.id),
         reasons: []
       }
     };
