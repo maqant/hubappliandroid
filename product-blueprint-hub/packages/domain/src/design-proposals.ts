@@ -86,11 +86,15 @@ export interface FeatureLayerData {
 }
 
 export interface JourneyStep {
-  order: number;
+  order?: number;
+  stepNumber?: number;
   userAction: string;
-  visibleInformation: string;
-  systemResponse: string;
-  featureIds: EntityId[];
+  action?: string;
+  visibleInformation?: string;
+  systemResponse?: string;
+  featureIds?: EntityId[];
+  screenId?: EntityId;
+  screenIds?: EntityId[];
   decision?: string;
   stepOutcome?: string;
 }

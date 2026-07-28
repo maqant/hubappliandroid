@@ -1055,7 +1055,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
   ): Promise<{ updatedCount: number; path: import("@pbh/domain").FeaturePath }> {
     const allProposals = await this.repos.designProposals.getByProjectId(projectId);
     const paths = computeFeaturePaths(allProposals);
-    const targetPath = paths.find(p => p.capabilityProposal.id === capabilityId);
+    const targetPath = paths.find(p => p.capabilityProposal?.id === capabilityId || p.primaryJourneyId === capabilityId || p.id === capabilityId || p.canonicalNodeIds.includes(capabilityId));
     if (!targetPath) throw new Error("Feature Path non trouvé pour cette capacité.");
 
     let updatedCount = 0;
@@ -1080,7 +1080,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
 
     const refreshProposals = await this.repos.designProposals.getByProjectId(projectId);
     const updatedPaths = computeFeaturePaths(refreshProposals);
-    const updatedPath = updatedPaths.find(p => p.capabilityProposal.id === capabilityId)!;
+    const updatedPath = updatedPaths.find(p => p.capabilityProposal?.id === capabilityId || p.primaryJourneyId === capabilityId || p.id === capabilityId || p.canonicalNodeIds.includes(capabilityId)) || updatedPaths[0]!;
 
     return { updatedCount, path: updatedPath };
   }
@@ -1172,5 +1172,83 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     }
 
     return { paths, summary, generatedCount };
+  }
+
+  async getNodePathContext(projectId: EntityId, proposalId: EntityId): Promise<{
+    canonicalProposal: DesignProposal;
+    pathIds: string[];
+    intentionIds: EntityId[];
+    hypothesisIds: EntityId[];
+    capabilityIds: EntityId[];
+    featureIds: EntityId[];
+    journeyIds: EntityId[];
+    screenIds: EntityId[];
+    directParentIds: EntityId[];
+    directChildIds: EntityId[];
+    dependencyIds: EntityId[];
+    relatedProposalIds: EntityId[];
+    sharedAcrossPathIds: string[];
+    sharedUsageCount: number;
+    impactScope: string[];
+    reviewState: string;
+    warnings: string[];
+    stepUsages: Array<{ journeyId: EntityId; stepNumber: number; stepAction: string }>;
+  }> {
+    const proposal = await this.repos.designProposals.getById(proposalId);
+    if (!proposal) throw new Error("Proposition introuvable");
+
+    const allProps = await this.repos.designProposals.getByProjectId(projectId);
+    const paths = computeFeaturePaths(allProps);
+
+    const matchingPaths = paths.filter(p => p.canonicalNodeIds.includes(proposalId));
+    const pathIds = matchingPaths.map(p => p.id);
+    
+    const directParentIds = [
+      ...(proposal.parentId ? [proposal.parentId] : []),
+      ...(proposal.parentProposalIds || [])
+    ];
+    const directChildren = allProps.filter(p => p.parentId === proposalId || (p.parentProposalIds || []).includes(proposalId));
+    const directChildIds = directChildren.map(c => c.id);
+
+    const stepUsages: Array<{ journeyId: EntityId; stepNumber: number; stepAction: string }> = [];
+    allProps.filter(p => p.layer === 'JOURNEY').forEach(j => {
+      const jData = j.layerData as any;
+      const steps = Array.isArray(jData?.steps) ? jData.steps : [];
+      steps.forEach((st: any, idx: number) => {
+        if ((st.featureIds || []).includes(proposalId) || (st.screenIds || []).includes(proposalId) || st.screenId === proposalId) {
+          stepUsages.push({
+            journeyId: j.id,
+            stepNumber: st.stepNumber || (idx + 1),
+            stepAction: st.userAction || st.action || `Étape ${idx + 1}`
+          });
+        }
+      });
+    });
+
+    const impactScope = Array.from(new Set<string>([
+      ...matchingPaths.map(p => p.title),
+      ...directChildren.map(c => `${c.title} (${c.layer})`)
+    ]));
+
+    return {
+      canonicalProposal: proposal,
+      pathIds,
+      intentionIds: Array.from(new Set(matchingPaths.flatMap(p => p.intentionIds))),
+      hypothesisIds: Array.from(new Set(matchingPaths.flatMap(p => p.hypothesisIds))),
+      capabilityIds: Array.from(new Set(matchingPaths.flatMap(p => p.capabilityIds))),
+      featureIds: Array.from(new Set(matchingPaths.flatMap(p => p.featureIds))),
+      journeyIds: Array.from(new Set(matchingPaths.flatMap(p => p.journeyIds))),
+      screenIds: Array.from(new Set(matchingPaths.flatMap(p => p.screenIds))),
+      directParentIds,
+      directChildIds,
+      dependencyIds: proposal.dependencyIds || [],
+      relatedProposalIds: proposal.relatedProposalIds || [],
+      sharedAcrossPathIds: pathIds,
+      sharedUsageCount: pathIds.length,
+      impactScope,
+      reviewState: proposal.status,
+      warnings: pathIds.length > 1 ? [`Nœud partagé dans ${pathIds.length} paths d'expérience.`] : [],
+      stepUsages,
+    };
   }
 }

@@ -1339,7 +1339,7 @@ export function ProjectDetailPageContent() {
                             onClick={() => setSelectedPathId(isSel ? null : fp.id)}
                           >
                             <div className="font-medium text-emerald-900 dark:text-emerald-200">
-                              Capacité : {fp.capabilityProposal.title}
+                              Path : {fp.title || fp.capabilityProposal?.title}
                             </div>
                             <div className="text-[11px] text-muted-foreground mt-0.5">
                               {fp.features.length} Fonct. • {fp.journeys.length} Parcours • {fp.screens.length} Écrans • [{fp.status}]
@@ -1349,7 +1349,8 @@ export function ProjectDetailPageContent() {
                                 className="px-1.5 py-0.5 text-[10px] bg-emerald-600 text-white rounded"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleArbitratePath(fp.capabilityProposal.id, 'ACCEPT_PROPOSED');
+                                  const targetId = fp.capabilityProposal?.id || fp.primaryJourneyId || fp.id;
+                                  if (targetId) handleArbitratePath(targetId as EntityId, 'ACCEPT_PROPOSED');
                                 }}
                               >
                                 Tout accepter
@@ -1358,7 +1359,8 @@ export function ProjectDetailPageContent() {
                                 className="px-1.5 py-0.5 text-[10px] bg-amber-600 text-white rounded"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleArbitratePath(fp.capabilityProposal.id, 'DEFER_PROPOSED');
+                                  const targetId = fp.capabilityProposal?.id || fp.primaryJourneyId || fp.id;
+                                  if (targetId) handleArbitratePath(targetId as EntityId, 'DEFER_PROPOSED');
                                 }}
                               >
                                 Reporter

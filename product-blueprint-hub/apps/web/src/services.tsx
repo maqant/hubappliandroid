@@ -25,6 +25,7 @@ import type {
   DesignLayer,
   DesignBaselineSummary,
   WeavingEdge,
+  FeaturePath,
 } from "@pbh/domain";
 import {
   ProjectUseCases,
@@ -141,4 +142,5 @@ export type {
   DesignBaselineSummary,
   WeavingEdge,
   UpstreamContextPreview,
+  FeaturePath,
 };
