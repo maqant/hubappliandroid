@@ -20,6 +20,7 @@ import {
   type DesignLayer,
   type DesignProposal,
   type DesignBaselineSummary,
+  type UpstreamContextPreview,
 } from "@/services";
 import { useTranslation } from "@/i18n";
 
@@ -114,6 +115,9 @@ export function ProjectDetailPageContent() {
   const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
   const [userFeedbackText, setUserFeedbackText] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [upstreamPreview, setUpstreamPreview] = useState<UpstreamContextPreview | null>(null);
+  const [upstreamPanelOpen, setUpstreamPanelOpen] = useState(false);
+  const [deferredCount, setDeferredCount] = useState(0);
   
   // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -244,6 +248,26 @@ export function ProjectDetailPageContent() {
       loadProposals();
     }
   }, [activeTab, selectedLayer, loadProposals]);
+
+  // Load upstream context preview when layer changes (design tab)
+  useEffect(() => {
+    if (activeTab !== 'design' || !projectId) return;
+    svc.designWorkshop.getUpstreamContextPreview(projectId as EntityId, selectedLayer)
+      .then(preview => setUpstreamPreview(preview))
+      .catch(() => setUpstreamPreview(null));
+  }, [activeTab, selectedLayer, projectId, svc]);
+
+  // Load deferred count across all layers
+  useEffect(() => {
+    if (activeTab !== 'design' || !projectId) return;
+    const allLayers: DesignLayer[] = ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'];
+    Promise.all(allLayers.map(l => svc.designWorkshop.getProposals(projectId as EntityId, l)))
+      .then(results => {
+        const count = results.flatMap(r => r).filter(p => p.status === 'DEFERRED').length;
+        setDeferredCount(count);
+      })
+      .catch(() => {});
+  }, [activeTab, projectId, svc]);
 
   // ---- Actions ----
 
@@ -412,6 +436,22 @@ export function ProjectDetailPageContent() {
       await handleProposalAction(id, 'ACCEPTED');
     }
     setSelectedProposalIds(new Set());
+  };
+
+  const handleDownloadRoadmap = async () => {
+    try {
+      const md = await svc.designWorkshop.generateDeferredRoadmap(projectId as EntityId);
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `roadmap-deferred-${projectId}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('success', '📋 Roadmap des idées reportées générée et téléchargée !');
+    } catch (e: any) {
+      showToast('error', e.message || String(e));
+    }
   };
 
   const handleFreezeDesignBaseline = async () => {
@@ -1137,6 +1177,15 @@ export function ProjectDetailPageContent() {
                       {isGenerating ? '⏳ Exploration…' : `✨ Essaimer (${selectedLayer})`}
                     </button>
                   </div>
+                  {deferredCount > 0 && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleDownloadRoadmap}
+                      title={`${deferredCount} idée(s) reportée(s) — exporter en roadmap .md`}
+                    >
+                      📋 Roadmap DEFERRED ({deferredCount})
+                    </button>
+                  )}
                 </div>
                 {generationError && <p className="text-sm text-red-600 mb-2">{generationError}</p>}
                 
@@ -1193,6 +1242,45 @@ export function ProjectDetailPageContent() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+
+                {/* Panneau Contexte Amont validé (UpstreamContextPanel) */}
+                {upstreamPreview && selectedLayer !== 'INTENTION' && (
+                  <div className="mb-4 text-xs">
+                    {upstreamPreview.hasUpstream ? (
+                      <div className="border border-emerald-200 dark:border-emerald-800 rounded-md overflow-hidden">
+                        <button
+                          className="w-full flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/20 text-left"
+                          onClick={() => setUpstreamPanelOpen(o => !o)}
+                        >
+                          <span className="font-semibold text-emerald-900 dark:text-emerald-200">
+                            🧬 {upstreamPreview.items.length} proposition(s) validée(s) des couches amont ({upstreamPreview.upstreamLayers.join(', ')}) transmises aux agents
+                          </span>
+                          <span className="text-emerald-600 dark:text-emerald-400">{upstreamPanelOpen ? '▲ Masquer' : '▼ Voir'}</span>
+                        </button>
+                        {upstreamPanelOpen && (
+                          <div className="p-3 bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800 max-h-48 overflow-auto">
+                            {upstreamPreview.items.map(item => (
+                              <div key={item.id} className="py-1.5 flex items-center gap-2">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">{item.layer}</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                  item.status === 'ACCEPTED' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                                }`}>{item.status}</span>
+                                <span className="text-gray-700 dark:text-gray-300 truncate flex-1">{item.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+                        ⚠️ <strong>Aucune proposition validée en amont</strong> — les agents travailleront uniquement depuis le brief.
+                        Validez d&apos;abord des propositions des couches&nbsp;
+                        <strong>{upstreamPreview.upstreamLayers.join(', ')}</strong>
+                        &nbsp;pour un meilleur tissage.
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -32,6 +32,8 @@ export interface FeatureAlternative {
   status: 'CANDIDATE' | 'SELECTED' | 'DISCARDED';
 }
 
+export type LinkSource = 'AI' | 'AUTO_MATCHED' | 'MANUAL' | null;
+
 export interface DesignProposal extends BaseEntity, Owned {
   readonly layer: DesignLayer;
   readonly title: string;
@@ -64,6 +66,10 @@ export interface DesignProposal extends BaseEntity, Owned {
   readonly sourceExcerpts?: string[];
   readonly decidedAt?: string | null;
   readonly decidedBy?: string | null;
+  // Provenance du lien parent (null = orphelin ou couche initiale)
+  readonly linkSource?: LinkSource;
+  // Score de confiance [0..1] si linkSource === 'AUTO_MATCHED', sinon null
+  readonly linkConfidence?: number | null;
 }
 
 export function createDesignProposal(params: Omit<DesignProposal, 'id' | 'version' | 'createdAt' | 'updatedAt'>): DesignProposal {

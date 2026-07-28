@@ -1,9 +1,134 @@
 import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal } from "@pbh/domain";
-import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge } from "@pbh/domain";
+import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge, LinkSource } from "@pbh/domain";
 import { createDesignGraph, createId } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
 import { safeParseModelJson } from "@pbh/model-gateway";
+
+// ============================================================
+// STOP WORDS pour TF-IDF lexical (FR + EN, sans dépendance)
+// ============================================================
+const STOP_WORDS = new Set([
+  'le','la','les','de','des','du','un','une','et','ou','pour','avec',
+  'dans','sur','par','au','aux','ce','qui','que','qu','en','se','si',
+  'the','a','an','of','to','and','or','in','for','on','at','is','it',
+  'its','are','was','be','as','by','we','us','our',
+]);
+
+function tokenize(text: string): string[] {
+  return text.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter(t => t.length > 2 && !STOP_WORDS.has(t));
+}
+
+function scoreSimilarity(
+  candidateTokens: string[],
+  upstreamDocs: Map<string, string[]>
+): Array<{ id: string; score: number }> {
+  const N = upstreamDocs.size;
+  if (N === 0 || candidateTokens.length === 0) return [];
+
+  // IDF
+  const df = new Map<string, number>();
+  upstreamDocs.forEach(tokens => {
+    const unique = new Set(tokens);
+    unique.forEach(t => df.set(t, (df.get(t) ?? 0) + 1));
+  });
+  const idf = (t: string) => Math.log((N + 1) / (1 + (df.get(t) ?? 0)));
+
+  // Vecteur candidat TF-IDF
+  const candidateFreq = new Map<string, number>();
+  candidateTokens.forEach(t => candidateFreq.set(t, (candidateFreq.get(t) ?? 0) + 1));
+  const candidateVec = new Map<string, number>();
+  candidateFreq.forEach((freq, t) => candidateVec.set(t, (freq / candidateTokens.length) * idf(t)));
+
+  // Similarité cosinus pour chaque document amont
+  const results: Array<{ id: string; score: number }> = [];
+  upstreamDocs.forEach((tokens, id) => {
+    const freq = new Map<string, number>();
+    tokens.forEach(t => freq.set(t, (freq.get(t) ?? 0) + 1));
+
+    let dot = 0, normDoc = 0, normCand = 0;
+    const allTerms = new Set([...candidateVec.keys(), ...freq.keys()]);
+    allTerms.forEach(t => {
+      const c = candidateVec.get(t) ?? 0;
+      const d = ((freq.get(t) ?? 0) / tokens.length) * idf(t);
+      dot += c * d;
+      normCand += c * c;
+      normDoc += d * d;
+    });
+    const score = normCand > 0 && normDoc > 0
+      ? dot / (Math.sqrt(normCand) * Math.sqrt(normDoc))
+      : 0;
+    results.push({ id, score });
+  });
+
+  return results.sort((a, b) => b.score - a.score);
+}
+
+const AUTO_MATCH_THRESHOLD = 0.12;
+
+interface ParsedProposal { title: string; description?: string; parentId?: string; dependencies?: string[]; [key: string]: any; }
+
+interface LinkResolution {
+  parentId: string | null;
+  lineage: string[];
+  linkSource: LinkSource;
+  linkConfidence: number | null;
+}
+
+function resolveProposalLinks(
+  aiProposal: ParsedProposal,
+  upstream: DesignProposal[]
+): LinkResolution {
+  const validIds = new Set(upstream.map(u => u.id));
+
+  // CAS 1 — L'IA a fourni un parentId VALIDE (anti-hallucination)
+  if (aiProposal.parentId && validIds.has(aiProposal.parentId)) {
+    const parent = upstream.find(u => u.id === aiProposal.parentId)!;
+    return {
+      parentId: parent.id,
+      lineage: [...(parent.lineage ?? []), parent.id],
+      linkSource: 'AI',
+      linkConfidence: null,
+    };
+  }
+
+  // CAS 2 — parentId absent ou halluciné → matching lexical TF-IDF
+  const candidateTokens = tokenize(`${aiProposal.title} ${aiProposal.description ?? ''}`);
+  const docs = new Map(upstream.map(u => [u.id, tokenize(`${u.title} ${u.description ?? ''}`)]));
+  const ranked = scoreSimilarity(candidateTokens, docs);
+  const best = ranked[0];
+
+  if (best && best.score >= AUTO_MATCH_THRESHOLD) {
+    const parent = upstream.find(u => u.id === best.id)!;
+    return {
+      parentId: parent.id,
+      lineage: [...(parent.lineage ?? []), parent.id],
+      linkSource: 'AUTO_MATCHED',
+      linkConfidence: Math.round(best.score * 100) / 100,
+    };
+  }
+
+  // CAS 3 — Aucun match fiable → orphelin tracé
+  return { parentId: null, lineage: [], linkSource: null, linkConfidence: null };
+}
+
+// ============================================================
+// Type pour la preview du contexte amont (usage UI)
+// ============================================================
+export interface UpstreamContextPreview {
+  layer: DesignLayer;
+  upstreamLayers: DesignLayer[];
+  items: Array<{
+    id: string;
+    layer: DesignLayer;
+    title: string;
+    status: string;
+  }>;
+  hasUpstream: boolean;
+}
 
 export class DesignWorkshopUseCases {
   constructor(
@@ -15,7 +140,11 @@ export class DesignWorkshopUseCases {
     return this.repos.designProposals.getByLayer(projectId, layer);
   }
 
-  private async buildUpstreamContext(projectId: EntityId, layer: DesignLayer): Promise<string> {
+  // Source unique de vérité du contexte amont (utilisée par buildUpstreamContext ET getUpstreamContextPreview)
+  private async selectUpstreamProposals(
+    projectId: EntityId,
+    layer: DesignLayer
+  ): Promise<{ layer: DesignLayer; proposals: DesignProposal[] }[]> {
     const UPSTREAM_LAYERS: Record<DesignLayer, DesignLayer[]> = {
       INTENTION:  [],
       HYPOTHESIS: ['INTENTION'],
@@ -24,31 +153,95 @@ export class DesignWorkshopUseCases {
       JOURNEY:    ['FEATURE'],
       SCREEN:     ['JOURNEY', 'FEATURE'],
     };
-
     const upstream = UPSTREAM_LAYERS[layer] || [];
-    if (upstream.length === 0) {
-      return "N/A — Couche initiale. Dérivez vos propositions à partir des éléments de brief confirmés.";
-    }
-
-    const sections: Record<string, any[]> = {};
+    const result: { layer: DesignLayer; proposals: DesignProposal[] }[] = [];
     for (const upLayer of upstream) {
       const proposals = await this.repos.designProposals.getByLayer(projectId, upLayer);
-      const validProposals = proposals.filter((p) => p.status === "ACCEPTED" || p.status === "PROPOSED");
-      if (validProposals.length > 0) {
-        sections[upLayer] = validProposals.slice(0, 20).map((p) => ({
-          id: p.id,
-          title: p.title,
-          summary: p.description.length > 220 ? p.description.slice(0, 220) + "..." : p.description,
-          category: p.category || p.originPerspective,
-        }));
+      const valid = proposals
+        .filter(p => p.status === 'ACCEPTED' || p.status === 'PROPOSED')
+        .slice(0, 20);
+      if (valid.length > 0) {
+        result.push({ layer: upLayer, proposals: valid });
+      }
+    }
+    return result;
+  }
+
+  private async buildUpstreamContext(projectId: EntityId, layer: DesignLayer): Promise<string> {
+    const groups = await this.selectUpstreamProposals(projectId, layer);
+    if (groups.length === 0) {
+      if (layer === 'INTENTION') {
+        return "N/A — Couche initiale. Dérivez vos propositions à partir des éléments de brief confirmés.";
+      }
+      return "AUCUNE PROPOSITION AMONT VALIDÉE. Fallback : dérivez vos propositions des éléments confirmés du brief, en respectant STRICTEMENT la nature de la couche " + layer + ".";
+    }
+    const sections: Record<string, any[]> = {};
+    for (const { layer: upLayer, proposals } of groups) {
+      sections[upLayer] = proposals.map(p => ({
+        id: p.id,
+        title: p.title,
+        summary: p.description.length > 220 ? p.description.slice(0, 220) + '...' : p.description,
+        category: p.category || p.originPerspective,
+      }));
+    }
+    return JSON.stringify(sections, null, 2);
+  }
+
+  async getUpstreamContextPreview(projectId: EntityId, layer: DesignLayer): Promise<UpstreamContextPreview> {
+    const UPSTREAM_LAYERS: Record<DesignLayer, DesignLayer[]> = {
+      INTENTION:  [],
+      HYPOTHESIS: ['INTENTION'],
+      CAPABILITY: ['INTENTION', 'HYPOTHESIS'],
+      FEATURE:    ['CAPABILITY'],
+      JOURNEY:    ['FEATURE'],
+      SCREEN:     ['JOURNEY', 'FEATURE'],
+    };
+    const upstreamLayers = UPSTREAM_LAYERS[layer] || [];
+    const groups = await this.selectUpstreamProposals(projectId, layer);
+    const items = groups.flatMap(g =>
+      g.proposals.map(p => ({ id: p.id, layer: g.layer, title: p.title, status: p.status }))
+    );
+    return { layer, upstreamLayers, items, hasUpstream: items.length > 0 };
+  }
+
+  async generateDeferredRoadmap(projectId: EntityId): Promise<string> {
+    const all = await this.repos.designProposals.getByProjectId(projectId);
+    const deferred = all.filter(p => p.status === 'DEFERRED');
+    const LAYER_ORDER: DesignLayer[] = ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'];
+    const LAYER_LABELS: Record<DesignLayer, string> = {
+      INTENTION: '🎯 Intentions',
+      HYPOTHESIS: '🔬 Hypothèses',
+      CAPABILITY: '⚙️ Capacités',
+      FEATURE: '🧩 Fonctionnalités',
+      JOURNEY: '🗺️ Parcours',
+      SCREEN: '🖥️ Écrans',
+    };
+
+    let md = `# Roadmap — Idées Reportées\n\n`;
+    md += `> Généré le ${new Date().toISOString().slice(0, 10)} — **${deferred.length} idée(s)** volontairement exclue(s) du périmètre initial V1.\n\n`;
+    md += `> Ces éléments ont été identifiés et documentés. Ils constituent la feuille de route des versions futures.\n\n`;
+
+    if (deferred.length === 0) {
+      md += `_Aucune idée reportée à ce jour._\n`;
+    } else {
+      for (const layer of LAYER_ORDER) {
+        const items = deferred.filter(p => p.layer === layer);
+        if (items.length === 0) continue;
+        md += `## ${LAYER_LABELS[layer]}\n\n`;
+        for (const p of items) {
+          const parent = p.parentId ? all.find(x => x.id === p.parentId) : null;
+          md += `### ${p.title}\n`;
+          if (p.shortPitch) md += `> ${p.shortPitch}\n\n`;
+          md += `${p.description || ''}\n\n`;
+          if (parent) md += `- 🔗 Dérivé de : **"${parent.title}"** (${parent.layer})\n`;
+          if (p.dependencyIds?.length) md += `- Dépendances : ${p.dependencyIds.length} proposition(s)\n`;
+          if (p.rationale) md += `\n**Justification :** ${p.rationale}\n`;
+          md += `\n---\n\n`;
+        }
       }
     }
 
-    if (Object.keys(sections).length === 0) {
-      return "AUCUNE PROPOSITION AMONT VALIDÉE. Fallback : dérivez vos propositions des éléments confirmés du brief, en respectant STRICTEMENT la nature de la couche " + layer + ".";
-    }
-
-    return JSON.stringify(sections, null, 2);
+    return md;
   }
 
   async generateProposals(
@@ -299,10 +492,27 @@ export class DesignWorkshopUseCases {
       childProposalCount: parsedResult?.proposals?.filter((p:any) => p.parentId).length || 0,
     };
 
-    // Persist proposals
+    // ================================================================
+    // PERSIST PROPOSALS avec PostProcessor TF-IDF (garantie de liaison)
+    // ================================================================
     const persistedProposals: DesignProposal[] = [];
     if (parsedResult?.proposals) {
+      // Charger les propositions amont pour le PostProcessor
+      const upstreamGroups = layer === 'INTENTION'
+        ? []
+        : await this.selectUpstreamProposals(projectId, layer);
+      const upstreamFlat: DesignProposal[] = upstreamGroups.flatMap(g => g.proposals);
+      const validUpstreamIds = new Set(upstreamFlat.map(u => u.id));
+
       for (const p of parsedResult.proposals) {
+        // Résolution des liens (Prompt as best effort, PostProcessor as guarantee)
+        const links: LinkResolution = layer === 'INTENTION'
+          ? { parentId: null, lineage: [], linkSource: null, linkConfidence: null }
+          : resolveProposalLinks(p as ParsedProposal, upstreamFlat);
+
+        // Filtrer les dependencyIds hallucinés
+        const safeDependencyIds = (p.dependencies ?? []).filter((id: string) => validUpstreamIds.has(id));
+
         const dp = createDesignProposal({
           projectId,
           layer,
@@ -314,13 +524,15 @@ export class DesignWorkshopUseCases {
           originPerspective: p.originPerspective || "System",
           shortPitch: p.shortPitch || p.title,
           status: 'PROPOSED',
-          parentId: p.parentId || null,
+          parentId: links.parentId,
           rootProposalId: p.rootProposalId || null,
           childrenIds: p.childrenIds || [],
           relatedProposalIds: p.relatedProposalIds || [],
-          dependencyIds: p.dependencies || [],
+          dependencyIds: safeDependencyIds,
           consequenceIds: p.consequenceIds || [],
-          lineage: p.lineage || [],
+          lineage: links.lineage,
+          linkSource: links.linkSource,
+          linkConfidence: links.linkConfidence,
           priority: p.priority || 'MEDIUM',
           complexity: p.complexity || 'M',
           confidence: p.confidence || 50,
@@ -336,6 +548,9 @@ export class DesignWorkshopUseCases {
       }
       diagnostic.persistenceStatus = "SAVED";
       diagnostic.persistedProposalCount = persistedProposals.length;
+      diagnostic.linkedCount = persistedProposals.filter(p => p.parentId).length;
+      diagnostic.autoMatchedCount = persistedProposals.filter(p => p.linkSource === 'AUTO_MATCHED').length;
+      diagnostic.aiLinkedCount = persistedProposals.filter(p => p.linkSource === 'AI').length;
     }
 
     return {

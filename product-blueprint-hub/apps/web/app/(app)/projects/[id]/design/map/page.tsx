@@ -68,6 +68,8 @@ export default function DesignMapPage() {
 
           const isAccepted = n.status === 'ACCEPTED';
           const isSelected = n.id === selectedNodeId;
+          // Un nœud orphelin n'a pas de parentId ET n'est pas en couche INTENTION
+          const isOrphan = !n.parentId && n.layer !== 'INTENTION';
 
           return {
             id: n.id,
@@ -87,13 +89,18 @@ export default function DesignMapPage() {
                         ✅ Validée
                       </span>
                     )}
+                    {isOrphan && (
+                      <span style={{ fontSize: '10px', background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: '4px' }} title="Proposition non tissée — aucun lien amont détecté">
+                        ⚠️ Non tissée
+                      </span>
+                    )}
                   </div>
                 </div>
               )
             },
             style: {
               background: isSelected ? '#eff6ff' : isAccepted ? '#ffffff' : '#f8fafc',
-              border: `2px solid ${isSelected ? '#3b82f6' : isAccepted ? '#22c55e' : '#cbd5e1'}`,
+              border: `2px solid ${isSelected ? '#3b82f6' : isOrphan ? '#f59e0b' : isAccepted ? '#22c55e' : '#cbd5e1'}`,
               borderRadius: '10px',
               padding: '12px',
               width: 260,
@@ -106,18 +113,44 @@ export default function DesignMapPage() {
           const isNav = e.kind === 'NAVIGATION';
           const isRel = e.kind === 'RELATED';
           const isOrphan = e.isOrphanFallback;
+          // Lecture de linkSource transmise dans les métadonnées de l'edge (si disponible)
+          const linkSource = (e as any).linkSource as string | null | undefined;
+          const linkConfidence = (e as any).linkConfidence as number | null | undefined;
+
+          // Stratégie de style selon linkSource
+          let stroke = '#22c55e';        // AI / default : vert plein
+          let strokeDasharray: string | undefined = undefined;
+          let strokeWidth = 2;
+          let edgeLabel: string | undefined = undefined;
+
+          if (linkSource === 'AUTO_MATCHED') {
+            stroke = '#f59e0b';          // Ambre = lien inféré par TF-IDF
+            strokeDasharray = '6 4';
+            edgeLabel = linkConfidence != null ? `~${Math.round(linkConfidence * 100)}%` : undefined;
+          } else if (linkSource === 'MANUAL') {
+            stroke = '#3b82f6';          // Bleu épais = lien manuel
+            strokeWidth = 3.5;
+          } else if (isNav) {
+            stroke = '#3b82f6';
+            strokeWidth = 2.5;
+          } else if (isRel) {
+            stroke = '#94a3b8';
+            strokeDasharray = '5 5';
+            strokeWidth = 1.5;
+          } else if (isOrphan) {
+            stroke = '#f59e0b';
+            strokeDasharray = '5 5';
+            strokeWidth = 1.5;
+          }
 
           return {
             id: e.id,
             source: e.source,
             target: e.target,
-            animated: isNav,
-            style: {
-              stroke: isNav ? '#3b82f6' : isRel ? '#94a3b8' : isOrphan ? '#f59e0b' : '#22c55e',
-              strokeWidth: isNav ? 2.5 : isRel ? 1.5 : 2,
-              strokeDasharray: isRel || isOrphan ? '5 5' : undefined,
-            },
-            markerEnd: isNav ? { type: MarkerType.ArrowClosed, color: '#3b82f6' } : { type: MarkerType.ArrowClosed, color: '#22c55e' }
+            animated: isNav && !linkSource,
+            label: edgeLabel,
+            style: { stroke, strokeWidth, strokeDasharray },
+            markerEnd: { type: MarkerType.ArrowClosed, color: stroke }
           };
         });
 
@@ -306,11 +339,13 @@ export default function DesignMapPage() {
 
       {/* Map Legend Bar */}
       {viewMode === 'weaving' && (
-        <div className="px-4 py-2 bg-surface border-b border-border text-xs flex gap-6 text-muted">
-          <span><strong>Légende des Flux :</strong></span>
-          <span style={{ color: '#22c55e' }}>─── Filiation (Arborescence &amp; Parent)</span>
-          <span style={{ color: '#3b82f6' }}>──► Navigation (Dépendances &amp; Écrans)</span>
-          <span style={{ color: '#f59e0b' }}>- - - Rattaché par Lignée</span>
+        <div className="px-4 py-2 bg-surface border-b border-border text-xs flex gap-6 text-muted flex-wrap">
+          <span><strong>Légende des Liens :</strong></span>
+          <span style={{ color: '#22c55e' }}>─── IA (lien affirmé)</span>
+          <span style={{ color: '#f59e0b' }}>- - - Auto-match TF-IDF (lien inféré, % = confiance)</span>
+          <span style={{ color: '#3b82f6' }}>━━━ Manuel / Navigation</span>
+          <span style={{ color: '#94a3b8' }}>- - - Lié / Relatif</span>
+          <span style={{ border: '2px solid #f59e0b', padding: '0 4px', borderRadius: '4px', color: '#92400e' }}>⚠️ Nœud non tissé</span>
           <span className="ml-auto">Cliquez sur une carte pour lancer un <strong>Essaim d&apos;approfondissement</strong> ciblé.</span>
         </div>
       )}
@@ -328,6 +363,20 @@ export default function DesignMapPage() {
             <button className="btn btn-primary" onClick={() => router.push(`/projects/${projectId}?tab=design`)}>
               ✨ Aller à l&apos;atelier pour essaimer des idées
             </button>
+          </div>
+        ) : viewMode === 'weaving' && edges.length === 0 && nodes.some(n => n.data?.layer !== 'INTENTION') ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8">
+            <div className="text-4xl mb-2">🧵</div>
+            <h3 className="text-lg font-semibold">Ces propositions ont été générées avant l&apos;activation du tissage.</h3>
+            <p className="text-muted max-w-lg">Le système ne peut pas afficher de liens car les propositions existantes n&apos;ont pas de parent enregistré. Relancez un essaim pour créer des propositions automatiquement liées.</p>
+            <div className="flex gap-3">
+              <button className="btn btn-primary" onClick={() => router.push(`/projects/${projectId}?tab=design`)}>
+                ✨ Aller à l&apos;atelier
+              </button>
+              <button className="btn btn-secondary" onClick={loadGraphData}>
+                🔄 Rafraîchir
+              </button>
+            </div>
           </div>
         ) : (
           <ReactFlow

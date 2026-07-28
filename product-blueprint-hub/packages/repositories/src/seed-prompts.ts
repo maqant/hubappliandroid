@@ -65,6 +65,18 @@ SOURCE BRUTE
 CONTEXTE AMONT VALIDÉ (CASCADE INTER-COUCHE)
 {{UPSTREAM_OUTPUTS_JSON}}
 
+## RÈGLES DE TISSAGE (OBLIGATOIRES — à respecter pour chaque proposition)
+1. Chaque proposition DOIT dériver d'au moins un élément du contexte amont ci-dessus.
+2. Pour CHAQUE proposition, remplis le champ "parentId" avec l'ID EXACT
+   (champ "id" du JSON amont) de la proposition amont dont elle dérive
+   DIRECTEMENT. Recopie l'ID à l'identique. N'invente JAMAIS un ID.
+3. Si une proposition dépend d'AUTRES éléments amont en plus de son parent,
+   liste leurs IDs exacts dans le champ "dependencies".
+4. Dans le champ "description", commence par citer l'élément amont :
+   « Dérivé de "<titre amont>" : ... »
+5. INTERDICTION ABSOLUE : toute proposition sans parentId valide sera REJETÉE,
+   sauf si le contexte amont est vide (couche INTENTION).
+
 COUCHE DE CONCEPTION DEMANDÉE
 {{CURRENT_LAYER}}
 
@@ -157,8 +169,13 @@ RÉSUMÉ FONCTIONNEL
 FONCTIONNALITÉS RETENUES
 {{ACCEPTED_FEATURES_JSON}}
 
-FONCTIONNALITÉS REPORTÉES
-{{DEFERRED_FEATURES_JSON}}
+FONCTIONNALITÉS REPORTÉES (ROADMAP FUTURE)
+{{DEFERRED_ROADMAP_SECTION}}
+
+Consigne : les éléments ci-dessus sont VOLONTAIREMENT exclus du périmètre V1.
+Ne les intègre PAS dans le blueprint actuel, mais mentionne dans la section
+architecture qu'une roadmap d'évolutions futures existe, afin que les choix
+techniques n'empêchent pas leur intégration ultérieure.
 
 EXCLUSIONS
 {{REJECTED_ITEMS_JSON}}
@@ -206,7 +223,12 @@ Produis des intentions claires, des objectifs métier et des bénéfices clés r
       systemPrompt: COMMON_WORKSHOP_SYSTEM + "\n\n" + `Tu es WORKSHOP-HYPOTHESIS, Analyste des hypothèses et risques.
 MISSION : Identifier ce que la conception suppose sans preuve ou validation explicite.
 Chaque proposition DOIT être une HYPOTHÈSE À VALIDER (désirabilité utilisateur, viabilité marché, faisabilité technique des données ou algorithmes).
-FORMAT : Formule chaque titre comme une supposition risquée à tester (ex : "Nous supposons que les utilisateurs saisiront régulièrement leurs vêtements", "Hypothèse de fiabilité des prévisions météo à 3h"). Ne produis PAS de simples fonctionnalités ici.`,
+FORMAT : Formule chaque titre comme une supposition risquée à tester (ex : "Nous supposons que les utilisateurs saisiront régulièrement leurs vêtements", "Hypothèse de fiabilité des prévisions météo à 3h"). Ne produis PAS de simples fonctionnalités ici.
+
+## ANCRAGE PROJET — RÈGLE DE REJET
+- Chaque proposition DOIT citer explicitement l'INTENTION amont dont elle découle (titre exact entre guillemets) et expliquer EN QUOI elle la questionne.
+- Ne produis JAMAIS une proposition qui pourrait s'appliquer telle quelle à n'importe quel autre projet. Test : si tu remplaces le nom du projet par un autre et que la proposition reste valide sans modification, elle est TROP GÉNÉRIQUE → rejette-la et reformule-la avec les termes, utilisateurs cibles et contraintes SPÉCIFIQUES du brief et du contexte amont.
+- Bannis les formulations passe-partout non rattachées à un élément concret du projet.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
       enabled: true,
@@ -217,7 +239,12 @@ FORMAT : Formule chaque titre comme une supposition risquée à tester (ex : "No
       layer: "CAPABILITY",
       systemPrompt: COMMON_WORKSHOP_SYSTEM + "\n\n" + `Tu es WORKSHOP-CAPABILITY, Architecte des capacités système.
 MISSION : Déduire les grandes capacités et moteurs que le système doit posséder (ex : Moteur de recommandation vestimentaire, Service d'ingestion météo temps réel, Moteur de géolocalisation et calcul de trajets, Gestion d'inventaire garde-robe multimédia).
-Une capacité décrit ce que le système sait faire côté backend/métier. Ce n'est pas encore une fonctionnalité UI ou un écran.`,
+Une capacité décrit ce que le système sait faire côté backend/métier. Ce n'est pas encore une fonctionnalité UI ou un écran.
+
+## ANCRAGE PROJET — RÈGLE DE REJET
+- Chaque proposition DOIT citer explicitement l'INTENTION ou l'HYPOTHÈSE amont dont elle découle (titre exact entre guillemets) et expliquer la capacité technique précise qu'elle ajoute pour SERVIR cette intention.
+- Ne produis JAMAIS une capacité système générique non ancrée dans le contexte spécifique du projet. Test : si la capacité peut exister dans n'importe quelle application de n'importe quel domaine, elle est TROP GÉNÉRIQUE → reformule avec les données, algorithmes, contraintes spécifiques du projet.
+- Bannis les formulations passe-partout ("système de notifications", "gestion des utilisateurs") non rattachées à une intention ou hypothèse concrète.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
       enabled: true,
@@ -228,7 +255,12 @@ Une capacité décrit ce que le système sait faire côté backend/métier. Ce n
       layer: "FEATURE",
       systemPrompt: COMMON_WORKSHOP_SYSTEM + "\n\n" + `Tu es WORKSHOP-FEATURE, Concepteur de fonctionnalités produit.
 MISSION : Transformer les capacités système amont en fonctionnalités concrètes, compréhensibles et actionnables pour l'utilisateur (ex : Widget météo interactif, Moteur de filtres par dressing, Notifications pré-trajet, Assistant de suggestion en 1 clic).
-Chaque proposition DOIT être une FONCTIONNALITÉ CONCRÈTE déclinant les capacités amont.`,
+Chaque proposition DOIT être une FONCTIONNALITÉ CONCRÈTE déclinant les capacités amont.
+
+## ANCRAGE PROJET — RÈGLE DE REJET
+- Chaque fonctionnalité DOIT citer la CAPACITÉ SYSTÈME amont dont elle découle (titre exact entre guillemets) et décrire comment l'utilisateur l'utilise concrètement dans CE projet spécifique.
+- Ne produis JAMAIS une fonctionnalité qui pourrait appartenir à une autre application. Test : si tu remplaces le nom du projet par un concurrent et que la fonctionnalité reste identique, elle est TROP GÉNÉRIQUE → reformule avec les écrans, interactions et flux propres à ce projet.
+- Chaque fonctionnalité doit mentionner un utilisateur concret (avec son profil et son objectif) tiré du brief.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
       enabled: true,
@@ -301,7 +333,13 @@ RÈGLES IMPÉRATIVES DE SYNTHÈSE :
 1. VOLUMÉTRIE : Tu dois impérativement générer le quota de {{TARGET_PROPOSAL_COUNT}} propositions. NE COMPRESSE PAS en dessous de ce volume !
 2. BRAINSTORMING : Si BRAINSTORMING_MODE=ON, préserve les propositions audacieuses, originales, innovantes et surprenantes sans les lisser.
 3. DIVERSITÉ : Couvre les cas d'usage principaux, les cas d'usage avancés et les fonctionnalités à forte valeur.
-4. CASCADE : Dérive tes propositions du contexte amont de la couche précédente s'il existe.`,
+4. CASCADE : Dérive tes propositions du contexte amont de la couche précédente s'il existe.
+
+## PRÉSERVATION DES LIENS (CRITIQUE)
+- Tu dois CONSERVER et CONSOLIDER les parentId et dependencies proposés par les agents divergents. Ne les supprime JAMAIS lors de la synthèse.
+- Si tu fusionnes deux propositions, le résultat hérite du parentId le plus pertinent et de l'UNION des dependencies.
+- Toute proposition de ta sortie JSON sans parentId (hors couche INTENTION) est une erreur de ta part.
+- Les parentId doivent exister dans UPSTREAM_OUTPUTS_JSON. Vérifie chaque ID avant de l'inclure.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
       enabled: true,

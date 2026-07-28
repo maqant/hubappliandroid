@@ -37,6 +37,7 @@ import {
   BaselineUseCases,
   PackageUseCases,
   DesignWorkshopUseCases,
+  type UpstreamContextPreview,
 } from "@pbh/application";
 import { createLocalRepositoryRegistry, seedPrompts } from "@pbh/repositories";
 import { FakeModelProvider, ModelGateway, RemoteOpenAIProvider } from "@pbh/model-gateway";
@@ -139,4 +140,5 @@ export type {
   DesignLayer,
   DesignBaselineSummary,
   WeavingEdge,
+  UpstreamContextPreview,
 };
