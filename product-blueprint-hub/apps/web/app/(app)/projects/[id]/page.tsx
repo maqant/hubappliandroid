@@ -516,38 +516,6 @@ export function ProjectDetailPageContent() {
     }
   };
 
-  const handleSwarmAll = async () => {
-    if (isGenerating) return;
-    setIsGenerating(true);
-    setGenerationError(null);
-    const layers: DesignLayer[] = ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'];
-    showToast("info", "Lancement de l'essaimage séquentiel sur les 6 couches...");
-    try {
-      for (let i = 0; i < layers.length; i++) {
-        const layer = layers[i]!;
-        setSelectedLayer(layer);
-        resetLayerStatuses(layer);
-        showToast("info", `Génération couche ${i + 1}/6 : ${layer}...`);
-        const result = await svc.designWorkshop.generateProposals(
-          projectId as EntityId,
-          layer,
-          ideationIntensity,
-          brainstormingMode,
-          (agentId, status) => {
-            updateAgentStatus(layer, agentId, status);
-          }
-        );
-        setWorkshopResult(result);
-        await loadProposals(); // Reload counts immediately!
-      }
-      showToast("success", "Essaimage complet de toutes les couches terminé avec succès !");
-    } catch (e: any) {
-      setGenerationError(e.message || String(e));
-      showToast("error", "Erreur lors de l'essaimage : " + (e.message || String(e)));
-    } finally {
-      setIsGenerating(false);
-    }
-  };
 
   const handleGenerateVerticalPaths = async () => {
     if (isGenerating) return;
@@ -1223,7 +1191,7 @@ export function ProjectDetailPageContent() {
                     </label>
                   </div>
                   <div className="flex gap-2 flex-wrap items-center">
-                    {(() => {
+                    {selectedLayer === 'FEATURE' && (() => {
                       const hasAcceptedIntention = briefItems.some(b => b.status === 'ACCEPTED' || b.status === 'LOCKED');
                       const hasAcceptedCapability = (layerProposalCounts['CAPABILITY'] || 0) > 0;
                       const canSwarmPaths = hasAcceptedIntention && hasAcceptedCapability;
@@ -1243,14 +1211,6 @@ export function ProjectDetailPageContent() {
                         </button>
                       );
                     })()}
-                    <button 
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleSwarmAll}
-                      disabled={isGenerating}
-                      title="Génère des propositions pour les 6 couches dans l'ordre"
-                    >
-                      ⚡ Essaimer Tout (6 Couches)
-                    </button>
                     <button 
                       className="btn btn-secondary btn-sm"
                       onClick={handleGenerateProposals}
@@ -1592,7 +1552,7 @@ export function ProjectDetailPageContent() {
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-muted border-2 border-dashed border-border rounded-lg p-6 text-center gap-2">
                     <p className="text-base font-medium">Aucune proposition affichée pour la couche {selectedLayer}.</p>
-                    <p className="text-xs">Cliquez sur &quot;✨ Essaimer ({selectedLayer})&quot; ou &quot;⚡ Essaimer Tout (6 Couches)&quot; pour générer des idées.</p>
+                    <p className="text-xs">Cliquez sur &quot;✨ Essaimer ({selectedLayer})&quot; pour générer des idées.</p>
                   </div>
                 )}
               </div>
