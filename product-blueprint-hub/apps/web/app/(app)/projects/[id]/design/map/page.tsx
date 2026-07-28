@@ -20,7 +20,8 @@ import {
   type DesignLayer, 
   type DesignProposal, 
   type EntityId, 
-  type FeaturePath
+  type FeaturePath,
+  projectFeaturePathsToVisualNodes
 } from "@/services";
 
 type ProjectionMode = 'EXPERIENCE_PATHS' | 'STRATEGIC_MAP' | 'GLOBAL_GRAPH';
@@ -102,6 +103,8 @@ export default function DesignMapPage() {
           return true;
         });
 
+        const allVisualNodes = projectFeaturePathsToVisualNodes(activePaths, allProposals);
+
         activePaths.forEach((path, pathIdx) => {
           const corridorX = pathIdx * 340;
 
@@ -137,71 +140,79 @@ export default function DesignMapPage() {
             selectable: false,
           });
 
-          // Nodes in Corridor
-          const renderLayerInCorridor = (
-            items: DesignProposal[],
-            layer: DesignLayer,
-            startY: number
-          ) => {
-            items.forEach((item, itemIdx) => {
-              if (!showHypotheses && layer === 'HYPOTHESIS') return;
-              if (!showDeferred && item.status === 'DEFERRED') return;
+          // Filter visual nodes for this path
+          const pathVNodes = allVisualNodes.filter(vn => vn.pathId === path.id);
 
-              const projectionId = `${path.id}-${item.id}-${layer}`;
-              const usageCount = pathUsages.get(item.id)?.size || 1;
-              const isShared = usageCount > 1;
-              const isSelected = item.id === selectedCanonicalId;
-              const config = LAYER_CONFIG[layer] || LAYER_CONFIG.INTENTION;
-
-              generatedNodes.push({
-                id: projectionId,
-                position: { x: corridorX, y: startY + itemIdx * 110 },
-                data: {
-                  canonicalNodeId: item.id,
-                  pathId: path.id,
-                  proposal: item,
-                  isVisualReference: isShared,
-                  label: (
-                    <div className="text-left">
-                      <div className="font-bold text-xs text-slate-900 mb-1">
-                        {config.icon} {item.title}
-                      </div>
-                      <div className="flex justify-between items-center gap-1 flex-wrap mt-1">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                          {layer}
-                        </span>
-                        {item.status === 'ACCEPTED' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-bold">
-                            ✅ Validée
-                          </span>
-                        )}
-                        {isShared && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-medium" title={`Réf. visuelle partagée dans ${usageCount} paths`}>
-                            🔗 Partagé ({usageCount})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                },
-                style: {
-                  background: isSelected ? '#eff6ff' : item.status === 'ACCEPTED' ? '#ffffff' : '#f8fafc',
-                  border: `2px solid ${isSelected ? '#3b82f6' : isShared ? '#818cf8' : item.status === 'ACCEPTED' ? '#22c55e' : config.border}`,
-                  borderRadius: '8px',
-                  padding: '10px',
-                  width: 280,
-                  boxShadow: isSelected ? '0 0 0 4px rgba(59, 130, 246, 0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
-                }
-              });
-            });
+          const LAYER_Y_OFFSETS: Record<DesignLayer, number> = {
+            INTENTION: 40,
+            HYPOTHESIS: 180,
+            CAPABILITY: 320,
+            FEATURE: 480,
+            JOURNEY: 660,
+            SCREEN: 840,
           };
 
-          // Render corridor levels
-          renderLayerInCorridor(path.intentions, 'INTENTION', 40);
-          renderLayerInCorridor(path.hypotheses, 'HYPOTHESIS', 180);
-          if (path.capabilities) renderLayerInCorridor(path.capabilities, 'CAPABILITY', 320);
-          renderLayerInCorridor(path.features.map(f => f.proposal), 'FEATURE', 480);
-          renderLayerInCorridor(path.journeys.map(j => j.proposal), 'JOURNEY', 660);
+          const layerCounters: Record<DesignLayer, number> = {
+            INTENTION: 0,
+            HYPOTHESIS: 0,
+            CAPABILITY: 0,
+            FEATURE: 0,
+            JOURNEY: 0,
+            SCREEN: 0,
+          };
+
+          pathVNodes.forEach((vNode) => {
+            if (!showHypotheses && vNode.layer === 'HYPOTHESIS') return;
+            if (!showDeferred && vNode.status === 'DEFERRED') return;
+
+            const itemIdx = layerCounters[vNode.layer]++;
+            const startY = LAYER_Y_OFFSETS[vNode.layer] || 40;
+            const isSelected = vNode.canonicalNodeId === selectedCanonicalId;
+            const config = LAYER_CONFIG[vNode.layer] || LAYER_CONFIG.INTENTION;
+
+            generatedNodes.push({
+              id: vNode.projectionId,
+              position: { x: corridorX, y: startY + itemIdx * 110 },
+              data: {
+                canonicalNodeId: vNode.canonicalNodeId,
+                pathId: vNode.pathId,
+                isVisualReference: vNode.isVisualReference,
+                isShared: vNode.isShared,
+                sharedUsageCount: vNode.sharedUsageCount,
+                sharedAcrossPathIds: vNode.sharedAcrossPathIds,
+                label: (
+                  <div className="text-left">
+                    <div className="font-bold text-xs text-slate-900 mb-1">
+                      {config.icon} {vNode.title}
+                    </div>
+                    <div className="flex justify-between items-center gap-1 flex-wrap mt-1">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                        {vNode.layer}
+                      </span>
+                      {vNode.status === 'ACCEPTED' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-bold">
+                          ✅ Validée
+                        </span>
+                      )}
+                      {vNode.isShared && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-medium" title={`Réf. visuelle partagée dans ${vNode.sharedUsageCount} paths`}>
+                          🔗 Partagé ({vNode.sharedUsageCount})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              },
+              style: {
+                background: isSelected ? '#eff6ff' : vNode.status === 'ACCEPTED' ? '#ffffff' : '#f8fafc',
+                border: `2px solid ${isSelected ? '#3b82f6' : vNode.isShared ? '#818cf8' : vNode.status === 'ACCEPTED' ? '#22c55e' : config.border}`,
+                borderRadius: '8px',
+                padding: '10px',
+                width: 280,
+                boxShadow: isSelected ? '0 0 0 4px rgba(59, 130, 246, 0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
+              }
+            });
+          });
 
           // Render Journey Steps Card if available
           if (path.primaryJourney) {
@@ -210,7 +221,7 @@ export default function DesignMapPage() {
             if (steps.length > 0) {
               generatedNodes.push({
                 id: `steps-${path.id}`,
-                position: { x: corridorX, y: 840 },
+                position: { x: corridorX, y: 1020 },
                 data: {
                   label: (
                     <div className="text-left">
@@ -218,7 +229,7 @@ export default function DesignMapPage() {
                       <div className="space-y-1 text-[11px] text-slate-700 max-h-36 overflow-y-auto">
                         {steps.map((st: any, idx: number) => (
                           <div key={idx} className="bg-orange-50/70 p-1.5 rounded border border-orange-100">
-                            <strong>Étape {st.stepNumber || idx + 1}:</strong> {st.userAction || st.action}
+                            <span className="font-bold text-orange-800">{st.order || st.stepNumber || idx + 1}.</span> {st.userAction || st.action || 'Étape'}
                           </div>
                         ))}
                       </div>
@@ -227,7 +238,7 @@ export default function DesignMapPage() {
                 },
                 style: {
                   background: '#fff7ed',
-                  border: '1px dashed #f97316',
+                  border: '1.5px dashed #f97316',
                   borderRadius: '8px',
                   padding: '10px',
                   width: 280,
@@ -236,8 +247,6 @@ export default function DesignMapPage() {
               });
             }
           }
-
-          renderLayerInCorridor(path.screens.map(s => s.proposal), 'SCREEN', 1040);
         });
 
         // Corridor vertical flow edges
@@ -624,15 +633,54 @@ export default function DesignMapPage() {
                 {nodePathContext && (
                   <div className="bg-slate-900 text-slate-200 p-3 rounded-lg text-xs space-y-2">
                     <div className="font-bold text-blue-400 uppercase">Impact &amp; Contextualisation Path</div>
-                    <div>Présent dans <strong>{nodePathContext.sharedUsageCount}</strong> path(s) : {nodePathContext.pathIds.join(', ')}</div>
+                    
+                    {nodePathContext.sharedUsageCount > 1 && (
+                      <div className="bg-amber-900/50 text-amber-200 p-2 rounded border border-amber-700/50 font-medium">
+                        ⚠️ Cet élément est utilisé dans {nodePathContext.sharedUsageCount} paths. Toute modification peut avoir un impact transversal.
+                      </div>
+                    )}
+
+                    <div>Présent dans <strong>{nodePathContext.sharedUsageCount}</strong> path(s) : {nodePathContext.pathIds?.join(', ') || 'N/A'}</div>
+
+                    {nodePathContext.directParentIds?.length > 0 && (
+                      <div><strong>Parents directs :</strong> {nodePathContext.directParentIds.join(', ')}</div>
+                    )}
+                    {nodePathContext.directChildIds?.length > 0 && (
+                      <div><strong>Enfants directs :</strong> {nodePathContext.directChildIds.join(', ')}</div>
+                    )}
+                    {nodePathContext.intentionIds?.length > 0 && (
+                      <div><strong>Intentions ancestrales :</strong> {nodePathContext.intentionIds.join(', ')}</div>
+                    )}
+                    {nodePathContext.hypothesisIds?.length > 0 && (
+                      <div><strong>Hypothèses influentes :</strong> {nodePathContext.hypothesisIds.join(', ')}</div>
+                    )}
+                    {nodePathContext.capabilityIds?.length > 0 && (
+                      <div><strong>Capabilities parentes :</strong> {nodePathContext.capabilityIds.join(', ')}</div>
+                    )}
+                    {nodePathContext.featureIds?.length > 0 && (
+                      <div><strong>Features liées :</strong> {nodePathContext.featureIds.join(', ')}</div>
+                    )}
+                    {nodePathContext.journeyIds?.length > 0 && (
+                      <div><strong>Journeys liés :</strong> {nodePathContext.journeyIds.join(', ')}</div>
+                    )}
+                    {nodePathContext.screenIds?.length > 0 && (
+                      <div><strong>Screens liés :</strong> {nodePathContext.screenIds.join(', ')}</div>
+                    )}
+
                     {nodePathContext.stepUsages?.length > 0 && (
                       <div>
                         <strong>Étape(s) de Parcours :</strong>
                         <ul className="list-disc pl-4 mt-1 space-y-0.5">
                           {nodePathContext.stepUsages.map((st: any, i: number) => (
-                            <li key={i}>Étape {st.stepNumber} : {st.stepAction}</li>
+                            <li key={i}>Étape {st.stepNumber || i + 1} : {st.userAction || st.stepAction || st.action || 'Action'}</li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+
+                    {nodePathContext.warnings?.length > 0 && (
+                      <div className="text-amber-300">
+                        <strong>Avertissements :</strong> {nodePathContext.warnings.join(', ')}
                       </div>
                     )}
                   </div>

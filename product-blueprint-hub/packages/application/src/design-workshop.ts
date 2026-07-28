@@ -1122,6 +1122,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
       return {
         proposals: [],
         diagnostic: {
+          success: false,
           code: "NO_PROPOSALS_GENERATED",
           step: mode === "alternatives" ? "ALTERNATIVES_GENERATION" : "DEEPEN_GENERATION",
           agentId,
@@ -1129,6 +1130,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
           promptVersion: promptTpl?.version || "N/A",
           sourceProposalId: proposalId,
           targetLayer,
+          layer: targetLayer,
           parsedCount: 0,
           rejectedCount: 0,
           invalidReferenceCount: 0,
@@ -1175,6 +1177,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     return {
       proposals: newProposals,
       diagnostic: {
+        success: newProposals.length > 0,
         code: "SUCCESS",
         step: mode === "alternatives" ? "ALTERNATIVES_GENERATION" : "DEEPEN_GENERATION",
         agentId,
@@ -1182,6 +1185,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
         promptVersion: promptTpl?.version || "N/A",
         sourceProposalId: proposalId,
         targetLayer,
+        layer: targetLayer,
         parsedCount: rawProposals.length,
         rejectedCount: 0,
         invalidReferenceCount: 0,

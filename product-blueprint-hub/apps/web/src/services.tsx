@@ -26,7 +26,9 @@ import type {
   DesignBaselineSummary,
   WeavingEdge,
   FeaturePath,
+  ProjectedPathNode,
 } from "@pbh/domain";
+import { projectFeaturePathsToVisualNodes } from "@pbh/domain";
 import {
   ProjectUseCases,
   SourceUseCases,
@@ -143,4 +145,6 @@ export type {
   WeavingEdge,
   UpstreamContextPreview,
   FeaturePath,
+  ProjectedPathNode,
 };
+export { projectFeaturePathsToVisualNodes };
