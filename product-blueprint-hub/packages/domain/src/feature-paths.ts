@@ -1,5 +1,5 @@
 import type { EntityId } from "./entities";
-import type { DesignProposal, ProposalStatus } from "./design-proposals";
+import type { DesignProposal } from "./design-proposals";
 
 export interface FeaturePathNode {
   readonly proposal: DesignProposal;
