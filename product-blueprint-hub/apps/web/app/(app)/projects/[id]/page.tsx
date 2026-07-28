@@ -359,7 +359,6 @@ export function ProjectDetailPageContent() {
       if (lang === "fr") {
         if (action === "accept") msg = t("accept.success");
         else if (action === "reject") msg = t("reject.success");
-        else if (action === "lock") msg = t("lock.success");
         else if (action === "correct") msg = t("correct.success");
       }
       showToast("success", msg);
