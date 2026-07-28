@@ -115,6 +115,7 @@ export function ProjectDetailPageContent() {
   const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
   const [userFeedbackText, setUserFeedbackText] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [upstreamPreview, setUpstreamPreview] = useState<UpstreamContextPreview | null>(null);
   const [upstreamPanelOpen, setUpstreamPanelOpen] = useState(false);
   const [deferredCount, setDeferredCount] = useState(0);
@@ -268,6 +269,11 @@ export function ProjectDetailPageContent() {
       })
       .catch(() => {});
   }, [activeTab, projectId, svc]);
+
+  // Clear feedback text when switching selected proposal
+  useEffect(() => {
+    setUserFeedbackText("");
+  }, [selectedProposalId]);
 
   // ---- Actions ----
 
@@ -441,11 +447,35 @@ export function ProjectDetailPageContent() {
           ),
         };
       });
-      const labels: Record<string, string> = { ACCEPTED: 'acceptée', REJECTED: 'refusée', DEFERRED: 'reportée' };
+      const labels: Record<string, string> = { ACCEPTED: 'acceptée', REJECTED: 'refusée', DEFERRED: 'reportée à la roadmap', PROPOSED: 'réinitialisée' };
       showToast("success", `Proposition ${labels[action] || action}`);
       loadProposals(); // Reload counts
     } catch (e: any) {
       showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleFeedbackThenAction = async (proposalId: string, action: 'ACCEPTED' | 'DEFERRED') => {
+    const feedback = userFeedbackText.trim();
+    if (!feedback || isSubmittingAction) return;
+    setIsSubmittingAction(true);
+    try {
+      const updated = await svc.designWorkshop.submitUserFeedback(proposalId as EntityId, feedback);
+      setWorkshopResult((prev: any) => {
+        if (!prev?.proposals) return prev;
+        return {
+          ...prev,
+          proposals: prev.proposals.map((p: any) =>
+            p.id === proposalId ? { ...p, justification: updated.rationale } : p
+          ),
+        };
+      });
+      await handleProposalAction(proposalId, action);
+      setUserFeedbackText("");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsSubmittingAction(false);
     }
   };
 
@@ -1521,67 +1551,91 @@ export function ProjectDetailPageContent() {
                         </div>
                       )}
 
-                      <div className="border-t border-border pt-4 mt-2 flex flex-col gap-2">
+                      <div className="border-t border-border pt-4 mt-2 flex flex-col gap-3">
+                        {/* Zone Status et En-tête */}
                         <div className="flex justify-between items-center">
-                          <h5 className="font-semibold">Actions</h5>
+                          <h5 className="font-semibold text-xs uppercase text-muted">Arbitrage</h5>
                           {p.status && p.status !== 'PROPOSED' && (
-                            <span className={`text-xs font-medium px-2 py-1 rounded ${
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded ${
                               p.status === 'ACCEPTED' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
                               p.status === 'REJECTED' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
                               p.status === 'DEFERRED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
                               'bg-gray-100 text-gray-800'
                             }`}>
-                              Statut : {p.status === 'ACCEPTED' ? 'Acceptée' : p.status === 'REJECTED' ? 'Refusée' : p.status === 'DEFERRED' ? 'Reportée' : p.status}
+                              {p.status === 'ACCEPTED' ? '✅ Acceptée' : p.status === 'REJECTED' ? '❌ Refusée' : p.status === 'DEFERRED' ? '📋 Reportée' : p.status}
                             </span>
                           )}
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+
+                        {/* Zone 1 : Actions Directes (en l'état) */}
+                        <div className="flex flex-col gap-1.5">
                           <button 
-                            className="btn btn-sm btn-primary" 
+                            className="btn btn-sm btn-primary w-full text-xs justify-start" 
                             onClick={() => handleProposalAction(p.id, 'ACCEPTED')}
-                            disabled={p.status === 'ACCEPTED'}
+                            disabled={p.status === 'ACCEPTED' || isSubmittingAction}
                           >
-                            ✅ Accepter
+                            ✅ Accepter en l&apos;état
                           </button>
-                          <button 
-                            className="btn btn-sm" 
-                            onClick={() => handleProposalAction(p.id, 'REJECTED')}
-                            disabled={p.status === 'REJECTED'}
-                          >
-                            ❌ Refuser
-                          </button>
-                          <button 
-                            className="btn btn-sm" 
-                            onClick={() => handleProposalAction(p.id, 'DEFERRED')}
-                            disabled={p.status === 'DEFERRED'}
-                          >
-                            ⏸️ Reporter
-                          </button>
-                          <button 
-                            className="btn btn-sm"
-                            onClick={() => handleProposalAction(p.id, 'PROPOSED')}
-                            disabled={p.status === 'PROPOSED' || !p.status}
-                          >
-                            ↩️ Réinitialiser
-                          </button>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button 
+                              className="btn btn-sm btn-secondary text-xs" 
+                              onClick={() => handleProposalAction(p.id, 'REJECTED')}
+                              disabled={p.status === 'REJECTED' || isSubmittingAction}
+                            >
+                              ❌ Refuser
+                            </button>
+                            <button 
+                              className="btn btn-sm btn-secondary text-xs" 
+                              onClick={() => handleProposalAction(p.id, 'DEFERRED')}
+                              disabled={p.status === 'DEFERRED' || isSubmittingAction}
+                            >
+                              📋 Prévoir à la Roadmap
+                            </button>
+                          </div>
                         </div>
-                        
-                        <div className="mt-4">
-                          <h5 className="font-semibold mb-1 text-xs uppercase text-muted">Ce que je voudrais changer</h5>
+
+                        {/* Zone 2 : Actions avec Remarques / Observations */}
+                        <div className="mt-2 pt-3 border-t border-border">
+                          <h5 className="font-semibold mb-1 text-xs uppercase text-muted">Ce que je voudrais changer / Observations</h5>
                           <textarea 
-                            className="input w-full text-sm h-20 mb-2" 
-                            placeholder="Ex: C&#39;est bien mais trop complexe pour le MVP..."
+                            className="input w-full text-xs h-20 mb-2" 
+                            placeholder="Saisissez ici vos remarques, corrections ou précisions..."
                             value={userFeedbackText}
                             onChange={(e) => setUserFeedbackText(e.target.value)}
+                            disabled={isSubmittingAction}
                           />
-                          <button 
-                            className="btn btn-sm w-full btn-secondary"
-                            onClick={handleSubmitFeedback}
-                            disabled={!userFeedbackText.trim() || isSubmittingFeedback}
-                          >
-                            {isSubmittingFeedback ? "⏳ Envoi..." : "📩 Envoyer ma critique"}
-                          </button>
+                          <div className="flex flex-col gap-1.5">
+                            <button 
+                              className="btn btn-sm btn-secondary w-full text-xs"
+                              onClick={() => handleFeedbackThenAction(p.id, 'ACCEPTED')}
+                              disabled={!userFeedbackText.trim() || isSubmittingAction}
+                              title={!userFeedbackText.trim() ? "Saisissez d'abord vos remarques ci-dessus" : "Enregistre vos remarques et accepte la proposition"}
+                            >
+                              📝 Accepter avec remarques
+                            </button>
+                            <button 
+                              className="btn btn-sm btn-secondary w-full text-xs"
+                              onClick={() => handleFeedbackThenAction(p.id, 'DEFERRED')}
+                              disabled={!userFeedbackText.trim() || isSubmittingAction}
+                              title={!userFeedbackText.trim() ? "Saisissez d'abord vos observations ci-dessus" : "Enregistre vos observations et reporte à la roadmap"}
+                            >
+                              💬 Prévoir à la Roadmap (avec obs.)
+                            </button>
+                          </div>
                         </div>
+
+                        {/* Zone 3 : Réinitialisation discrète */}
+                        {p.status && p.status !== 'PROPOSED' && (
+                          <div className="pt-2 border-t border-border mt-1">
+                            <button 
+                              className="btn btn-sm w-full text-xs bg-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-dashed"
+                              onClick={() => handleProposalAction(p.id, 'PROPOSED')}
+                              disabled={isSubmittingAction}
+                            >
+                              ↩️ Réinitialiser (repasser en examen)
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
