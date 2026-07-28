@@ -2576,7 +2576,8 @@ export function ProjectDetailPageContent() {
               </p>
             </div>
           </div>
-        )}
+      </div>
+
       </div>
 
 
