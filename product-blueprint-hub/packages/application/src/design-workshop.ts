@@ -1,5 +1,5 @@
 import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal } from "@pbh/domain";
-import type { EntityId, DesignGraph, DesignBaseline } from "@pbh/domain";
+import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge } from "@pbh/domain";
 import { createDesignGraph, createId } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
@@ -445,5 +445,246 @@ export class DesignWorkshopUseCases {
     });
 
     return baseline;
+  }
+
+  async getDesignBaselineSummary(projectId: EntityId): Promise<DesignBaselineSummary> {
+    const baselines = await this.repos.designBaselines.getByProjectId(projectId);
+    const activeBaseline = baselines.find((b) => b.status === "ACTIVE") || baselines[0] || null;
+    const proposals = await this.repos.designProposals.getByProjectId(projectId);
+
+    const totals = {
+      proposals: proposals.length,
+      accepted: proposals.filter((p) => p.status === "ACCEPTED").length,
+      rejected: proposals.filter((p) => p.status === "REJECTED").length,
+      pending: proposals.filter((p) => p.status === "PROPOSED").length,
+      deferred: proposals.filter((p) => p.status === "DEFERRED").length,
+    };
+
+    const acceptedByLayer: Record<DesignLayer, number> = {
+      INTENTION: 0,
+      HYPOTHESIS: 0,
+      CAPABILITY: 0,
+      FEATURE: 0,
+      JOURNEY: 0,
+      SCREEN: 0,
+    };
+
+    const acceptedByType: Record<string, number> = {};
+    const acceptedProposals = proposals.filter((p) => p.status === "ACCEPTED");
+
+    acceptedProposals.forEach((p) => {
+      if (acceptedByLayer[p.layer] !== undefined) {
+        acceptedByLayer[p.layer]++;
+      }
+      const typeKey = p.category || p.layer;
+      acceptedByType[typeKey] = (acceptedByType[typeKey] || 0) + 1;
+    });
+
+    const acceptedIds = new Set(acceptedProposals.map((p) => p.id));
+    const topLevelAccepted = acceptedProposals
+      .filter((p) => !p.parentId || !acceptedIds.has(p.parentId))
+      .map((p) => {
+        const childCount = acceptedProposals.filter((c) => c.parentId === p.id).length;
+        return {
+          id: p.id,
+          title: p.title,
+          layer: p.layer,
+          type: p.category || p.layer,
+          childCount,
+        };
+      });
+
+    let isStale = false;
+    let staleCount = 0;
+
+    if (activeBaseline) {
+      const frozenTime = new Date(activeBaseline.frozenAt).getTime();
+      const newAcceptedAfterFrozen = acceptedProposals.filter(
+        (p) => new Date(p.updatedAt).getTime() > frozenTime
+      );
+      if (newAcceptedAfterFrozen.length > 0) {
+        isStale = true;
+        staleCount = newAcceptedAfterFrozen.length;
+      }
+    }
+
+    const intentions = acceptedProposals.filter((p) => p.layer === "INTENTION").map((p) => p.title);
+    const screens = acceptedProposals.filter((p) => p.layer === "SCREEN").map((p) => p.title);
+    const features = acceptedProposals.filter((p) => p.layer === "FEATURE").map((p) => p.title);
+
+    let executiveSummary = "";
+    if (acceptedProposals.length === 0) {
+      executiveSummary = "Aucune proposition de conception validée pour le moment. La mission utilisera uniquement les éléments bruts du brief.";
+    } else {
+      executiveSummary = `La conception validée comprend ${totals.accepted} éléments scellés. `;
+      if (intentions.length > 0) executiveSummary += `Intentions majeures : ${intentions.slice(0, 3).join(", ")}. `;
+      if (features.length > 0) executiveSummary += `Fonctionnalités clés : ${features.slice(0, 3).join(", ")}. `;
+      if (screens.length > 0) executiveSummary += `Écrans cibles : ${screens.slice(0, 3).join(", ")}.`;
+    }
+
+    return {
+      baselineId: activeBaseline?.id || null,
+      versionLabel: activeBaseline?.versionLabel || null,
+      frozenAt: activeBaseline?.frozenAt || null,
+      isStale,
+      staleCount,
+      totals,
+      acceptedByLayer,
+      acceptedByType,
+      topLevelAccepted,
+      executiveSummary,
+    };
+  }
+
+  async getWeavingGraph(projectId: EntityId): Promise<{ nodes: any[]; edges: WeavingEdge[] }> {
+    const proposals = await this.repos.designProposals.getByProjectId(projectId);
+    const validProposals = proposals.filter((p) => p.status === "ACCEPTED" || p.status === "PROPOSED");
+    const validIds = new Set(validProposals.map((p) => p.id));
+
+    const nodes = validProposals.map((p) => ({
+      id: p.id,
+      title: p.title,
+      layer: p.layer,
+      status: p.status,
+      type: p.category || p.layer,
+      originPerspective: p.originPerspective,
+      parentId: p.parentId,
+      lineage: p.lineage || [],
+      dependencies: p.dependencyIds || [],
+      relatedProposalIds: p.relatedProposalIds || [],
+    }));
+
+    const edges: WeavingEdge[] = [];
+    const edgeSet = new Set<string>();
+
+    validProposals.forEach((p) => {
+      // 1. FILIATION edge
+      if (p.parentId && validIds.has(p.parentId)) {
+        const edgeId = `filiation-${p.parentId}-${p.id}`;
+        if (!edgeSet.has(edgeId)) {
+          edgeSet.add(edgeId);
+          edges.push({ id: edgeId, source: p.parentId, target: p.id, kind: "FILIATION" });
+        }
+      } else if (p.lineage && p.lineage.length > 0) {
+        for (let i = p.lineage.length - 1; i >= 0; i--) {
+          const ancestorId = p.lineage[i] as EntityId;
+          if (ancestorId && validIds.has(ancestorId) && ancestorId !== p.id) {
+            const edgeId = `orphan-${ancestorId}-${p.id}`;
+            if (!edgeSet.has(edgeId)) {
+              edgeSet.add(edgeId);
+              edges.push({ id: edgeId, source: ancestorId, target: p.id, kind: "FILIATION", isOrphanFallback: true });
+            }
+            break;
+          }
+        }
+      }
+
+      // 2. NAVIGATION edge via dependencyIds
+      if (p.dependencyIds && Array.isArray(p.dependencyIds)) {
+        p.dependencyIds.forEach((depId) => {
+          if (validIds.has(depId) && depId !== p.id) {
+            const edgeId = `nav-${depId}-${p.id}`;
+            if (!edgeSet.has(edgeId)) {
+              edgeSet.add(edgeId);
+              edges.push({ id: edgeId, source: depId, target: p.id, kind: "NAVIGATION" });
+            }
+          }
+        });
+      }
+
+      // 3. RELATED edge via relatedProposalIds
+      if (p.relatedProposalIds && Array.isArray(p.relatedProposalIds)) {
+        p.relatedProposalIds.forEach((relId) => {
+          if (validIds.has(relId) && relId !== p.id) {
+            const pairKey = [p.id, relId].sort().join("-");
+            const edgeId = `rel-${pairKey}`;
+            if (!edgeSet.has(edgeId)) {
+              edgeSet.add(edgeId);
+              edges.push({ id: edgeId, source: p.id, target: relId, kind: "RELATED" });
+            }
+          }
+        });
+      }
+    });
+
+    return { nodes, edges };
+  }
+
+  async startDeepIdeationSwarm(
+    projectId: EntityId,
+    proposalId: EntityId,
+    mode: "expand" | "alternatives" = "expand"
+  ): Promise<any[]> {
+    const sourceProposal = await this.repos.designProposals.getById(proposalId);
+    if (!sourceProposal) throw new Error("Proposal not found");
+
+    if (sourceProposal.lineage && sourceProposal.lineage.length >= 5) {
+      throw new Error("Profondeur maximale de tissage (5 niveaux) atteinte pour cette branche.");
+    }
+
+    const agentId = mode === "alternatives" ? "WORKSHOP-ALTERNATIVES" : "WORKSHOP-IDEATOR";
+    const promptTpl = await this.repos.prompts.getActivePrompt(agentId);
+
+    const contextText = `PROPOSITION SOURCE À DÉVELOPPER / APPROFONDIR :
+- Titre : ${sourceProposal.title}
+- Couche : ${sourceProposal.layer}
+- Description : ${sourceProposal.description}
+- Justification : ${sourceProposal.rationale}
+- Origine : ${sourceProposal.originPerspective}
+
+MISSION : Génère 3 à 4 propositions enfants directement rattachées et déclinées de cette proposition source pour tisser l'application.`;
+
+    const req = {
+      prompt: `${contextText}\n\nApplique strictement ton rôle et produit le format JSON conforme.`,
+      systemPrompt: promptTpl?.systemPrompt || "Tu es un assistant de conception produit spécialisé.",
+      tier: "SOL" as any,
+      maxTokens: 4000,
+      correlationId: `deep-swarm-${projectId}-${proposalId}`,
+    };
+
+    const res = await this.provider.complete(req);
+    const parsed = safeParseModelJson(res.content) as any;
+    const rawProposals = parsed?.proposals || [];
+    if (!Array.isArray(rawProposals) || rawProposals.length === 0) return [];
+
+    const nextLayerMap: Record<DesignLayer, DesignLayer> = {
+      INTENTION: "HYPOTHESIS",
+      HYPOTHESIS: "CAPABILITY",
+      CAPABILITY: "FEATURE",
+      FEATURE: "JOURNEY",
+      JOURNEY: "SCREEN",
+      SCREEN: "SCREEN",
+    };
+
+    const targetLayer = nextLayerMap[sourceProposal.layer] || "SCREEN";
+
+    const newProposals: DesignProposal[] = [];
+    for (const raw of rawProposals) {
+      const prop = createDesignProposal({
+        projectId,
+        layer: targetLayer,
+        title: raw.title || "Nouvelle proposition déclinée",
+        shortPitch: raw.shortPitch || raw.title,
+        category: raw.type || raw.category || targetLayer,
+        description: raw.description || "",
+        rationale: raw.justification || raw.rationale || `Décliné de : ${sourceProposal.title}`,
+        userValue: raw.userValue || "",
+        status: "PROPOSED",
+        origin: "AI_ASSISTED",
+        alternatives: [],
+        risks: [],
+        parentProposalIds: sourceProposal.id ? [sourceProposal.id] : [],
+        targetPlatforms: sourceProposal.targetPlatforms || ["WEB_NEXTJS"],
+        originAgentId: agentId,
+        originPerspective: sourceProposal.originPerspective || "DeepSwarm",
+        parentId: sourceProposal.id,
+        rootProposalId: sourceProposal.rootProposalId || sourceProposal.id,
+        lineage: [...(sourceProposal.lineage || []), sourceProposal.id],
+      });
+      await this.repos.designProposals.save(prop);
+      newProposals.push(prop);
+    }
+
+    return newProposals;
   }
 }

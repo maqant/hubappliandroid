@@ -3,3 +3,5 @@ export * from "./design-proposals";
 export * from "./design-graph";
 export * from "./design-impact-engine";
 export * from "./prompts";
+export * from "./weaving-graph.types";
+

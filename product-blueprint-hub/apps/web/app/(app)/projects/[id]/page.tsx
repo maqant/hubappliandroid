@@ -16,9 +16,9 @@ import {
   type Baseline,
   type ExecutionPackage,
   type RunEvent,
-  type EntityId,
   type DesignLayer,
   type DesignProposal,
+  type DesignBaselineSummary,
 } from "@/services";
 import { useTranslation } from "@/i18n";
 
@@ -132,6 +132,8 @@ export function ProjectDetailPageContent() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const [baselineSummary, setBaselineSummary] = useState<DesignBaselineSummary | null>(null);
+
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -141,18 +143,20 @@ export function ProjectDetailPageContent() {
         return;
       }
       setProject(p);
-      const [src, brief, dec, conf, mis] = await Promise.all([
+      const [src, brief, dec, conf, mis, bSummary] = await Promise.all([
         svc.sources.getSources(projectId as EntityId),
         svc.brief.getBriefItems(projectId as EntityId),
         svc.decisions.getDecisions(projectId as EntityId),
         svc.conflicts.getConflicts(projectId as EntityId),
         svc.missions.getMissions(projectId as EntityId),
+        svc.designWorkshop.getDesignBaselineSummary(projectId as EntityId),
       ]);
       setSources(src);
       setBriefItems(brief);
       setDecisions(dec);
       setConflicts(conf);
       setMissions(mis);
+      setBaselineSummary(bSummary);
 
       if (mis.length > 0) {
         const m = mis[0]!;
@@ -1642,6 +1646,77 @@ export function ProjectDetailPageContent() {
                   </strong>
                 </div>
               </div>
+            </div>
+
+            {/* Design Baseline & Swarm Summary Card */}
+            <div
+              className="card mb-6"
+              style={{
+                background: "rgba(59,130,246,0.03)",
+                border: "1px solid rgba(59,130,246,0.15)",
+              }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="m-0 flex items-center gap-2" style={{ fontSize: "var(--font-size-md)", color: "var(--color-primary)" }}>
+                  🧠 Statistiques &amp; Résumé de la Conception (Essaims)
+                </h3>
+                {baselineSummary?.baselineId ? (
+                  <span className={`badge ${baselineSummary.isStale ? "badge-warning" : "badge-success"}`}>
+                    {baselineSummary.isStale 
+                      ? `⚠️ Baseline gelée périmée (${baselineSummary.staleCount} nouvelles idées acceptées)`
+                      : `📌 Baseline active : ${baselineSummary.versionLabel || 'v1'}`}
+                  </span>
+                ) : (
+                  <span className="badge badge-info">
+                    ℹ️ Aucune baseline gelée (toutes les propositions acceptées seront transmises)
+                  </span>
+                )}
+              </div>
+
+              {baselineSummary ? (
+                <div>
+                  <p className="text-sm mb-4" style={{ background: "rgba(255,255,255,0.03)", padding: "12px 16px", borderRadius: "6px", borderLeft: "3px solid var(--color-primary)" }}>
+                    <strong>Grand Résumé de la Conception transmis aux agents :</strong><br />
+                    {baselineSummary.executiveSummary}
+                  </p>
+
+                  <div className="grid grid-6 text-center gap-2 mb-4">
+                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
+                      <span className="text-xs text-muted block">🎯 Intentions</span>
+                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.INTENTION}</strong>
+                    </div>
+                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
+                      <span className="text-xs text-muted block">🔬 Hypothèses</span>
+                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.HYPOTHESIS}</strong>
+                    </div>
+                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
+                      <span className="text-xs text-muted block">⚙️ Capacités</span>
+                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.CAPABILITY}</strong>
+                    </div>
+                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
+                      <span className="text-xs text-muted block">🧩 Fonctions</span>
+                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.FEATURE}</strong>
+                    </div>
+                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
+                      <span className="text-xs text-muted block">🗺️ Parcours</span>
+                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.JOURNEY}</strong>
+                    </div>
+                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
+                      <span className="text-xs text-muted block">🖥️ Écrans</span>
+                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.SCREEN}</strong>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs text-muted pt-2 border-t border-border">
+                    <span>Total propositions d&apos;essaims : <strong>{baselineSummary.totals.proposals}</strong> (<strong>{baselineSummary.totals.accepted}</strong> retenues/validées, {baselineSummary.totals.rejected} refusées)</span>
+                    <button className="btn btn-secondary btn-sm" onClick={handleFreezeDesignBaseline}>
+                      📌 Re-geler la baseline de conception
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted">Chargement du résumé de conception...</div>
+              )}
             </div>
 
             {missions.length === 0 ? (

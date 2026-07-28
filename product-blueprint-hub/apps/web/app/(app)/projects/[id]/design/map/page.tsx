@@ -11,10 +11,11 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   addEdge,
-  Connection
+  Connection,
+  MarkerType
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { useServices, type DesignLayer, type DesignProposal, type EntityId } from "@/services";
+import { useServices, type DesignLayer, type DesignProposal, type EntityId, type WeavingEdge } from "@/services";
 
 const LAYERS: { id: DesignLayer; label: string; icon: string }[] = [
   { id: 'INTENTION', label: 'Intention', icon: '🎯' },
@@ -34,128 +35,292 @@ export default function DesignMapPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'weaving' | 'layers'>('weaving');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isDeepSwarming, setIsDeepSwarming] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
   const loadGraphData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const generatedNodes: Node[] = [];
-      const generatedEdges: Edge[] = [];
-      let previousLayerAcceptedNodeIds: string[] = [];
+      if (viewMode === 'weaving') {
+        const { nodes: rawNodes, edges: rawEdges } = await svc.designWorkshop.getWeavingGraph(projectId as EntityId);
+        
+        // Group nodes by layer for smart layout
+        const layerPositions: Record<string, { x: number; yIndex: number }> = {
+          INTENTION:  { x: 0, yIndex: 0 },
+          HYPOTHESIS: { x: 300, yIndex: 0 },
+          CAPABILITY: { x: 600, yIndex: 0 },
+          FEATURE:    { x: 900, yIndex: 0 },
+          JOURNEY:    { x: 1200, yIndex: 0 },
+          SCREEN:     { x: 1500, yIndex: 0 },
+        };
 
-      for (let lIdx = 0; lIdx < LAYERS.length; lIdx++) {
-        const layerObj = LAYERS[lIdx]!;
-        const layerProposals = await svc.designWorkshop.getProposals(projectId as EntityId, layerObj.id);
+        const generatedNodes: Node[] = rawNodes.map((n: any) => {
+          const lPos = layerPositions[n.layer] || { x: 0, yIndex: 0 };
+          const curY = 80 + lPos.yIndex * 130;
+          lPos.yIndex += 1;
 
-        // Column Header Node
-        const headerId = `header-${layerObj.id}`;
-        generatedNodes.push({
-          id: headerId,
-          position: { x: lIdx * 320, y: 0 },
-          data: { label: `${layerObj.icon} ${layerObj.label} (${layerProposals.length})` },
-          style: {
-            background: 'var(--color-primary-600, #3b82f6)',
-            color: '#fff',
-            fontWeight: 'bold',
-            borderRadius: '8px',
-            padding: '8px 16px',
-            border: 'none',
-            textAlign: 'center',
-            width: 260,
-          },
-          selectable: false,
-        });
+          const isAccepted = n.status === 'ACCEPTED';
+          const isSelected = n.id === selectedNodeId;
 
-        const currentLayerNodeIds: string[] = [];
-
-        layerProposals.forEach((p: DesignProposal, pIdx: number) => {
-          const nodeId = p.id;
-          currentLayerNodeIds.push(nodeId);
-
-          const isAccepted = p.status === 'ACCEPTED';
-          const isRejected = p.status === 'REJECTED';
-          const isDeferred = p.status === 'DEFERRED';
-
-          generatedNodes.push({
-            id: nodeId,
-            position: { x: lIdx * 320, y: 80 + pIdx * 110 },
-            data: { 
+          return {
+            id: n.id,
+            position: { x: lPos.x, y: curY },
+            data: {
               label: (
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '2px' }}>{p.title}</div>
-                  <div style={{ fontSize: '11px', opacity: 0.8 }}>{p.category || p.originPerspective}</div>
-                  {isAccepted && <span style={{ fontSize: '10px', background: '#22c55e', color: '#fff', padding: '1px 5px', borderRadius: '4px', marginTop: '4px', display: 'inline-block' }}>✅ Acceptée</span>}
-                  {isRejected && <span style={{ fontSize: '10px', background: '#ef4444', color: '#fff', padding: '1px 5px', borderRadius: '4px', marginTop: '4px', display: 'inline-block' }}>❌ Refusée</span>}
-                  {isDeferred && <span style={{ fontSize: '10px', background: '#eab308', color: '#fff', padding: '1px 5px', borderRadius: '4px', marginTop: '4px', display: 'inline-block' }}>⏸️ Reportée</span>}
+                <div style={{ textAlign: 'left', position: 'relative' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '4px', color: '#1e293b' }}>
+                    {n.layer === 'SCREEN' ? '🖥️ ' : n.layer === 'JOURNEY' ? '🗺️ ' : ''}{n.title}
+                  </div>
+                  <div className="flex justify-between items-center gap-1">
+                    <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px' }}>
+                      {n.layer}
+                    </span>
+                    {isAccepted && (
+                      <span style={{ fontSize: '10px', background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                        ✅ Validée
+                      </span>
+                    )}
+                  </div>
                 </div>
               )
             },
             style: {
-              background: isAccepted ? '#f0fdf4' : isRejected ? '#fef2f2' : isDeferred ? '#fefce8' : '#ffffff',
-              border: `2px solid ${isAccepted ? '#22c55e' : isRejected ? '#ef4444' : isDeferred ? '#eab308' : '#cbd5e1'}`,
-              borderRadius: '8px',
-              padding: '10px',
+              background: isSelected ? '#eff6ff' : isAccepted ? '#ffffff' : '#f8fafc',
+              border: `2px solid ${isSelected ? '#3b82f6' : isAccepted ? '#22c55e' : '#cbd5e1'}`,
+              borderRadius: '10px',
+              padding: '12px',
               width: 260,
-              boxShadow: isAccepted ? '0 4px 6px -1px rgba(34, 197, 94, 0.2)' : '0 1px 3px rgba(0,0,0,0.1)',
-            },
-          });
-
-          // Connect edges from previous layer accepted nodes
-          if (previousLayerAcceptedNodeIds.length > 0 && isAccepted) {
-            previousLayerAcceptedNodeIds.forEach((prevId) => {
-              generatedEdges.push({
-                id: `edge-${prevId}-${nodeId}`,
-                source: prevId,
-                target: nodeId,
-                animated: true,
-                style: { stroke: '#22c55e', strokeWidth: 2 },
-              });
-            });
-          }
+              boxShadow: isSelected ? '0 0 0 4px rgba(59, 130, 246, 0.3)' : isAccepted ? '0 4px 6px -1px rgba(34, 197, 94, 0.15)' : '0 1px 3px rgba(0,0,0,0.05)',
+            }
+          };
         });
 
-        if (currentLayerNodeIds.length > 0) {
-          previousLayerAcceptedNodeIds = currentLayerNodeIds.filter(id => {
-            const prop = layerProposals.find(p => p.id === id);
-            return prop?.status === 'ACCEPTED';
-          });
-        }
-      }
+        const generatedEdges: Edge[] = rawEdges.map((e: WeavingEdge) => {
+          const isNav = e.kind === 'NAVIGATION';
+          const isRel = e.kind === 'RELATED';
+          const isOrphan = e.isOrphanFallback;
 
-      setNodes(generatedNodes);
-      setEdges(generatedEdges);
+          return {
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            animated: isNav,
+            style: {
+              stroke: isNav ? '#3b82f6' : isRel ? '#94a3b8' : isOrphan ? '#f59e0b' : '#22c55e',
+              strokeWidth: isNav ? 2.5 : isRel ? 1.5 : 2,
+              strokeDasharray: isRel || isOrphan ? '5 5' : undefined,
+            },
+            markerEnd: isNav ? { type: MarkerType.ArrowClosed, color: '#3b82f6' } : { type: MarkerType.ArrowClosed, color: '#22c55e' }
+          };
+        });
+
+        setNodes(generatedNodes);
+        setEdges(generatedEdges);
+      } else {
+        // Fallback: Vue par Couches
+        const generatedNodes: Node[] = [];
+        const generatedEdges: Edge[] = [];
+        let previousLayerAcceptedNodeIds: string[] = [];
+
+        for (let lIdx = 0; lIdx < LAYERS.length; lIdx++) {
+          const layerObj = LAYERS[lIdx]!;
+          const layerProposals = await svc.designWorkshop.getProposals(projectId as EntityId, layerObj.id);
+
+          const headerId = `header-${layerObj.id}`;
+          generatedNodes.push({
+            id: headerId,
+            position: { x: lIdx * 320, y: 0 },
+            data: { label: `${layerObj.icon} ${layerObj.label} (${layerProposals.length})` },
+            style: {
+              background: 'var(--color-primary-600, #3b82f6)',
+              color: '#fff',
+              fontWeight: 'bold',
+              borderRadius: '8px',
+              padding: '8px 16px',
+              border: 'none',
+              textAlign: 'center',
+              width: 260,
+            },
+            selectable: false,
+          });
+
+          const currentLayerNodeIds: string[] = [];
+
+          layerProposals.forEach((p: DesignProposal, pIdx: number) => {
+            const nodeId = p.id;
+            currentLayerNodeIds.push(nodeId);
+            const isAccepted = p.status === 'ACCEPTED';
+
+            generatedNodes.push({
+              id: nodeId,
+              position: { x: lIdx * 320, y: 80 + pIdx * 110 },
+              data: {
+                label: (
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '2px' }}>{p.title}</div>
+                    <div style={{ fontSize: '11px', opacity: 0.8 }}>{p.category || p.originPerspective}</div>
+                    {isAccepted && <span style={{ fontSize: '10px', background: '#22c55e', color: '#fff', padding: '1px 5px', borderRadius: '4px', marginTop: '4px', display: 'inline-block' }}>✅ Acceptée</span>}
+                  </div>
+                )
+              },
+              style: {
+                background: isAccepted ? '#f0fdf4' : '#ffffff',
+                border: `2px solid ${isAccepted ? '#22c55e' : '#cbd5e1'}`,
+                borderRadius: '8px',
+                padding: '10px',
+                width: 260,
+              },
+            });
+
+            if (previousLayerAcceptedNodeIds.length > 0 && isAccepted) {
+              previousLayerAcceptedNodeIds.forEach((prevId) => {
+                generatedEdges.push({
+                  id: `edge-${prevId}-${nodeId}`,
+                  source: prevId,
+                  target: nodeId,
+                  animated: true,
+                  style: { stroke: '#22c55e', strokeWidth: 2 },
+                });
+              });
+            }
+          });
+
+          if (currentLayerNodeIds.length > 0) {
+            previousLayerAcceptedNodeIds = currentLayerNodeIds.filter(id => {
+              const prop = layerProposals.find(p => p.id === id);
+              return prop?.status === 'ACCEPTED';
+            });
+          }
+        }
+
+        setNodes(generatedNodes);
+        setEdges(generatedEdges);
+      }
     } catch (e) {
       console.error("Failed to load graph data:", e);
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, svc, setNodes, setEdges]);
+  }, [projectId, viewMode, selectedNodeId, svc, setNodes, setEdges]);
 
   useEffect(() => {
     loadGraphData();
   }, [loadGraphData]);
 
+  const handleDeepSwarm = async (mode: 'expand' | 'alternatives') => {
+    if (!selectedNodeId) return;
+    setIsDeepSwarming(true);
+    try {
+      showToast(`⚡ Lancement de l'essaim d'approfondissement (${mode === 'expand' ? 'Développer' : 'Alternatives'})...`);
+      const newProps = await svc.designWorkshop.startDeepIdeationSwarm(projectId as EntityId, selectedNodeId as EntityId, mode);
+      showToast(`✨ ${newProps.length} nouvelles propositions déclinées et tissées avec succès !`);
+      await loadGraphData();
+    } catch (e: any) {
+      showToast(`❌ Erreur d'essaim : ${e.message || String(e)}`);
+    } finally {
+      setIsDeepSwarming(false);
+    }
+  };
+
   const onConnect = useCallback((params: Connection) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
 
   return (
     <div className="h-full w-full flex flex-col">
+      {/* Toast */}
+      {toastMessage && (
+        <div 
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            background: '#1e293b',
+            color: '#fff',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
+            zIndex: 9999,
+            fontSize: '14px',
+            fontWeight: 500,
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
+
+      {/* Header Bar */}
       <div className="p-4 border-b border-border flex justify-between bg-surface items-center">
         <div className="flex gap-4 items-center">
           <button className="btn btn-secondary" onClick={() => router.push(`/projects/${projectId}?tab=design`)}>
             &larr; Retour à l&apos;atelier
           </button>
-          <h2 className="m-0">Cartographie d&apos;Impact</h2>
+          <h2 className="m-0">Cartographie &amp; Tissage d&apos;Application</h2>
         </div>
+
+        {/* View Switcher */}
+        <div className="flex gap-2 items-center bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg">
+          <button
+            className={`btn btn-sm ${viewMode === 'weaving' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setViewMode('weaving')}
+          >
+            🕸️ Vue Tissage &amp; Flux Navigation
+          </button>
+          <button
+            className={`btn btn-sm ${viewMode === 'layers' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setViewMode('layers')}
+          >
+            📊 Vue par Couches (Architecture)
+          </button>
+        </div>
+
         <div className="flex gap-2">
+          {selectedNodeId && (
+            <div className="flex gap-2">
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => handleDeepSwarm('expand')}
+                disabled={isDeepSwarming}
+              >
+                💬 Approfondir cette idée
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleDeepSwarm('alternatives')}
+                disabled={isDeepSwarming}
+              >
+                🔀 Alternatives
+              </button>
+            </div>
+          )}
           <button className="btn btn-secondary" onClick={loadGraphData}>
             🔄 Rafraîchir
           </button>
         </div>
       </div>
-      <div className="flex-1 relative" style={{ height: 'calc(100vh - 140px)' }}>
+
+      {/* Map Legend Bar */}
+      {viewMode === 'weaving' && (
+        <div className="px-4 py-2 bg-surface border-b border-border text-xs flex gap-6 text-muted">
+          <span><strong>Légende des Flux :</strong></span>
+          <span style={{ color: '#22c55e' }}>─── Filiation (Arborescence &amp; Parent)</span>
+          <span style={{ color: '#3b82f6' }}>──► Navigation (Dépendances &amp; Écrans)</span>
+          <span style={{ color: '#f59e0b' }}>- - - Rattaché par Lignée</span>
+          <span className="ml-auto">Cliquez sur une carte pour lancer un <strong>Essaim d&apos;approfondissement</strong> ciblé.</span>
+        </div>
+      )}
+
+      {/* ReactFlow Canvas */}
+      <div className="flex-1 relative" style={{ height: 'calc(100vh - 160px)' }}>
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="loading-spinner" />
-            <span className="ml-2">Chargement du graphe d&apos;impact...</span>
+            <span className="ml-2">Chargement de la cartographie...</span>
           </div>
         ) : nodes.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
@@ -171,6 +336,7 @@ export default function DesignMapPage() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             fitView
           >
             <Background />
