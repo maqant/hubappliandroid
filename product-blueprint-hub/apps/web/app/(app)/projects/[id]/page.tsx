@@ -1119,6 +1119,13 @@ export function ProjectDetailPageContent() {
                 <p className="text-xs text-muted">Structurez votre produit par couches et validez les propositions générées par l&apos;essaim d&apos;IA.</p>
               </div>
               <div className="flex gap-2 items-center">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setIsExportModalOpen(true)}
+                  title="Exporter la conception complète pour analyse externe"
+                >
+                  📦 Exporter pour analyse
+                </button>
                 <button className="btn btn-secondary" onClick={() => router.push(`/projects/${projectId}/design/map`)}>
                   🗺️ Cartographie d&apos;Impact
                 </button>
