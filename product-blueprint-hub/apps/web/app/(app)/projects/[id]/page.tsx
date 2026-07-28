@@ -119,6 +119,7 @@ export function ProjectDetailPageContent() {
   const [upstreamPreview, setUpstreamPreview] = useState<UpstreamContextPreview | null>(null);
   const [upstreamPanelOpen, setUpstreamPanelOpen] = useState(false);
   const [deferredCount, setDeferredCount] = useState(0);
+  const [userFeedbackText, setUserFeedbackText] = useState("");
   
   // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -580,6 +581,7 @@ export function ProjectDetailPageContent() {
       setFeaturePaths(updatedPaths);
     } catch (e: any) {
       showToast("error", e.message || String(e));
+    }
   };
 
   const runMission = async () => {
@@ -2576,11 +2578,8 @@ export function ProjectDetailPageContent() {
               </p>
             </div>
           </div>
+        )}
       </div>
-
-      </div>
-
-
 
       {/* Toast */}
       {toast && (

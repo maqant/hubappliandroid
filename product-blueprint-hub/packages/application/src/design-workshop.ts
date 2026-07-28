@@ -1,4 +1,4 @@
-import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal } from "@pbh/domain";
+import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal, computeFeaturePaths } from "@pbh/domain";
 import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge, LinkSource } from "@pbh/domain";
 import { createDesignGraph, createId } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
@@ -85,7 +85,7 @@ function resolveProposalLinks(
   const validIds = new Set(upstream.map(u => u.id));
 
   // CAS 1 — L'IA a fourni un parentId VALIDE (anti-hallucination)
-  if (aiProposal.parentId && validIds.has(aiProposal.parentId)) {
+  if (aiProposal.parentId && validIds.has(aiProposal.parentId as EntityId)) {
     const parent = upstream.find(u => u.id === aiProposal.parentId)!;
     return {
       parentId: parent.id,
@@ -510,8 +510,9 @@ export class DesignWorkshopUseCases {
           ? { parentId: null, lineage: [], linkSource: null, linkConfidence: null }
           : resolveProposalLinks(p as ParsedProposal, upstreamFlat);
 
-        // Filtrer les dependencyIds hallucinés
-        const safeDependencyIds = (p.dependencies ?? []).filter((id: string) => validUpstreamIds.has(id));
+        // Filtrer les dependencyIds et parentProposalIds hallucinés
+        const safeDependencyIds = (p.dependencies ?? []).filter((id: string) => validUpstreamIds.has(id as EntityId));
+        const safeParentProposalIds = (p.parentProposalIds || p.relatedProposalIds || []).filter((id: string) => validUpstreamIds.has(id as EntityId) && id !== links.parentId);
 
         const dp = createDesignProposal({
           projectId,
@@ -524,13 +525,13 @@ export class DesignWorkshopUseCases {
           originPerspective: p.originPerspective || "System",
           shortPitch: p.shortPitch || p.title,
           status: 'PROPOSED',
-          parentId: links.parentId,
+          parentId: links.parentId as EntityId | null,
           rootProposalId: p.rootProposalId || null,
           childrenIds: p.childrenIds || [],
           relatedProposalIds: p.relatedProposalIds || [],
           dependencyIds: safeDependencyIds,
           consequenceIds: p.consequenceIds || [],
-          lineage: links.lineage,
+          lineage: links.lineage as EntityId[],
           linkSource: links.linkSource,
           linkConfidence: links.linkConfidence,
           priority: p.priority || 'MEDIUM',
@@ -540,7 +541,7 @@ export class DesignWorkshopUseCases {
           category: p.type || "General",
           alternatives: [],
           risks: [],
-          parentProposalIds: []
+          parentProposalIds: safeParentProposalIds
         });
         await this.repos.designProposals.save(dp);
         persistedProposals.push(dp);
@@ -591,6 +592,24 @@ export class DesignWorkshopUseCases {
       updatedAt: new Date().toISOString()
     };
     await this.repos.designProposals.save(updated);
+
+    // CASCADE DESCENDANTE (Correctif 4) : Si rejet ou report, marquer les enfants exclusifs à revoir
+    if (status === 'REJECTED' || status === 'DEFERRED') {
+      const allProposals = await this.repos.designProposals.getByProjectId(proposal.projectId);
+      for (const p of allProposals) {
+        // Si l'enfant n'a QUE CE parent (ou que le parent direct est ce proposal) et n'est pas verrouillé
+        const isExclusiveChild = p.parentId === proposalId && (p.parentProposalIds || []).length === 0;
+        if (isExclusiveChild && p.status === 'PROPOSED') {
+          await this.repos.designProposals.save({
+            ...p,
+            status: 'NEEDS_REVIEW' as any, // Cast nécessaire car on injecte un état d'alerte métier pour l'UI, géré par le type PathStatus implicitement
+            updatedAt: new Date().toISOString(),
+            rationale: `[Cascade] Parent ${status}. ` + (p.rationale || '')
+          });
+        }
+      }
+    }
+
     return updated;
   }
 
@@ -919,18 +938,22 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     if (!targetPath) throw new Error("Feature Path non trouvé pour cette capacité.");
 
     let updatedCount = 0;
-
-    // Seuls les nœuds avec statut PROPOSED du path sont modifiables collectivement
-    const modifiableProposals = [
-      ...targetPath.features.map(f => f.proposal),
-      ...targetPath.journeys.map(j => j.proposal),
-      ...targetPath.screens.map(s => s.proposal),
-    ].filter(p => p.status === 'PROPOSED');
-
     const targetStatus = action === 'ACCEPT_PROPOSED' ? 'ACCEPTED' : action === 'DEFER_PROPOSED' ? 'DEFERRED' : 'REJECTED';
 
-    for (const prop of modifiableProposals) {
-      await this.updateProposalStatus(prop.id, targetStatus);
+    // Seuls les nœuds avec statut PROPOSED du path sont modifiables collectivement
+    const nodesToEvaluate = [
+      ...targetPath.features,
+      ...targetPath.journeys,
+      ...targetPath.screens,
+    ].filter(n => n.proposal.status === 'PROPOSED');
+
+    for (const node of nodesToEvaluate) {
+      // Correctif 3 : Protection des nœuds partagés lors des actions destructives (Reject / Defer)
+      if ((action === 'REJECT_BRANCH' || action === 'DEFER_PROPOSED') && node.isShared) {
+        // On ne rejette pas un élément partagé si d'autres paths pourraient encore en avoir besoin (sauf arbitrage explicite 1-à-1 par le user)
+        continue;
+      }
+      await this.updateProposalStatus(node.proposal.id, targetStatus);
       updatedCount++;
     }
 
@@ -950,7 +973,7 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
     ideationIntensity: 'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE' = 'ABUNDANT',
     brainstormingMode: boolean = false
   ): Promise<{ paths: import("@pbh/domain").FeaturePath[]; summary: string; generatedCount: number }> {
-    const allProposals = await this.repos.designProposals.getByProjectId(projectId);
+    let allProposals = await this.repos.designProposals.getByProjectId(projectId);
 
     // 1. Vérification stricte des conditions d'activation
     const acceptedIntentions = allProposals.filter(p => p.layer === 'INTENTION' && (p.status === 'ACCEPTED' || p.status === 'LOCKED'));
@@ -963,26 +986,70 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
       throw new Error("Activation impossible : Vous devez d'abord valider au moins une CAPACITÉ (CAPABILITY) avant de déclencher l'essaim vertical.");
     }
 
-    // 2. Étape A — Génération séquentielle : CAPABILITY -> FEATURE
-    const featureResult = await this.generateProposals(projectId, 'FEATURE', ideationIntensity, brainstormingMode);
-    const newFeaturesCount = featureResult.proposals?.length || 0;
+    let generatedCount = 0;
+    let newFeaturesCount = 0;
+    let newJourneysCount = 0;
+    let newScreensCount = 0;
 
-    // 3. Étape B — Génération séquentielle : FEATURE -> JOURNEY
-    const journeyResult = await this.generateProposals(projectId, 'JOURNEY', ideationIntensity, brainstormingMode);
-    const newJourneysCount = journeyResult.proposals?.length || 0;
+    // Correctif 2 : Idempotence de l'Essaim Vertical
+    // On ne génère une couche que s'il manque des éléments par rapport à la couche validée supérieure.
+    const capabilitiesIds = new Set(acceptedCapabilities.map(c => c.id));
+    
+    // Vérifier si des FEATURE existent déjà pour ces capacités
+    const existingFeatures = allProposals.filter(p => p.layer === 'FEATURE');
+    const existingFeatureParentIds = new Set(existingFeatures.map(f => f.parentId));
+    
+    // Si toutes les capacités n'ont pas encore de FEATURE générée, on lance l'étape FEATURE
+    // (Simplification de la règle d'idempotence stricte pour ne pas bloquer les évolutions : 
+    // On ne bloque la génération que si un Path est DÉJÀ complet. L'utilisateur attend de la nouveauté s'il relance).
+    const isFeaturePhaseComplete = Array.from(capabilitiesIds).every(id => existingFeatureParentIds.has(id));
+    
+    if (!isFeaturePhaseComplete || existingFeatures.length === 0) {
+      const featureResult = await this.generateProposals(projectId, 'FEATURE', ideationIntensity, brainstormingMode);
+      newFeaturesCount = featureResult.length || 0;
+      generatedCount += newFeaturesCount;
+      // Rafraîchir pour l'étape suivante
+      allProposals = await this.repos.designProposals.getByProjectId(projectId);
+    }
 
-    // 4. Étape C — Génération séquentielle : JOURNEY -> SCREEN (avec recherche de mutualisation)
-    const screenResult = await this.generateProposals(projectId, 'SCREEN', ideationIntensity, brainstormingMode);
-    const newScreensCount = screenResult.proposals?.length || 0;
+    const currentFeatures = allProposals.filter(p => p.layer === 'FEATURE' && (p.status === 'ACCEPTED' || p.status === 'PROPOSED'));
+    const featureIds = new Set(currentFeatures.map(f => f.id));
+    const existingJourneys = allProposals.filter(p => p.layer === 'JOURNEY');
+    const existingJourneyParentIds = new Set(existingJourneys.map(j => j.parentId));
+    
+    const isJourneyPhaseComplete = featureIds.size > 0 && Array.from(featureIds).every(id => existingJourneyParentIds.has(id));
+
+    if (!isJourneyPhaseComplete || existingJourneys.length === 0) {
+      const journeyResult = await this.generateProposals(projectId, 'JOURNEY', ideationIntensity, brainstormingMode);
+      newJourneysCount = journeyResult.length || 0;
+      generatedCount += newJourneysCount;
+      allProposals = await this.repos.designProposals.getByProjectId(projectId);
+    }
+
+    const currentJourneys = allProposals.filter(p => p.layer === 'JOURNEY' && (p.status === 'ACCEPTED' || p.status === 'PROPOSED'));
+    const journeyIds = new Set(currentJourneys.map(j => j.id));
+    const existingScreens = allProposals.filter(p => p.layer === 'SCREEN');
+    const existingScreenParentIds = new Set(existingScreens.map(s => s.parentId));
+
+    const isScreenPhaseComplete = journeyIds.size > 0 && Array.from(journeyIds).every(id => existingScreenParentIds.has(id));
+
+    if (!isScreenPhaseComplete || existingScreens.length === 0) {
+      const screenResult = await this.generateProposals(projectId, 'SCREEN', ideationIntensity, brainstormingMode);
+      newScreensCount = screenResult.length || 0;
+      generatedCount += newScreensCount;
+    }
 
     // 5. Calcul déterministe des Feature Paths mis à jour
     const updatedProposals = await this.repos.designProposals.getByProjectId(projectId);
     const paths = computeFeaturePaths(updatedProposals);
 
-    const generatedCount = newFeaturesCount + newJourneysCount + newScreensCount;
-    const summary = `Essaim vertical terminé avec succès ! ${generatedCount} proposition(s) générée(s) (${newFeaturesCount} Fonctionnalités, ${newJourneysCount} Parcours, ${newScreensCount} Écrans) réparties sur ${paths.length} path(s) fonctionnel(s).`;
+    let summary = "";
+    if (generatedCount === 0) {
+      summary = `L'essaim vertical n'a rien généré de nouveau car tous les chemins fonctionnels semblent déjà complets (Idempotence activée). Refusez ou supprimez une branche pour forcer sa régénération.`;
+    } else {
+      summary = `Essaim vertical terminé avec succès ! ${generatedCount} proposition(s) générée(s) (${newFeaturesCount} Fonctions, ${newJourneysCount} Parcours, ${newScreensCount} Écrans) réparties sur ${paths.length} path(s).`;
+    }
 
     return { paths, summary, generatedCount };
   }
 }
-
