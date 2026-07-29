@@ -533,9 +533,20 @@ export class FakeModelProvider implements IModelProvider {
           affectedSectionIds: ["REAL_PROBLEM", "MINIMAL_PROMISE", "USAGE_MOMENT"],
           isBlocking: true
         },
+        questionTarget: {
+          axis: "USAGE_MOMENT",
+          reason: "Ancrage du moment d'usage et du degré de personnalisation nécessaire."
+        },
+        turnImpact: {
+          summary: "Initialisation du problème réel et de la promesse minimale.",
+          confirmedAssertionsCount: 0,
+          inferredAssertionsCount: 2,
+          updatedSectionsCount: 2
+        },
         knowledgeUpdates: [
           {
             sectionId: "REAL_PROBLEM",
+            axis: "REAL_PROBLEM",
             statement: "L'utilisateur souffre d'une hésitation quotidienne et d'une charge mentale évitable.",
             status: "INFERRED",
             source: "AI_INFERENCE",
@@ -543,6 +554,7 @@ export class FakeModelProvider implements IModelProvider {
           },
           {
             sectionId: "MINIMAL_PROMISE",
+            axis: "MINIMAL_PROMISE",
             statement: "Offrir une recommandation adaptée sans délai.",
             status: "INFERRED",
             source: "AI_INFERENCE",
@@ -588,9 +600,20 @@ export class FakeModelProvider implements IModelProvider {
         affectedSectionIds: ["MVP_SCOPE", "WEAK_STATES"],
         isBlocking: false
       },
+      questionTarget: {
+        axis: "WEAK_STATES",
+        reason: "Qualification de la résilience réseau pour le MVP."
+      },
+      turnImpact: {
+        summary: "Confirmation de la promesse zéro clic et mise à jour de la décision à simplifier.",
+        confirmedAssertionsCount: 2,
+        inferredAssertionsCount: 1,
+        updatedSectionsCount: 3
+      },
       knowledgeUpdates: [
         {
           sectionId: "DECISION_TO_SIMPLIFY",
+          axis: "DECISION_TO_SIMPLIFY",
           statement: "Prise de décision zéro clic sans configuration manuelle.",
           status: "CONFIRMED",
           source: "USER_RESPONSE",

@@ -319,6 +319,9 @@ export function ProjectDetailPageContent() {
   const [isProcessingTurn, setIsProcessingTurn] = useState(false);
   const [userAnswerInput, setUserAnswerInput] = useState("");
   const [activeQuestion, setActiveQuestion] = useState<any | null>(null);
+  const [questionTarget, setQuestionTarget] = useState<any | null>(null);
+  const [turnImpactSummary, setTurnImpactSummary] = useState<any | null>(null);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
 
   const handleStartInterview = async () => {
     setIsInitializingInterview(true);
@@ -333,6 +336,12 @@ export function ProjectDetailPageContent() {
         setPiSession(turnRes.session);
         setPiBlueprint(turnRes.blueprint);
         setActiveQuestion(turnRes.activeQuestion);
+        setQuestionTarget(turnRes.questionTarget);
+        if (turnRes.response.turnImpact) {
+          setTurnImpactSummary(turnRes.response.turnImpact);
+        }
+      } else if (session.activeQuestionTarget) {
+        setQuestionTarget(session.activeQuestionTarget);
       }
 
       const [ass, msg, ctr] = await Promise.all([
@@ -358,6 +367,10 @@ export function ProjectDetailPageContent() {
       setPiSession(res.session);
       setPiBlueprint(res.blueprint);
       setActiveQuestion(res.activeQuestion);
+      setQuestionTarget(res.questionTarget);
+      if (res.response.turnImpact) {
+        setTurnImpactSummary(res.response.turnImpact);
+      }
       const [ass, msg, ctr] = await Promise.all([
         svc.productInterview.getAssertions(res.session.id),
         svc.productInterview.getMessages(res.session.id),
@@ -1082,14 +1095,15 @@ export function ProjectDetailPageContent() {
                 <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-3">
                     <span className="font-semibold">📌 Session : <strong>{piSession.status}</strong></span>
-                    <span className="badge badge-info">{piSession.maturityStep}</span>
+                    <span className="badge badge-info">Étape : {piSession.maturityStep}</span>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-muted">
+                  <div className="flex items-center gap-4 text-xs text-muted flex-wrap">
                     <span>🗣️ <strong>{piMessages.length}</strong> messages</span>
                     <span>✅ <strong>{piAssertions.filter((a) => a.status === "CONFIRMED").length}</strong> confirmés</span>
                     <span>💡 <strong>{piAssertions.filter((a) => a.status === "INFERRED").length}</strong> hypothèses</span>
-                    <span>❓ <strong>{piSession.blockingUnknownsCount}</strong> inconnues</span>
+                    <span>❓ <strong>{piSession.blockingUnknownsCount}</strong> inconnues bloquantes</span>
                     <span>⚡ <strong>{piContradictions.filter((c) => c.status === "OPEN").length}</strong> contradictions</span>
+                    <span>📘 <strong>{piBlueprint ? Object.values(piBlueprint.sections).filter((s) => s.status !== "EMPTY").length : 0} / 14</strong> sections alimentées</span>
                   </div>
                   <button
                     className="btn btn-secondary btn-sm"
@@ -1100,8 +1114,25 @@ export function ProjectDetailPageContent() {
                   </button>
                 </div>
 
+                {/* Turn Impact Summary Banner */}
+                {turnImpactSummary && (
+                  <div className="p-3 bg-emerald-50/20 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">💡</span>
+                      <div>
+                        <strong>Impact du dernier tour :</strong> {turnImpactSummary.summary}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] font-mono">
+                      <span>✅ +{turnImpactSummary.confirmedAssertionsCount} confirmés</span>
+                      <span>💡 +{turnImpactSummary.inferredAssertionsCount} inférés</span>
+                      <span>📘 {turnImpactSummary.updatedSectionsCount} sections MàJ</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Main Chat Interface */}
-                <div className="card p-4 space-y-4 max-h-[600px] overflow-y-auto flex flex-col border border-border">
+                <div className="card p-4 space-y-4 max-h-[500px] overflow-y-auto flex flex-col border border-border">
                   {piMessages.length === 0 ? (
                     <div className="text-center text-sm text-muted py-8">
                       Aucun message. Cliquez sur Commencer pour lancer le premier tour.
@@ -1143,18 +1174,27 @@ export function ProjectDetailPageContent() {
                       <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
                         ❓ Question Active ({activeQuestion.responseType})
                       </span>
-                      {activeQuestion.targetSubject && (
-                        <span className="badge badge-secondary text-xs">{activeQuestion.targetSubject}</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {questionTarget?.axis && (
+                          <span className="badge badge-primary text-[10px]">Axe : {questionTarget.axis}</span>
+                        )}
+                        {activeQuestion.targetSubject && (
+                          <span className="badge badge-secondary text-[10px]">{activeQuestion.targetSubject}</span>
+                        )}
+                      </div>
                     </div>
                     
                     <p className="font-semibold text-sm">{activeQuestion.text}</p>
                     
-                    {activeQuestion.rationale && (
-                      <p className="text-xs text-muted italic">
-                        💡 Pourquoi cette question compte : {activeQuestion.rationale}
+                    {/* Pourquoi maintenant ? */}
+                    <div className="p-2.5 bg-background/50 rounded border border-border/50 text-xs space-y-1">
+                      <div className="font-semibold text-primary flex items-center gap-1">
+                        <span>🎯 Pourquoi cette question maintenant ?</span>
+                      </div>
+                      <p className="text-muted italic">
+                        {questionTarget?.reason || activeQuestion.rationale || "Cette question vise à lever l'incertitude prioritaire du projet."}
                       </p>
-                    )}
+                    </div>
 
                     {/* Widgets per Question Type */}
                     <div className="pt-2 space-y-2">
@@ -1223,7 +1263,12 @@ export function ProjectDetailPageContent() {
 
                 {/* 14 Blueprint Sections Summary */}
                 <div>
-                  <h3 className="text-md font-bold mb-3">📘 Blueprint Fonctionnel (14 Sections)</h3>
+                  <h3 className="text-md font-bold mb-3 flex items-center justify-between">
+                    <span>📘 Blueprint Fonctionnel (14 Sections)</span>
+                    <span className="text-xs text-muted font-normal">
+                      {piBlueprint ? Object.values(piBlueprint.sections).filter((s) => s.status !== "EMPTY").length : 0} / 14 Remplies
+                    </span>
+                  </h3>
                   {piBlueprint ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {Object.values(piBlueprint.sections).map((sec) => (
@@ -1242,7 +1287,7 @@ export function ProjectDetailPageContent() {
                               {sec.status}
                             </span>
                           </div>
-                          <p className="text-muted">
+                          <p className="text-muted whitespace-pre-line">
                             {sec.summary || "Section encore non renseignée."}
                           </p>
                         </div>
@@ -1250,6 +1295,42 @@ export function ProjectDetailPageContent() {
                     </div>
                   ) : (
                     <div className="text-sm text-muted">Chargement du blueprint...</div>
+                  )}
+                </div>
+
+                {/* Collapsible Diagnostic Panel (Closed by default) */}
+                <div className="card p-3 border border-border/60 text-xs space-y-2">
+                  <button
+                    className="flex items-center justify-between w-full font-semibold text-muted hover:text-foreground"
+                    onClick={() => setShowDiagnostic(!showDiagnostic)}
+                  >
+                    <span>🔍 Diagnostic Moteur ORBITE (Interne)</span>
+                    <span>{showDiagnostic ? "▲ Masquer" : "▼ Afficher"}</span>
+                  </button>
+                  {showDiagnostic && (
+                    <div className="pt-2 border-t border-border/40 space-y-2 font-mono text-[11px]">
+                      <div>
+                        <strong>Axe ciblé actuel :</strong> {questionTarget?.axis || "Non défini"}
+                      </div>
+                      <div>
+                        <strong>Raison du choix :</strong> {questionTarget?.reason || "Non définie"}
+                      </div>
+                      <div>
+                        <strong>Étape de maturité :</strong> {piSession.maturityStep}
+                      </div>
+                      {questionTarget?.candidates && (
+                        <div>
+                          <strong>Top 3 candidats calculés par ORBITE :</strong>
+                          <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                            {questionTarget.candidates.map((c: any, i: number) => (
+                              <li key={i}>
+                                {c.axis} (Score: {c.score}) — {c.reasons.join(", ")}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
