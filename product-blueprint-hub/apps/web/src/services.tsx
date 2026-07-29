@@ -28,7 +28,7 @@ import type {
   FeaturePath,
   ProjectedPathNode,
 } from "@pbh/domain";
-import { projectFeaturePathsToVisualNodes } from "@pbh/domain";
+import { projectFeaturePathsToVisualNodes, normalizeJourneySteps } from "@pbh/domain";
 import {
   ProjectUseCases,
   SourceUseCases,
@@ -152,4 +152,4 @@ export type {
   FeaturePath,
   ProjectedPathNode,
 };
-export { projectFeaturePathsToVisualNodes };
+export { projectFeaturePathsToVisualNodes, normalizeJourneySteps };

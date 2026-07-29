@@ -1,5 +1,5 @@
 import type { EntityId } from "./entities";
-import type { DesignProposal, JourneyStep, DesignLayer } from "./design-proposals";
+import { type DesignProposal, type JourneyStep, type DesignLayer, normalizeJourneySteps } from "./design-proposals";
 
 export interface FeaturePathNode {
   readonly proposal: DesignProposal;
@@ -151,7 +151,7 @@ export function computeFeaturePaths(proposals: DesignProposal[]): FeaturePath[] 
     const userGoal = journeyData?.goal || journey.description || journey.title;
     const entryPoint = journeyData?.trigger || journeyData?.preconditions || "Déclencheur utilisateur";
     const finalOutcome = journeyData?.expectedOutcome || journey.shortPitch || journey.title;
-    const steps: JourneyStep[] = Array.isArray(journeyData?.steps) ? journeyData.steps : [];
+    const steps: JourneyStep[] = normalizeJourneySteps(journey.layerData);
 
     // Identify features used by this journey
     const linkedFeatureIds = new Set<EntityId>();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createDesignProposal, DesignProposal } from "./design-proposals";
+import { createDesignProposal, DesignProposal, normalizeJourneySteps } from "./design-proposals";
 import { computeFeaturePaths, projectFeaturePathsToVisualNodes } from "./feature-paths";
 
 describe("computeFeaturePaths v0.15.0", () => {
@@ -112,5 +112,40 @@ describe("computeFeaturePaths v0.15.0", () => {
     
     // Check that canonical is identical
     expect(featNodes[0]!.canonicalNodeId).toBe(featNodes[1]!.canonicalNodeId);
+  });
+});
+
+describe("normalizeJourneySteps (Chantier 5)", () => {
+  it("normalise correctement un format canonique steps avec objets", () => {
+    const res = normalizeJourneySteps({
+      steps: [
+        { userAction: "Clic sur Exporter", featureIds: ["f1"] },
+        { action: "Téléchargement du fichier", outcome: "Fichier prêt" }
+      ]
+    });
+    expect(res.length).toBe(2);
+    expect(res[0]!.userAction).toBe("Clic sur Exporter");
+    expect(res[0]!.order).toBe(1);
+    expect(res[1]!.userAction).toBe("Téléchargement du fichier");
+    expect(res[1]!.outcome).toBe("Fichier prêt");
+  });
+
+  it("normalise correctement les formats historiques step et actions", () => {
+    const resStep = normalizeJourneySteps({ step: { label: "Connexion utilisateur" } });
+    expect(resStep.length).toBe(1);
+    expect(resStep[0]!.userAction).toBe("Connexion utilisateur");
+
+    const resActions = normalizeJourneySteps({ actions: ["Saisir email", "Cliquer valider"] });
+    expect(resActions.length).toBe(2);
+    expect(resActions[0]!.userAction).toBe("Saisir email");
+    expect(resActions[1]!.userAction).toBe("Cliquer valider");
+  });
+
+  it("donne la priorité à la vraie action avant le fallback Étape N", () => {
+    const res = normalizeJourneySteps({
+      steps: [{ title: "Intitulé rédigé" }, {}]
+    });
+    expect(res[0]!.userAction).toBe("Intitulé rédigé");
+    expect(res[1]!.userAction).toBe("Étape 2");
   });
 });

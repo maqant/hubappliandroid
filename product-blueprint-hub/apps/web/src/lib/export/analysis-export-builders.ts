@@ -1,4 +1,4 @@
-import type { DesignProposal, FeaturePath, EntityId } from "@pbh/domain";
+import { type DesignProposal, type FeaturePath, type EntityId, normalizeJourneySteps } from "@pbh/domain";
 import type { LogEvent } from "./analysis-log-collector";
 
 export interface ExportBuildContext {
@@ -232,14 +232,14 @@ export function buildConceptionLisibleMd(ctx: ExportBuildContext): string {
       if (item.parentId) md += `- Parent direct : \`${item.parentId}\`\n`;
 
       if (layer === "JOURNEY" && item.layerData) {
-        const jData = item.layerData as any;
-        if (Array.isArray(jData.steps) && jData.steps.length > 0) {
+        const steps = normalizeJourneySteps(item.layerData);
+        if (steps.length > 0) {
           md += `\n#### Étapes du Parcours\n\n`;
-          jData.steps.forEach((st: any, idx: number) => {
-            md += `${idx + 1}. **${st.userAction || st.action || "Action"}**\n`;
+          steps.forEach((st: any, idx: number) => {
+            md += `${st.order || idx + 1}. **${st.userAction || st.action || "Action"}**\n`;
             if (st.visibleInformation) md += `   - Informations visibles : ${st.visibleInformation}\n`;
-            if (st.systemResponse) md += `   - Réponse système : ${st.systemResponse}\n`;
-            if (st.featureIds) md += `   - Features mobilisées : ${st.featureIds.join(", ")}\n`;
+            if (st.systemResponse || st.outcome) md += `   - Réponse système / Résultat : ${st.outcome || st.systemResponse}\n`;
+            if (st.featureIds && st.featureIds.length > 0) md += `   - Features mobilisées : ${st.featureIds.join(", ")}\n`;
           });
         }
       }

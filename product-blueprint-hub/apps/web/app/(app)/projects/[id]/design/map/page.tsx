@@ -24,7 +24,8 @@ import {
   type DesignProposal, 
   type EntityId, 
   type FeaturePath,
-  projectFeaturePathsToVisualNodes
+  projectFeaturePathsToVisualNodes,
+  normalizeJourneySteps
 } from "@/services";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 import { exportMapImageOnly } from "@/lib/export/analysis-export";
@@ -252,8 +253,7 @@ function DesignMapPageContent() {
 
           // Render Journey Steps Card if available
           if (path.primaryJourney) {
-            const jData = path.primaryJourney.layerData as any;
-            const steps: any[] = Array.isArray(jData?.steps) ? jData.steps : [];
+            const steps = normalizeJourneySteps(path.primaryJourney.layerData);
             if (steps.length > 0) {
               generatedNodes.push({
                 id: `steps-${path.id}`,

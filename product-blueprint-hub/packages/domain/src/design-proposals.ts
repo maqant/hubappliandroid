@@ -86,17 +86,79 @@ export interface FeatureLayerData {
 }
 
 export interface JourneyStep {
+  id?: string;
   order?: number;
   stepNumber?: number;
+  title?: string;
+  label?: string;
   userAction: string;
   action?: string;
+  outcome?: string;
+  stepOutcome?: string;
   visibleInformation?: string;
   systemResponse?: string;
   featureIds?: EntityId[];
   screenId?: EntityId;
   screenIds?: EntityId[];
   decision?: string;
-  stepOutcome?: string;
+}
+
+export function normalizeJourneySteps(layerData: any): JourneyStep[] {
+  if (!layerData || typeof layerData !== 'object') return [];
+  
+  let rawSteps: any[] = [];
+  if (Array.isArray(layerData.steps)) {
+    rawSteps = layerData.steps;
+  } else if (Array.isArray(layerData.step)) {
+    rawSteps = layerData.step;
+  } else if (layerData.step && typeof layerData.step === 'object') {
+    rawSteps = [layerData.step];
+  } else if (Array.isArray(layerData.actions)) {
+    rawSteps = layerData.actions;
+  } else if (typeof layerData.actions === 'string') {
+    rawSteps = [layerData.actions];
+  }
+
+  return rawSteps.map((st, idx) => {
+    const order = (st && typeof st === 'object' && (typeof st.order === 'number' ? st.order : (typeof st.stepNumber === 'number' ? st.stepNumber : idx + 1))) || (idx + 1);
+    
+    let userAction = "";
+    if (typeof st === 'string') {
+      userAction = st.trim();
+    } else if (st && typeof st === 'object') {
+      userAction = (st.userAction || st.action || st.title || st.label || '').trim();
+    }
+    if (!userAction) {
+      userAction = `Étape ${order}`;
+    }
+
+    const outcome = st && typeof st === 'object' ? (st.outcome || st.stepOutcome || st.expectedOutcome || st.systemResponse || undefined) : undefined;
+    
+    let featureIds: EntityId[] = [];
+    if (st && typeof st === 'object') {
+      if (Array.isArray(st.featureIds)) featureIds = st.featureIds.filter(Boolean);
+      else if (st.featureId) featureIds = [st.featureId];
+    }
+
+    let screenIds: EntityId[] = [];
+    if (st && typeof st === 'object') {
+      if (Array.isArray(st.screenIds)) screenIds = st.screenIds.filter(Boolean);
+      else if (st.screenId) screenIds = [st.screenId];
+    }
+
+    return {
+      order,
+      stepNumber: order,
+      userAction,
+      action: userAction,
+      outcome,
+      stepOutcome: outcome,
+      featureIds,
+      screenIds,
+      visibleInformation: st && typeof st === 'object' ? st.visibleInformation : undefined,
+      systemResponse: st && typeof st === 'object' ? st.systemResponse : undefined
+    };
+  });
 }
 
 export interface JourneyLayerData {

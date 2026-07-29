@@ -1,4 +1,4 @@
-import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal, computeFeaturePaths } from "@pbh/domain";
+import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal, computeFeaturePaths, normalizeJourneySteps } from "@pbh/domain";
 import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge, LinkSource } from "@pbh/domain";
 import { createDesignGraph, createId } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
@@ -382,17 +382,17 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
     const createdScreens: DesignProposal[] = [];
 
     for (const journey of journeys) {
-      const data = journey.layerData as any;
-      if (!data || !data.steps) continue;
+      const steps = normalizeJourneySteps(journey.layerData);
+      if (steps.length === 0) continue;
 
       let updated = false;
-      for (const step of data.steps) {
+      for (const step of steps) {
         if (!step.featureIds || step.featureIds.length === 0) continue;
 
         const compatibleScreen = existingScreens.find(s => {
           const sData = s.layerData as any;
           const exposed = sData?.exposedFeatureIds || [];
-          return step.featureIds.some((fid: EntityId) => exposed.includes(fid));
+          return (step.featureIds || []).some((fid: EntityId) => exposed.includes(fid));
         });
 
         if (compatibleScreen) {
@@ -1631,13 +1631,14 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
 
     const stepUsages: { journeyId: EntityId; stepNumber: number; stepAction: string }[] = [];
     allProps.filter(p => p.layer === 'JOURNEY').forEach(j => {
-      const jData = j.layerData as any;
-      const steps = Array.isArray(jData?.steps) ? jData.steps : [];
+      const steps = normalizeJourneySteps(j.layerData);
       steps.forEach((st: any, idx: number) => {
-        if ((st.featureIds || []).includes(proposalId) || (st.screenIds || []).includes(proposalId) || st.screenId === proposalId) {
+        const featIds = st.featureIds || [];
+        const scrIds = st.screenIds || (st.screenId ? [st.screenId] : []);
+        if (featIds.includes(proposalId) || scrIds.includes(proposalId)) {
           stepUsages.push({
             journeyId: j.id,
-            stepNumber: st.stepNumber || (idx + 1),
+            stepNumber: st.order || st.stepNumber || (idx + 1),
             stepAction: st.userAction || st.action || `Étape ${idx + 1}`
           });
         }
