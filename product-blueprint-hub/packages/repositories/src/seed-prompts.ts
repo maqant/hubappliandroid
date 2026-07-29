@@ -1004,6 +1004,14 @@ RÈGLE DE NON-COMPRESSION
 
 Ne réduis jamais plusieurs comportements indépendamment arbitrables à une carte générique.
 
+RÈGLE DE NOUVEAUTÉ ET DIVERSIFICATION (MODE VARIATION)
+
+En mode DIVERSIFICATION / VARIATION :
+1. Veto de nouveauté sémantique : Rejette toute proposition dont la différence avec EXISTING_PROPOSALS_TO_AVOID est uniquement lexicale ou synonymique (même besoin, même valeur sous d'autres mots). Ne conserve que des propositions apportant une nouveauté fonctionnelle substantielle (nouveau besoin couvert, nouvel espace du domaine, nouvel angle de valeur).
+2. Veto de couche : Rejette toute proposition dont le niveau d'abstraction ne correspond pas à la couche active (ex: FEATURE formulée comme CAPABILITY).
+3. Qualité > Quantité : Le quota est une simple indication. Tu dois retourner 0, 1 ou 2 propositions si la qualité et la nouveauté réelle des autres candidats sont insuffisantes. Ne génère pas de cartes de remplissage.
+4. Valeur ajoutée : Exige que le champ justification/rationale décrive la valeur nouvelle réellement apportée par rapport aux propositions existantes.
+
 Le quota est une plage cible.
 
 Produis moins si les propositions supplémentaires seraient des doublons.

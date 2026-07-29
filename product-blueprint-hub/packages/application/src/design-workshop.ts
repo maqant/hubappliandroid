@@ -804,6 +804,9 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
       }
 
       let userPrompt = hydratePrompt(promptTpl.userPromptTemplate, agentData);
+      if (mode !== 'INITIAL') {
+        userPrompt += `\n\n### CONSIGNE DE DIVERSIFICATION ET FILTRAGE DE NOUVEAUTÉ (CONVERGENCE)\nTu es en mode DIVERSIFICATION / VARIATION. Ne retiens QUE les propositions qui apportent une nouveauté fonctionnelle substantielle par rapport aux propositions existantes (EXISTING_PROPOSALS_TO_AVOID).\nRejette systématiquement les simples reformulations, synonymes ou changements de priorité.\nRejette toute proposition qui glisse vers une couche inférieure (ex: FEATURE formulée comme CAPABILITY).\nSi aucune ou peu de propositions ne satisfont ce critère de nouveauté, retourne un tableau réduit (0, 1 ou 2 propositions). La qualité et la nouveauté réelle priment sur la quantité.` + (diversityFocus ? ` (Angle d'exploration : ${diversityFocus})` : '');
+      }
 
       if (agentData.runId === agentsToCall[agentsToCall.length - 1].runId) {
         systemPromptLength = promptTpl.systemPrompt.length;
