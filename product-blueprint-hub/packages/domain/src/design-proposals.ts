@@ -254,6 +254,38 @@ export interface DesignProposal extends BaseEntity, Owned {
   readonly sourceBatchId?: string | null;
   readonly userDiversityFocus?: string | null;
   readonly originOperationId?: string | null;
+  // Référence vers l'élément principal en cas de fusion (statut SUPERSEDED)
+  readonly mergedIntoId?: EntityId | null;
+  readonly mergeReason?: string | null;
+}
+
+export interface DuplicateSimilaritySignal {
+  readonly type: 'SAME_PARENT' | 'TITLE_PROXIMITY' | 'SAME_STEPS_ACTION' | 'SAME_EXPOSED_FEATURES' | 'ROLE_MATCH';
+  readonly label: string;
+  readonly description: string;
+}
+
+export interface HistoricalDuplicateGroup {
+  readonly id: string;
+  readonly layer: DesignLayer;
+  readonly proposalIds: EntityId[];
+  readonly proposals: DesignProposal[];
+  readonly primaryCandidateId: EntityId;
+  readonly confidence: 'HIGH' | 'MEDIUM';
+  readonly similarities: DuplicateSimilaritySignal[];
+  readonly differences: string[];
+  readonly mergeImpact: {
+    readonly childCountToReassign: number;
+    readonly dependentCountToReassign: number;
+    readonly affectedPathsCount: number;
+  };
+}
+
+export interface MergeProposalsResult {
+  readonly target: DesignProposal;
+  readonly mergedSources: DesignProposal[];
+  readonly reassignedCount: number;
+  readonly updatedProposalsCount: number;
 }
 
 export function createDesignProposal(params: Omit<DesignProposal, 'id' | 'version' | 'createdAt' | 'updatedAt'>): DesignProposal {

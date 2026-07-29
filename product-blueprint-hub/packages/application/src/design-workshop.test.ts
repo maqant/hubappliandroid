@@ -125,11 +125,130 @@ describe("DesignWorkshopUseCases v0.15.0", () => {
     const journey = createDesignProposal({ projectId, layer: "JOURNEY", title: "Journey I", status: "ACCEPTED", layerData: { steps: [{ featureIds: [feat.id] }] } as any, parentProposalIds: [feat.id] });
     mockProposals.push(feat, journey);
 
-    // Arbitrate via canonicalId
     const res = await useCases.arbitratePath(projectId, feat.id, "ACCEPT_PROPOSED");
     expect(res.updatedCount).toBeGreaterThan(0);
 
     const updated = mockProposals.find(p => p.id === feat.id);
     expect(updated?.status).toBe("ACCEPTED");
+  });
+
+  describe("CHANTIER 6 : Détection et Fusion des doublons historiques", () => {
+    it("détecte des doublons potentiels JOURNEY et SCREEN sans aucune écriture en base", () => {
+      mockProposals.length = 0;
+      const projectId = "proj-dup" as EntityId;
+      const saveCountBefore = mockRepos.designProposals.save.mock.calls.length;
+
+      const feat = createDesignProposal({ projectId, layer: "FEATURE", title: "Gestion du Profil", status: "ACCEPTED" });
+
+      // Journeys très proches
+      const j1 = createDesignProposal({
+        projectId,
+        layer: "JOURNEY",
+        title: "Modification des données du profil",
+        parentId: feat.id,
+        status: "ACCEPTED",
+        layerData: { steps: [{ userAction: "Clic sur Éditer Profil" }, { userAction: "Saisir nouveau Nom" }] } as any
+      });
+      const j2 = createDesignProposal({
+        projectId,
+        layer: "JOURNEY",
+        title: "Modifier les données profil utilisateur",
+        parentId: feat.id,
+        status: "PROPOSED",
+        layerData: { steps: [{ userAction: "Cliquer Éditer Profil" }, { userAction: "Renseigner nouveau Nom" }] } as any
+      });
+
+      // Journey sur un autre parent (pas un doublon)
+      const j3 = createDesignProposal({
+        projectId,
+        layer: "JOURNEY",
+        title: "Exportation du rapport d'activité",
+        status: "ACCEPTED",
+        layerData: { steps: [{ userAction: "Clic sur Exporter PDF" }] } as any
+      });
+
+      mockProposals.push(feat, j1, j2, j3);
+
+      const groups = useCases.detectHistoricalDuplicates(mockProposals);
+
+      expect(groups.length).toBe(1);
+      const group = groups[0]!;
+      expect(group.layer).toBe("JOURNEY");
+      expect(group.proposalIds).toContain(j1.id);
+      expect(group.proposalIds).toContain(j2.id);
+      expect(group.primaryCandidateId).toBe(j1.id); // j1 est ACCEPTED
+      expect(group.similarities.some(s => s.type === "SAME_PARENT")).toBe(true);
+
+      // ZÉRO écriture repository
+      expect(mockRepos.designProposals.save.mock.calls.length).toBe(saveCountBefore);
+    });
+
+    it("fusionne volontairement et proprement deux propositions en réaffectant les liaisons et marquant SUPERSEDED", async () => {
+      mockProposals.length = 0;
+      const projectId = "proj-merge" as EntityId;
+
+      const feat = createDesignProposal({ projectId, layer: "FEATURE", title: "Super Feature", status: "ACCEPTED" });
+
+      const targetJ = createDesignProposal({
+        projectId,
+        layer: "JOURNEY",
+        title: "Parcours Principal Achat",
+        status: "ACCEPTED",
+        parentId: feat.id
+      });
+      const sourceJ = createDesignProposal({
+        projectId,
+        layer: "JOURNEY",
+        title: "Parcours Doublon Achat",
+        status: "PROPOSED",
+        parentId: feat.id
+      });
+
+      // Enfant rattaché au parcours source
+      const childScreen = createDesignProposal({
+        projectId,
+        layer: "SCREEN",
+        title: "Écran Paiement",
+        status: "PROPOSED",
+        parentId: sourceJ.id
+      });
+
+      mockProposals.push(feat, targetJ, sourceJ, childScreen);
+
+      mockRepos.designProposals.getByProjectId = vi.fn().mockResolvedValue(mockProposals);
+      mockRepos.designBaselines = { getActive: vi.fn().mockResolvedValue(null), save: vi.fn() };
+
+      const result = await useCases.mergeHistoricalProposals(projectId, targetJ.id, [sourceJ.id]);
+
+      expect(result.target.id).toBe(targetJ.id);
+      expect(result.mergedSources.length).toBe(1);
+
+      // Le parcours source passe en SUPERSEDED avec mergedIntoId
+      const updatedSource = mockProposals.find(p => p.id === sourceJ.id);
+      expect(updatedSource?.status).toBe("SUPERSEDED");
+      expect(updatedSource?.mergedIntoId).toBe(targetJ.id);
+
+      // L'enfant a son parentId réaffecté vers la cible
+      const updatedChild = mockProposals.find(p => p.id === childScreen.id);
+      expect(updatedChild?.parentId).toBe(targetJ.id);
+    });
+
+    it("refuse une fusion si la cible est inactive ou si les couches sont différentes", async () => {
+      mockProposals.length = 0;
+      const projectId = "proj-err" as EntityId;
+
+      const inactiveTarget = createDesignProposal({ projectId, layer: "JOURNEY", title: "Target Inactive", status: "SUPERSEDED" });
+      const sourceJ = createDesignProposal({ projectId, layer: "JOURNEY", title: "Source J", status: "PROPOSED" });
+      const sourceScreen = createDesignProposal({ projectId, layer: "SCREEN", title: "Source Screen", status: "PROPOSED" });
+
+      mockProposals.push(inactiveTarget, sourceJ, sourceScreen);
+      mockRepos.designProposals.getByProjectId = vi.fn().mockResolvedValue(mockProposals);
+
+      await expect(useCases.mergeHistoricalProposals(projectId, inactiveTarget.id, [sourceJ.id]))
+        .rejects.toThrow("Impossible de fusionner vers une proposition inactive");
+
+      await expect(useCases.mergeHistoricalProposals(projectId, sourceJ.id, [sourceScreen.id]))
+        .rejects.toThrow("Impossible de fusionner des couches différentes");
+    });
   });
 });

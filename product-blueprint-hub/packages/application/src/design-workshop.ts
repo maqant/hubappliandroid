@@ -1,5 +1,5 @@
 import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal, computeFeaturePaths, normalizeJourneySteps } from "@pbh/domain";
-import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge, LinkSource } from "@pbh/domain";
+import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge, LinkSource, HistoricalDuplicateGroup, DuplicateSimilaritySignal, MergeProposalsResult } from "@pbh/domain";
 import { createDesignGraph, createId } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
@@ -1669,6 +1669,414 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
       reviewState: proposal.status,
       warnings: pathIds.length > 1 ? [`Nœud partagé dans ${pathIds.length} paths d'expérience.`] : [],
       stepUsages,
+    };
+  }
+
+  // ============================================================
+  // CHANTIER 6 : DÉTECTION ET FUSION DES DOUBLONS HISTORIQUES
+  // ============================================================
+
+  /**
+   * Détection consultative pure (ZÉRO écriture en base).
+   * Identifie les groupes de doublons potentiels (JOURNEY ou SCREEN) et explique pourquoi ils sont proches.
+   */
+  public detectHistoricalDuplicates(allProposals: DesignProposal[]): HistoricalDuplicateGroup[] {
+    const activeProps = allProposals.filter(p => p.status !== 'REJECTED' && p.status !== 'SUPERSEDED');
+    const targetLayers: DesignLayer[] = ['JOURNEY', 'SCREEN'];
+    const groups: HistoricalDuplicateGroup[] = [];
+
+    for (const layer of targetLayers) {
+      const proposalsInLayer = activeProps.filter(p => p.layer === layer);
+      if (proposalsInLayer.length < 2) continue;
+
+      const parentMap = new Map<EntityId, EntityId>();
+      proposalsInLayer.forEach(p => parentMap.set(p.id, p.id));
+
+      function find(id: EntityId): EntityId {
+        let root = id;
+        while (root !== parentMap.get(root)) {
+          root = parentMap.get(root)!;
+        }
+        let curr = id;
+        while (curr !== root) {
+          const next = parentMap.get(curr)!;
+          parentMap.set(curr, root);
+          curr = next;
+        }
+        return root;
+      }
+
+      function union(id1: EntityId, id2: EntityId) {
+        const root1 = find(id1);
+        const root2 = find(id2);
+        if (root1 !== root2) {
+          parentMap.set(root2, root1);
+        }
+      }
+
+      const pairSignals = new Map<string, {
+        p1: DesignProposal;
+        p2: DesignProposal;
+        signals: DuplicateSimilaritySignal[];
+        differences: string[];
+      }>();
+
+      for (let i = 0; i < proposalsInLayer.length; i++) {
+        for (let j = i + 1; j < proposalsInLayer.length; j++) {
+          const p1 = proposalsInLayer[i]!;
+          const p2 = proposalsInLayer[j]!;
+
+          const signals: DuplicateSimilaritySignal[] = [];
+          const differences: string[] = [];
+
+          // Signal 1: Same Parent
+          const sameParentId = (p1.parentId && p1.parentId === p2.parentId) || 
+            (p1.parentProposalIds || []).some(id => (p2.parentProposalIds || []).includes(id));
+          if (sameParentId) {
+            signals.push({
+              type: 'SAME_PARENT',
+              label: 'Parent commun',
+              description: `Rattachés au même nœud parent (${p1.parentId || 'parent partagé'})`
+            });
+          }
+
+          // Signal 2: Title & Pitch Proximity (Jaccard sur tokens)
+          const setA = new Set(tokenize(p1.title));
+          const setB = new Set(tokenize(p2.title));
+          let intersection = 0;
+          setA.forEach(t => { if (setB.has(t)) intersection++; });
+          const unionSize = new Set([...setA, ...setB]).size;
+          const titleSim = unionSize > 0 ? intersection / unionSize : 0;
+
+          const descA = new Set(tokenize(p1.description || p1.shortPitch || ''));
+          const descB = new Set(tokenize(p2.description || p2.shortPitch || ''));
+          let descInter = 0;
+          descA.forEach(t => { if (descB.has(t)) descInter++; });
+          const descUnion = new Set([...descA, ...descB]).size;
+          const descSim = descUnion > 0 ? descInter / descUnion : 0;
+
+          if (titleSim >= 0.55 || descSim >= 0.5) {
+            signals.push({
+              type: 'TITLE_PROXIMITY',
+              label: 'Titres ou descriptions très proches',
+              description: `Proximité lexicale des intitutés : ${Math.round(Math.max(titleSim, descSim) * 100)}%`
+            });
+          } else {
+            differences.push(`Titres distincts ("${p1.title}" vs "${p2.title}")`);
+          }
+
+          // Layer-specific signals
+          if (layer === 'JOURNEY') {
+            const steps1 = normalizeJourneySteps(p1.layerData);
+            const steps2 = normalizeJourneySteps(p2.layerData);
+            const actions1 = steps1.map(s => s.userAction).join(' ');
+            const actions2 = steps2.map(s => s.userAction).join(' ');
+            
+            const setAct1 = new Set(tokenize(actions1));
+            const setAct2 = new Set(tokenize(actions2));
+            let actInter = 0;
+            setAct1.forEach(t => { if (setAct2.has(t)) actInter++; });
+            const actUnion = new Set([...setAct1, ...setAct2]).size;
+            const stepsSim = actUnion > 0 ? actInter / actUnion : 0;
+
+            if (stepsSim >= 0.4 || (steps1.length > 0 && steps2.length > 0 && Math.abs(steps1.length - steps2.length) <= 1 && sameParentId)) {
+              signals.push({
+                type: 'SAME_STEPS_ACTION',
+                label: 'Étapes de parcours similaires',
+                description: `Proximité des actions du parcours : ${Math.round(stepsSim * 100)}%`
+              });
+            }
+            if (steps1.length !== steps2.length) {
+              differences.push(`Nombre d'étapes différent (${steps1.length} vs ${steps2.length})`);
+            }
+          } else if (layer === 'SCREEN') {
+            const sData1 = (p1.layerData || {}) as any;
+            const sData2 = (p2.layerData || {}) as any;
+
+            const feats1 = new Set<string>(sData1.exposedFeatureIds || []);
+            const feats2 = new Set<string>(sData2.exposedFeatureIds || []);
+            let sharedFeats = 0;
+            feats1.forEach(f => { if (feats2.has(f)) sharedFeats++; });
+
+            if (sharedFeats > 0 && (feats1.size > 0 || feats2.size > 0)) {
+              signals.push({
+                type: 'SAME_EXPOSED_FEATURES',
+                label: 'Features exposées communes',
+                description: `${sharedFeats} feature(s) commune(s) exposée(s)`
+              });
+            }
+
+            const role1 = sData1.role || '';
+            const role2 = sData2.role || '';
+            const setR1 = new Set(tokenize(role1));
+            const setR2 = new Set(tokenize(role2));
+            let rInter = 0;
+            setR1.forEach(t => { if (setR2.has(t)) rInter++; });
+            const rUnion = new Set([...setR1, ...setR2]).size;
+            const roleSim = rUnion > 0 ? rInter / rUnion : 0;
+
+            if (roleSim >= 0.5 || (role1 && role1.toLowerCase() === role2.toLowerCase())) {
+              signals.push({
+                type: 'ROLE_MATCH',
+                label: 'Rôle d\'écran similaire',
+                description: `Rôles d'écran analogues (${role1 || 'N/A'} vs ${role2 || 'N/A'})`
+              });
+            }
+          }
+
+          if (p1.status !== p2.status) {
+            differences.push(`Statuts distincts (${p1.status} vs ${p2.status})`);
+          }
+
+          const isSuspicious = signals.length >= 2 || titleSim >= 0.75;
+          if (isSuspicious) {
+            const pairKey = `${p1.id}:${p2.id}`;
+            pairSignals.set(pairKey, { p1, p2, signals, differences });
+            union(p1.id, p2.id);
+          }
+        }
+      }
+
+      const clustered = new Map<EntityId, DesignProposal[]>();
+      proposalsInLayer.forEach(p => {
+        const root = find(p.id);
+        if (!clustered.has(root)) clustered.set(root, []);
+        clustered.get(root)!.push(p);
+      });
+
+      clustered.forEach((propsInGroup, rootId) => {
+        if (propsInGroup.length < 2) return;
+
+        const groupSignals: DuplicateSimilaritySignal[] = [];
+        const groupDiffs = new Set<string>();
+        const signalTypesSeen = new Set<string>();
+
+        for (let i = 0; i < propsInGroup.length; i++) {
+          for (let j = i + 1; j < propsInGroup.length; j++) {
+            const k1 = `${propsInGroup[i]!.id}:${propsInGroup[j]!.id}`;
+            const k2 = `${propsInGroup[j]!.id}:${propsInGroup[i]!.id}`;
+            const match = pairSignals.get(k1) || pairSignals.get(k2);
+            if (match) {
+              match.signals.forEach(s => {
+                if (!signalTypesSeen.has(s.type)) {
+                  signalTypesSeen.add(s.type);
+                  groupSignals.push(s);
+                }
+              });
+              match.differences.forEach(d => groupDiffs.add(d));
+            }
+          }
+        }
+
+        const primaryCandidate = propsInGroup.slice().sort((a, b) => {
+          if (a.status === 'ACCEPTED' && b.status !== 'ACCEPTED') return -1;
+          if (b.status === 'ACCEPTED' && a.status !== 'ACCEPTED') return 1;
+          const aChildren = (a.childrenIds || []).length;
+          const bChildren = (b.childrenIds || []).length;
+          if (aChildren !== bChildren) return bChildren - aChildren;
+          return a.createdAt.localeCompare(b.createdAt);
+        })[0]!;
+
+        const nonPrimaryIds = propsInGroup.filter(p => p.id !== primaryCandidate.id).map(p => p.id);
+        const nonPrimarySet = new Set(nonPrimaryIds);
+
+        const childrenToReassign = allProposals.filter(p => 
+          p.id !== primaryCandidate.id && 
+          !nonPrimarySet.has(p.id) && 
+          ((p.parentId && nonPrimarySet.has(p.parentId)) || (p.parentProposalIds || []).some(id => nonPrimarySet.has(id)))
+        ).length;
+
+        const dependentsToReassign = allProposals.filter(p => 
+          p.id !== primaryCandidate.id && 
+          !nonPrimarySet.has(p.id) && 
+          ((p.dependencyIds || []).some(id => nonPrimarySet.has(id)) || (p.relatedProposalIds || []).some(id => nonPrimarySet.has(id)))
+        ).length;
+
+        const confidence: 'HIGH' | 'MEDIUM' = groupSignals.length >= 2 ? 'HIGH' : 'MEDIUM';
+
+        groups.push({
+          id: `dup-group-${layer.toLowerCase()}-${rootId}`,
+          layer,
+          proposalIds: propsInGroup.map(p => p.id),
+          proposals: propsInGroup,
+          primaryCandidateId: primaryCandidate.id,
+          confidence,
+          similarities: groupSignals,
+          differences: Array.from(groupDiffs),
+          mergeImpact: {
+            childCountToReassign: childrenToReassign,
+            dependentCountToReassign: dependentsToReassign,
+            affectedPathsCount: 1
+          }
+        });
+      });
+    }
+
+    return groups;
+  }
+
+  /**
+   * Fusion volontaire et protégée.
+   * Transfère proprement toutes les liaisons vers la cible, marque les sources avec status = 'SUPERSEDED'
+   * et mergedIntoId = targetId, sans aucune suppression physique en base.
+   */
+  public async mergeHistoricalProposals(
+    projectId: EntityId,
+    targetId: EntityId,
+    sourceIds: EntityId[]
+  ): Promise<MergeProposalsResult> {
+    const allProposals: DesignProposal[] = await this.repos.designProposals.getByProjectId(projectId);
+    const proposalMap = new Map<EntityId, DesignProposal>(allProposals.map(p => [p.id, p]));
+
+    const target = proposalMap.get(targetId);
+    if (!target) {
+      throw new Error(`Proposition cible introuvable (ID: ${targetId}).`);
+    }
+    if (target.status === 'REJECTED' || target.status === 'SUPERSEDED') {
+      throw new Error(`Impossible de fusionner vers une proposition inactive (${target.status}).`);
+    }
+
+    if (!sourceIds || sourceIds.length === 0) {
+      throw new Error("Aucune proposition source spécifiée pour la fusion.");
+    }
+
+    const uniqueSourceIds = Array.from(new Set(sourceIds)).filter(id => id !== targetId);
+    if (uniqueSourceIds.length === 0) {
+      throw new Error("Les propositions sources doivent être différentes de la cible.");
+    }
+
+    const sourcesToMerge: DesignProposal[] = [];
+    for (const sId of uniqueSourceIds) {
+      const src = proposalMap.get(sId);
+      if (!src) {
+        throw new Error(`Proposition source introuvable (ID: ${sId}).`);
+      }
+      if (src.status === 'SUPERSEDED' || src.status === 'REJECTED') {
+        throw new Error(`La proposition source ${src.title} est déjà inactive (${src.status}).`);
+      }
+      if (src.layer !== target.layer) {
+        throw new Error(`Impossible de fusionner des couches différentes (${src.layer} vs ${target.layer}).`);
+      }
+      sourcesToMerge.push(src);
+    }
+
+    const sourceIdSet = new Set(uniqueSourceIds);
+    let reassignedCount = 0;
+    const modifiedProposals: Map<EntityId, DesignProposal> = new Map();
+
+    for (const p of allProposals) {
+      let isModified = false;
+      let newParentId = p.parentId;
+      let newParentProposalIds = [...(p.parentProposalIds || [])];
+      let newDependencyIds = [...(p.dependencyIds || [])];
+      let newRelatedProposalIds = [...(p.relatedProposalIds || [])];
+
+      if (p.parentId && sourceIdSet.has(p.parentId)) {
+        newParentId = targetId;
+        isModified = true;
+        reassignedCount++;
+      }
+      if (p.id === targetId && newParentId === targetId) {
+        newParentId = null;
+        isModified = true;
+      }
+
+      if (newParentProposalIds.some(id => sourceIdSet.has(id))) {
+        newParentProposalIds = Array.from(new Set(
+          newParentProposalIds.map(id => sourceIdSet.has(id) ? targetId : id)
+        )).filter(id => id !== p.id);
+        isModified = true;
+      }
+
+      if (newDependencyIds.some(id => sourceIdSet.has(id))) {
+        newDependencyIds = Array.from(new Set(
+          newDependencyIds.map(id => sourceIdSet.has(id) ? targetId : id)
+        )).filter(id => id !== p.id);
+        isModified = true;
+      }
+
+      if (newRelatedProposalIds.some(id => sourceIdSet.has(id))) {
+        newRelatedProposalIds = Array.from(new Set(
+          newRelatedProposalIds.map(id => sourceIdSet.has(id) ? targetId : id)
+        )).filter(id => id !== p.id);
+        isModified = true;
+      }
+
+      if (isModified) {
+        modifiedProposals.set(p.id, {
+          ...p,
+          parentId: newParentId,
+          parentProposalIds: newParentProposalIds,
+          dependencyIds: newDependencyIds,
+          relatedProposalIds: newRelatedProposalIds,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    }
+
+    const currentTarget = modifiedProposals.get(targetId) || target;
+
+    const mergedParentProposalIds = Array.from(new Set([
+      ...(currentTarget.parentProposalIds || []),
+      ...sourcesToMerge.flatMap(s => s.parentProposalIds || [])
+    ])).filter(id => id !== targetId && !sourceIdSet.has(id));
+
+    const mergedDependencyIds = Array.from(new Set([
+      ...(currentTarget.dependencyIds || []),
+      ...sourcesToMerge.flatMap(s => s.dependencyIds || [])
+    ])).filter(id => id !== targetId && !sourceIdSet.has(id));
+
+    const mergedRelatedProposalIds = Array.from(new Set([
+      ...(currentTarget.relatedProposalIds || []),
+      ...sourcesToMerge.flatMap(s => s.relatedProposalIds || [])
+    ])).filter(id => id !== targetId && !sourceIdSet.has(id));
+
+    const updatedTarget: DesignProposal = {
+      ...currentTarget,
+      parentProposalIds: mergedParentProposalIds,
+      dependencyIds: mergedDependencyIds,
+      relatedProposalIds: mergedRelatedProposalIds,
+      updatedAt: new Date().toISOString()
+    };
+    modifiedProposals.set(targetId, updatedTarget);
+
+    const updatedMergedSources: DesignProposal[] = [];
+    for (const src of sourcesToMerge) {
+      const srcCurrent = modifiedProposals.get(src.id) || src;
+      const updatedSrc: DesignProposal = {
+        ...srcCurrent,
+        status: 'SUPERSEDED',
+        mergedIntoId: targetId,
+        mergeReason: `Fusionné dans la proposition "${target.title}" (${targetId})`,
+        rationale: (src.rationale ? src.rationale + '\n' : '') + `[FUSIONNÉ dans ${target.title}]`,
+        updatedAt: new Date().toISOString()
+      };
+      modifiedProposals.set(src.id, updatedSrc);
+      updatedMergedSources.push(updatedSrc);
+    }
+
+    for (const updatedProp of modifiedProposals.values()) {
+      await this.repos.designProposals.save(updatedProp);
+    }
+
+    const finalProposals: DesignProposal[] = await this.repos.designProposals.getByProjectId(projectId);
+    const activeBaseline = await this.repos.designBaselines.getActive(projectId);
+    if (activeBaseline) {
+      await this.repos.designBaselines.save({
+        ...activeBaseline,
+        snapshot: {
+          ...activeBaseline.snapshot,
+          proposals: finalProposals
+        },
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    return {
+      target: updatedTarget,
+      mergedSources: updatedMergedSources,
+      reassignedCount,
+      updatedProposalsCount: modifiedProposals.size
     };
   }
 }
