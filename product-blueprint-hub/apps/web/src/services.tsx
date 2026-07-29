@@ -105,7 +105,7 @@ function createServices() {
     baselines: new BaselineUseCases(repos),
     packages: new PackageUseCases(repos),
     designWorkshop: new DesignWorkshopUseCases(repos, provider),
-    productInterview: new ProductInterviewService(repos),
+    productInterview: new ProductInterviewService(repos, provider),
     switchProviderMode: (mode: "openai" | "fake") => {
       gateway.setActiveProvider(mode);
       if (typeof window !== "undefined") {

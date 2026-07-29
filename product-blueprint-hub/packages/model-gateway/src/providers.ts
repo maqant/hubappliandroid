@@ -182,6 +182,11 @@ export class FakeModelProvider implements IModelProvider {
     const prompt = request.prompt;
     const sys = (request.systemPrompt ?? "").toLowerCase();
 
+    // Product Interview Architect
+    if (sys.includes("product-interview-architect") || sys.includes("architecte produit")) {
+      return this.generateProductInterviewResponse(request.prompt);
+    }
+
     // Brief analysis
     if (sys.includes("analyze") || sys.includes("brief")) {
       return this.generateBriefAnalysis(request.prompt);
@@ -506,6 +511,110 @@ export class FakeModelProvider implements IModelProvider {
         }
       ],
       warnings: []
+    });
+  }
+
+  private generateProductInterviewResponse(prompt: string): string {
+    const isFirstTurn = !prompt.includes("DERNIER MESSAGE UTILISATEUR") || prompt.includes("[DERNIER MESSAGE UTILISATEUR]\n\n");
+    
+    if (isFirstTurn) {
+      return JSON.stringify({
+        assistantMessage: "Bienvenue dans l'Entretien Produit. Voici ma compréhension initiale de votre projet.\n\nVous cherchez à simplifier la prise de décision quotidienne en éliminant la charge mentale au moment du choix. Je comprends le problème principal et la valeur recherchée. Pour commencer à structurer précisément votre produit, j'ai une première question essentielle.",
+        question: {
+          id: "q_init_1",
+          text: "Au moment où l'utilisateur ouvre l'application, doit-il recevoir immédiatement une recommandation automatique ou préfère-t-il spécifier son contexte (météo, activité) ?",
+          rationale: "Cela permet de déterminer si le produit privilégie l'immédiateté absolue ou une personnalisation contextuelle fine.",
+          responseType: "SINGLE_CHOICE",
+          options: [
+            "Proposition immédiate zéro clic (basée sur géolocalisation et météo)",
+            "Formulaire rapide préalable (3 questions simples : météo, style, agenda)"
+          ],
+          targetSubject: "Moment d'usage & Boucle de valeur",
+          affectedSectionIds: ["REAL_PROBLEM", "MINIMAL_PROMISE", "USAGE_MOMENT"],
+          isBlocking: true
+        },
+        knowledgeUpdates: [
+          {
+            sectionId: "REAL_PROBLEM",
+            statement: "L'utilisateur souffre d'une hésitation quotidienne et d'une charge mentale évitable.",
+            status: "INFERRED",
+            source: "AI_INFERENCE",
+            impactedSectionIds: ["REAL_PROBLEM", "DECISION_TO_SIMPLIFY"]
+          },
+          {
+            sectionId: "MINIMAL_PROMISE",
+            statement: "Offrir une recommandation adaptée sans délai.",
+            status: "INFERRED",
+            source: "AI_INFERENCE",
+            impactedSectionIds: ["MINIMAL_PROMISE"]
+          }
+        ],
+        blueprintUpdates: [
+          {
+            id: "REAL_PROBLEM",
+            summary: "Difficulté de décision quotidienne générant perte de temps et charge mentale.",
+            status: "INFERRED"
+          },
+          {
+            id: "MINIMAL_PROMISE",
+            summary: "Sélection fiable et instantanée d'une tenue ou option adaptée au contexte du jour.",
+            status: "INFERRED"
+          }
+        ],
+        contradictions: [],
+        assumptions: ["Usage matinal prioritaire", "L'utilisateur possède déjà ses données de base"],
+        nextState: "WAITING_FOR_USER",
+        readiness: {
+          maturityStep: "EXPLORATION",
+          blockingUnknownsCount: 1,
+          importantUnknownsCount: 2,
+          blockingContradictionsCount: 0,
+          canFinalize: false,
+          justification: "Première question posée. En attente de précision sur le moment d'usage."
+        }
+      });
+    }
+
+    // Subsequent turns
+    return JSON.stringify({
+      assistantMessage: "Merci pour cette précision essentielle. J'ai mis à jour votre Blueprint Fonctionnel.\n\nVotre choix confirme que l'immédiateté est le pilier de votre promesse minimale. La boucle de valeur se concentre donc sur un retour zéro clic.",
+      question: {
+        id: `q_turn_${Date.now()}`,
+        text: "Pour le lancement du MVP, la synchronisation des données hors-connexion est-elle indispensable ?",
+        rationale: "Détermine si le stockage local hors-ligne fait partie du périmètre minimal obligatoire.",
+        responseType: "YES_NO",
+        options: ["Oui, indispensable", "Non, un mode en ligne suffit pour le MVP"],
+        targetSubject: "Périmètre MVP & Gestion des états faibles",
+        affectedSectionIds: ["MVP_SCOPE", "WEAK_STATES"],
+        isBlocking: false
+      },
+      knowledgeUpdates: [
+        {
+          sectionId: "DECISION_TO_SIMPLIFY",
+          statement: "Prise de décision zéro clic sans configuration manuelle.",
+          status: "CONFIRMED",
+          source: "USER_RESPONSE",
+          impactedSectionIds: ["DECISION_TO_SIMPLIFY", "PRIMARY_EXPERIENCE"]
+        }
+      ],
+      blueprintUpdates: [
+        {
+          id: "DECISION_TO_SIMPLIFY",
+          summary: "Suppression de toute hésitation matinale par recommandation contextuelle automatique.",
+          status: "CONFIRMED"
+        }
+      ],
+      contradictions: [],
+      assumptions: ["Le MVP restera centré sur un cas d'usage unique"],
+      nextState: "WAITING_FOR_USER",
+      readiness: {
+        maturityStep: "CADRAGE",
+        blockingUnknownsCount: 0,
+        importantUnknownsCount: 1,
+        blockingContradictionsCount: 0,
+        canFinalize: false,
+        justification: "Cadrage en cours. Problème et décision principale validés."
+      }
     });
   }
 

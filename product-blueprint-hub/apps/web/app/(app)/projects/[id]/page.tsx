@@ -316,12 +316,26 @@ export function ProjectDetailPageContent() {
     return computePlatformConsistency(project, []);
   }, [project]);
 
+  const [isProcessingTurn, setIsProcessingTurn] = useState(false);
+  const [userAnswerInput, setUserAnswerInput] = useState("");
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+  const [activeQuestion, setActiveQuestion] = useState<any | null>(null);
+
   const handleStartInterview = async () => {
     setIsInitializingInterview(true);
     try {
-      const { session, blueprint } = await svc.productInterview.initSession(projectId as EntityId);
+      const { session, blueprint, isNew } = await svc.productInterview.initSession(projectId as EntityId);
       setPiSession(session);
       setPiBlueprint(blueprint);
+      
+      // Tour 1 si nouvelle session sans messages
+      if (isNew) {
+        const turnRes = await svc.productInterview.processTurn(projectId as EntityId);
+        setPiSession(turnRes.session);
+        setPiBlueprint(turnRes.blueprint);
+        setActiveQuestion(turnRes.activeQuestion);
+      }
+
       const [ass, msg, ctr] = await Promise.all([
         svc.productInterview.getAssertions(session.id),
         svc.productInterview.getMessages(session.id),
@@ -330,11 +344,36 @@ export function ProjectDetailPageContent() {
       setPiAssertions(ass);
       setPiMessages(msg);
       setPiContradictions(ctr);
-      showToast("success", "Entretien Produit initialisé avec succès !");
+      showToast("success", "Entretien Produit démarré avec succès !");
     } catch (e: any) {
       showToast("error", e.message || String(e));
     } finally {
       setIsInitializingInterview(false);
+    }
+  };
+
+  const handleProcessTurn = async (input?: string) => {
+    setIsProcessingTurn(true);
+    try {
+      const res = await svc.productInterview.processTurn(projectId as EntityId, input);
+      setPiSession(res.session);
+      setPiBlueprint(res.blueprint);
+      setActiveQuestion(res.activeQuestion);
+      const [ass, msg, ctr] = await Promise.all([
+        svc.productInterview.getAssertions(res.session.id),
+        svc.productInterview.getMessages(res.session.id),
+        svc.productInterview.getContradictions(res.session.id),
+      ]);
+      setPiAssertions(ass);
+      setPiMessages(msg);
+      setPiContradictions(ctr);
+      setUserAnswerInput("");
+      setSelectedOptions([]);
+      showToast("success", "Réponse traitée par l'Architecte Produit !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsProcessingTurn(false);
     }
   };
 
@@ -1035,74 +1074,165 @@ export function ProjectDetailPageContent() {
                     onClick={handleStartInterview}
                     disabled={isInitializingInterview}
                   >
-                    {isInitializingInterview ? "⏳ Initialisation..." : "🚀 Commencer l'entretien"}
+                    {isInitializingInterview ? "⏳ Démarrage..." : "🚀 Commencer l'entretien"}
                   </button>
                 </div>
-                <p className="text-xs text-muted pt-2 italic">
-                  Les fondations de l&apos;entretien sont prêtes. Le dialogue intelligent sera activé au prochain chantier.
-                </p>
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Information Banner */}
-                <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm flex items-center justify-between">
-                  <div className="space-y-1">
-                    <div className="font-semibold flex items-center gap-2">
-                      <span>📌 Statut : <strong>{piSession.status}</strong></span>
-                      <span className="badge badge-info">{piSession.maturityStep}</span>
-                    </div>
-                    <p className="text-xs text-muted">
-                      Les fondations de l&apos;entretien sont prêtes. Le dialogue intelligent sera activé au prochain chantier.
-                    </p>
+                {/* Stat Counters & Maturity Banner */}
+                <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold">📌 Session : <strong>{piSession.status}</strong></span>
+                    <span className="badge badge-info">{piSession.maturityStep}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted">
+                    <span>🗣️ <strong>{piMessages.length}</strong> messages</span>
+                    <span>✅ <strong>{piAssertions.filter((a) => a.status === "CONFIRMED").length}</strong> confirmés</span>
+                    <span>💡 <strong>{piAssertions.filter((a) => a.status === "INFERRED").length}</strong> hypothèses</span>
+                    <span>❓ <strong>{piSession.blockingUnknownsCount}</strong> inconnues</span>
                   </div>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={handleStartInterview}
-                    disabled={isInitializingInterview}
+                    disabled={isInitializingInterview || isProcessingTurn}
                   >
                     🔄 Réinitialiser
                   </button>
                 </div>
 
-                {/* Stat Counters */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                  <div className="card p-3 text-center">
-                    <span className="text-xs text-muted block">🗣️ Messages</span>
-                    <strong className="text-lg block mt-1">{piMessages.length}</strong>
-                  </div>
-                  <div className="card p-3 text-center">
-                    <span className="text-xs text-muted block">✅ Confirmés</span>
-                    <strong className="text-lg block mt-1 text-green-500">
-                      {piAssertions.filter((a) => a.status === "CONFIRMED").length}
-                    </strong>
-                  </div>
-                  <div className="card p-3 text-center">
-                    <span className="text-xs text-muted block">💡 Hypothèses</span>
-                    <strong className="text-lg block mt-1 text-amber-500">
-                      {piAssertions.filter((a) => a.status === "INFERRED").length}
-                    </strong>
-                  </div>
-                  <div className="card p-3 text-center">
-                    <span className="text-xs text-muted block">❓ Inconnues Bloquantes</span>
-                    <strong className="text-lg block mt-1 text-red-500">{piSession.blockingUnknownsCount}</strong>
-                  </div>
-                  <div className="card p-3 text-center">
-                    <span className="text-xs text-muted block">⚡ Contradictions</span>
-                    <strong className="text-lg block mt-1">{piSession.openContradictionsCount}</strong>
-                  </div>
+                {/* Main Chat Interface */}
+                <div className="card p-4 space-y-4 max-h-[600px] overflow-y-auto flex flex-col border border-border">
+                  {piMessages.length === 0 ? (
+                    <div className="text-center text-sm text-muted py-8">
+                      Aucun message. Cliquez sur Commencer pour lancer le premier tour.
+                    </div>
+                  ) : (
+                    piMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex flex-col ${msg.role === "USER" ? "items-end" : "items-start"}`}
+                      >
+                        <div className="text-xs text-muted mb-1 flex items-center gap-1">
+                          {msg.role === "USER" ? "👤 Vous" : "🏛️ Architecte Produit"}
+                          <span className="opacity-60">• {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div
+                          className={`p-3 rounded-lg max-w-[85%] text-sm whitespace-pre-wrap ${
+                            msg.role === "USER"
+                              ? "bg-primary text-primary-foreground rounded-br-none"
+                              : "bg-surface border border-border rounded-bl-none shadow-sm"
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {isProcessingTurn && (
+                    <div className="flex items-center gap-2 text-sm text-muted italic p-2">
+                      <span className="animate-spin">⏳</span> L&apos;Architecte Produit formule sa réponse...
+                    </div>
+                  )}
                 </div>
 
-                {/* 14 Blueprint Sections */}
+                {/* Active Question Widget */}
+                {activeQuestion ? (
+                  <div className="card p-4 space-y-3 bg-indigo-50/20 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                        ❓ Question Active ({activeQuestion.responseType})
+                      </span>
+                      {activeQuestion.targetSubject && (
+                        <span className="badge badge-secondary text-xs">{activeQuestion.targetSubject}</span>
+                      )}
+                    </div>
+                    
+                    <p className="font-semibold text-sm">{activeQuestion.text}</p>
+                    
+                    {activeQuestion.rationale && (
+                      <p className="text-xs text-muted italic">
+                        💡 Pourquoi cette question compte : {activeQuestion.rationale}
+                      </p>
+                    )}
+
+                    {/* Widgets per Question Type */}
+                    <div className="pt-2 space-y-2">
+                      {activeQuestion.options && activeQuestion.options.length > 0 && (
+                        <div className="grid grid-cols-1 gap-2">
+                          {activeQuestion.options.map((opt: string, idx: number) => (
+                            <button
+                              key={idx}
+                              className="btn btn-secondary btn-sm text-left justify-start hover:border-primary"
+                              disabled={isProcessingTurn}
+                              onClick={() => handleProcessTurn(opt)}
+                            >
+                              👉 {opt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Text response field */}
+                      <div className="flex gap-2 pt-1">
+                        <input
+                          type="text"
+                          className="input flex-1 text-sm"
+                          placeholder="Saisissez votre réponse ou précision..."
+                          value={userAnswerInput}
+                          onChange={(e) => setUserAnswerInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && userAnswerInput.trim() && !isProcessingTurn) {
+                              handleProcessTurn(userAnswerInput);
+                            }
+                          }}
+                          disabled={isProcessingTurn}
+                        />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={!userAnswerInput.trim() || isProcessingTurn}
+                          onClick={() => handleProcessTurn(userAnswerInput)}
+                        >
+                          Envoyer 🚀
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-muted rounded-lg text-xs text-muted text-center">
+                    Entretien cadré ou aucune question en attente. Vous pouvez saisir une remarque libre ci-dessous.
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="text"
+                        className="input flex-1 text-sm"
+                        placeholder="Remarque ou précision libre..."
+                        value={userAnswerInput}
+                        onChange={(e) => setUserAnswerInput(e.target.value)}
+                        disabled={isProcessingTurn}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={!userAnswerInput.trim() || isProcessingTurn}
+                        onClick={() => handleProcessTurn(userAnswerInput)}
+                      >
+                        Envoyer 🚀
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 14 Blueprint Sections Summary */}
                 <div>
                   <h3 className="text-md font-bold mb-3">📘 Blueprint Fonctionnel (14 Sections)</h3>
                   {piBlueprint ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {Object.values(piBlueprint.sections).map((sec) => (
-                        <div key={sec.id} className="card p-4 space-y-2 border border-border">
+                        <div key={sec.id} className="card p-3 space-y-1 border border-border text-xs">
                           <div className="flex items-center justify-between">
-                            <h4 className="font-semibold text-sm">{sec.title}</h4>
+                            <h4 className="font-semibold">{sec.title}</h4>
                             <span
-                              className={`badge text-xs ${
+                              className={`badge text-[10px] ${
                                 sec.status === "CONFIRMED"
                                   ? "badge-success"
                                   : sec.status === "TO_CONFIRM" || sec.status === "INFERRED"
@@ -1113,7 +1243,7 @@ export function ProjectDetailPageContent() {
                               {sec.status}
                             </span>
                           </div>
-                          <p className="text-xs text-muted">
+                          <p className="text-muted">
                             {sec.summary || "Section encore non renseignée."}
                           </p>
                         </div>
