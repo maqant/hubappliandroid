@@ -446,7 +446,7 @@ function DesignMapPageContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, projectionMode, selectedCanonicalId, showHypotheses, showDependencies, showDeferred, isolatedPathId, svc, setNodes, setEdges]);
+  }, [projectId, projectionMode, selectedCanonicalId, showHypotheses, showDependencies, showDeferred, isolatedPathId, allProposals, svc, setNodes, setEdges]);
 
   useEffect(() => {
     loadGraphData();

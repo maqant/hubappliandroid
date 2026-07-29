@@ -127,7 +127,7 @@ export function ProjectDetailPageContent() {
     diversityFocus?: string | null;
   } | null>(null);
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
-  const [, setPersistedProposals] = useState<DesignProposal[]>([]);
+  const [persistedProposals, setPersistedProposals] = useState<DesignProposal[]>([]);
   const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [featurePaths, setFeaturePaths] = useState<import("@pbh/domain").FeaturePath[]>([]);
@@ -243,7 +243,7 @@ export function ProjectDetailPageContent() {
 
       // Ensure workshopResult is initialized if proposals exist
       if (proposals.length > 0) {
-        setWorkshopResult(prev => ({
+        setWorkshopResult((prev: any) => ({
           ...prev,
           proposals: mappedProposals,
           summary: prev?.summary || `${proposals.length} propositions existantes pour la couche ${selectedLayer}`,
