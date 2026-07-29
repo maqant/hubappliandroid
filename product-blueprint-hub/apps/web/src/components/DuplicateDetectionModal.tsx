@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   useServices,
   type EntityId,
@@ -28,6 +29,7 @@ export function DuplicateDetectionModal({
 }: DuplicateDetectionModalProps) {
   const svc = useServices();
 
+  const [mounted, setMounted] = useState<boolean>(false);
   const [groups, setGroups] = useState<HistoricalDuplicateGroup[]>([]);
   const [selectedGroupIdx, setSelectedGroupIdx] = useState<number>(0);
   const [primarySelections, setPrimarySelections] = useState<Record<string, EntityId>>({});
@@ -36,6 +38,10 @@ export function DuplicateDetectionModal({
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [isMerging, setIsMerging] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -61,7 +67,7 @@ export function DuplicateDetectionModal({
     }
   }, [isOpen, proposals, svc]);
 
-  if (!isOpen) return null;
+  if (!mounted || !isOpen) return null;
 
   const notify = (msg: string) => {
     if (showToast) showToast(msg);
@@ -108,27 +114,31 @@ export function DuplicateDetectionModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+  const modalJSX = (
+    <div className="fixed inset-0 z-[9999] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+      <div 
+        className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[85vh] my-auto flex flex-col overflow-hidden text-slate-900 font-sans"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+        <header className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center shrink-0">
           <div>
-            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2 m-0">
               🔍 Auditer &amp; Fusionner les Doublons Historiques
-              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 font-semibold rounded-full">v0.21.0</span>
+              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 font-semibold rounded-full">v0.22.1</span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5 m-0">
               Analyse consultative sans écriture. Détecte les redondances sémantiques et structurelles.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 text-lg font-bold px-2 py-1 rounded-md"
+            aria-label="Fermer"
+            className="text-slate-400 hover:text-slate-700 text-xl font-bold px-2 py-1 rounded-md transition"
           >
             ✕
           </button>
-        </div>
+        </header>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -164,10 +174,10 @@ export function DuplicateDetectionModal({
               return (
                 <div className="space-y-6">
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
-                    <h4 className="font-bold text-sm flex items-center gap-2">
+                    <h4 className="font-bold text-sm flex items-center gap-2 m-0">
                       🛡️ Confirmation de la fusion protégée (Groupe {confirmGroup.layer})
                     </h4>
-                    <p className="text-xs text-amber-800 mt-1">
+                    <p className="text-xs text-amber-800 mt-1 m-0">
                       Vérifiez ci-dessous le transfert des liaisons avant de déclencher la fusion.
                     </p>
                   </div>
@@ -184,7 +194,7 @@ export function DuplicateDetectionModal({
                           Statut : <span className="font-semibold text-emerald-700">{targetProp?.status}</span> | ID: {targetProp?.id}
                         </div>
                       </div>
-                      <p className="text-slate-600 text-[11px]">
+                      <p className="text-slate-600 text-[11px] m-0">
                         Cet élément recevra toutes les relations, dépendances et enfants des éléments secondaires.
                       </p>
                     </div>
@@ -202,7 +212,7 @@ export function DuplicateDetectionModal({
                           </div>
                         ))}
                       </div>
-                      <p className="text-slate-600 text-[11px]">
+                      <p className="text-slate-600 text-[11px] m-0">
                         🔒 Aucun élément ne sera supprimé en base. Ils seront archivés sous le statut SUPERSEDED avec référence vers l&apos;élément principal.
                       </p>
                     </div>
@@ -211,7 +221,7 @@ export function DuplicateDetectionModal({
                   {/* Impact Summary */}
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
                     <div className="font-bold text-slate-800">📊 Conséquences estimées de la fusion :</div>
-                    <ul className="list-disc pl-5 text-slate-600 space-y-1">
+                    <ul className="list-disc pl-5 text-slate-600 space-y-1 m-0">
                       <li><strong>{confirmGroup.mergeImpact.childCountToReassign}</strong> proposition(s) enfant(s) seront réaffectée(s) vers {targetProp?.title}.</li>
                       <li><strong>{confirmGroup.mergeImpact.dependentCountToReassign}</strong> liaison(s) dépendante(s) seront réorientée(s).</li>
                       <li>Les Experience Paths seront automatiquement recalculés sans interrompre le graphe.</li>
@@ -243,7 +253,7 @@ export function DuplicateDetectionModal({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left Column: Group Tabs */}
               <div className="lg:col-span-4 space-y-2 border-r border-slate-200 pr-4">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 m-0">
                   Groupes Détectés ({groups.length})
                 </h4>
                 {groups.map((g: HistoricalDuplicateGroup, idx: number) => {
@@ -308,7 +318,7 @@ export function DuplicateDetectionModal({
                     {currentGroup.differences.length > 0 && (
                       <div>
                         <div className="text-xs font-bold text-slate-700 mb-1">🔍 Différences notables :</div>
-                        <ul className="list-disc pl-4 text-[11px] text-slate-600 space-y-0.5">
+                        <ul className="list-disc pl-4 text-[11px] text-slate-600 space-y-0.5 m-0">
                           {currentGroup.differences.map((diff: string, dIdx: number) => (
                             <li key={dIdx}>{diff}</li>
                           ))}
@@ -319,10 +329,10 @@ export function DuplicateDetectionModal({
 
                   {/* Proposals Side-by-Side Cards */}
                   <div>
-                    <h5 className="text-xs font-bold text-slate-700 mb-2">
+                    <h5 className="text-xs font-bold text-slate-700 mb-2 m-0">
                       Sélectionnez l&apos;élément principal à conserver :
                     </h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                       {currentGroup.proposals.map((prop: DesignProposal) => {
                         const targetId = primarySelections[currentGroup.id] || currentGroup.primaryCandidateId;
                         const isPrimary = targetId === prop.id;
@@ -364,7 +374,7 @@ export function DuplicateDetectionModal({
                                 <span className="text-slate-400">ID: {prop.id}</span>
                               </div>
 
-                              <p className="text-[11px] text-slate-600 line-clamp-3">
+                              <p className="text-[11px] text-slate-600 line-clamp-3 m-0">
                                 {prop.description || prop.shortPitch || "Aucune description renseignée."}
                               </p>
 
@@ -420,4 +430,6 @@ export function DuplicateDetectionModal({
       </div>
     </div>
   );
+
+  return createPortal(modalJSX, document.body);
 }
