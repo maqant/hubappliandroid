@@ -1,6 +1,6 @@
 {
   "name": "product-blueprint-hub",
-  "version": "0.26.0",
+  "version": "0.25.1",
   "private": true,
   "workspaces": [
     "apps/*",
