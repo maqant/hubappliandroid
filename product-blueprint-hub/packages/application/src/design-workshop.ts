@@ -791,6 +791,11 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
     const divRes = await Promise.all(divergentPromises);
     upstreamOutputs += divRes.filter(Boolean).join("");
 
+    let synthesizerPromptVersion = 1;
+    let synthesizerPromptId = "";
+    let lastPromptVersion = 1;
+    let lastPromptId = "";
+
     // Sequential convergent agents
     for (const agentData of convergentAgentsToCall) {
       if (onProgress) onProgress(agentData.runId, "running");
@@ -802,6 +807,13 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
         if (onProgress) onProgress(agentData.runId, "error");
         continue;
       }
+
+      if (agentData.agentId === "WORKSHOP-SYNTHESIZER") {
+        synthesizerPromptVersion = promptTpl.version;
+        synthesizerPromptId = promptTpl.promptId;
+      }
+      lastPromptVersion = promptTpl.version;
+      lastPromptId = promptTpl.promptId;
 
       let userPrompt = hydratePrompt(promptTpl.userPromptTemplate, agentData);
       if (mode !== 'INITIAL') {
@@ -847,8 +859,9 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
     const diagnostic: any = {
       selectedLayer: layer,
       routedAgentIds,
-      promptId: lastAgentId, // Simplified for diagnostic
-      promptVersion: 1,
+      promptId: synthesizerPromptId || lastPromptId || lastAgentId,
+      promptVersion: synthesizerPromptVersion || lastPromptVersion || 1,
+      synthesizerVersion: synthesizerPromptVersion || 1,
       promptFound,
       systemPromptLength,
       userPromptLength,

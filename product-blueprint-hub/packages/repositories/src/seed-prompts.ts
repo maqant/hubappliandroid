@@ -11,6 +11,11 @@ export async function seedPrompts(registry: RepositoryRegistry) {
     );
     
     if (!hasSameOrHigherSystemVersion) {
+      for (const oldPrompt of existingPrompts) {
+        if (oldPrompt.changelog !== 'USER_OVERRIDE' && oldPrompt.version < defaultPrompt.version && oldPrompt.enabled) {
+          await registry.prompts.save({ ...oldPrompt, enabled: false });
+        }
+      }
       await registry.prompts.save(defaultPrompt);
     }
   }

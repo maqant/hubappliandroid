@@ -367,6 +367,12 @@ class LocalPromptRepository extends LocalRepo<PromptTemplate> implements IPrompt
       all = DEFAULT_PROMPTS.filter((p) => p.agentId === agentId && p.enabled);
     }
     if (all.length === 0) return null;
+
+    const systemActiveCount = all.filter(p => p.changelog !== 'USER_OVERRIDE').length;
+    if (systemActiveCount > 1) {
+      console.warn(`[PromptRegistry] Multiple active system prompts found for agent '${agentId}'. Resolving highest version.`);
+    }
+
     all.sort((a, b) => {
       // USER_OVERRIDE a la priorité absolue
       if (a.changelog === 'USER_OVERRIDE' && b.changelog !== 'USER_OVERRIDE') return -1;
