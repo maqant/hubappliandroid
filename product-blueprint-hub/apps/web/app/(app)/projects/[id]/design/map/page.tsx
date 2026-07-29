@@ -24,9 +24,13 @@ import {
   type DesignProposal, 
   type EntityId, 
   type FeaturePath,
+  type FeatureCoverageReport,
+  type FeatureCoverageDetail,
   projectFeaturePathsToVisualNodes,
-  normalizeJourneySteps
+  normalizeJourneySteps,
+  computeFeatureCoverage
 } from "@/services";
+
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 import { DuplicateDetectionModal } from "@/components/DuplicateDetectionModal";
 import { exportMapImageOnly } from "@/lib/export/analysis-export";
@@ -97,6 +101,8 @@ function DesignMapPageContent() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [project, setProject] = useState<any>(null);
+  const [coverageReport, setCoverageReport] = useState<FeatureCoverageReport | null>(null);
+  const [showCoveragePanel, setShowCoveragePanel] = useState<boolean>(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -113,7 +119,11 @@ function DesignMapPageContent() {
       const proposals = await svc.repos.designProposals.getByProjectId(projectId as EntityId);
       setAllProposals(proposals);
 
+      const cov = computeFeatureCoverage(proposals);
+      setCoverageReport(cov);
+
       const paths = await svc.designWorkshop.getFeaturePaths(projectId as EntityId);
+
       setFeaturePaths(paths);
       analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_PATHS_COMPUTED", context: { pathCount: paths.length, proposalCount: proposals.length } });
       const { edges: rawEdges } = await svc.designWorkshop.getWeavingGraph(projectId as EntityId);
@@ -601,11 +611,20 @@ function DesignMapPageContent() {
             🔄 Rafraîchir
           </button>
           <button 
+            className={`px-3 py-1.5 rounded-md font-bold text-xs flex items-center gap-1 transition ${
+              showCoveragePanel ? 'bg-emerald-600 text-white shadow' : 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200'
+            }`}
+            onClick={() => setShowCoveragePanel(!showCoveragePanel)}
+          >
+            📊 Diagnostic Couverture ({coverageReport ? `${coverageReport.coverageRate}% réel` : '...'})
+          </button>
+          <button 
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-xs flex items-center gap-1 shadow-sm"
             onClick={() => setIsDuplicateModalOpen(true)}
           >
             🔍 Auditer les doublons
           </button>
+
           <button className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-medium border border-slate-300" onClick={() => { fitView({ padding: 0.2, duration: 800 }); analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_FITVIEW_EXECUTED", context: { fitViewExecuted: true }}); }}>
             🔍 Ajuster à l&apos;écran
           </button>
@@ -887,7 +906,93 @@ function DesignMapPageContent() {
             </div>
           </div>
         )}
+
+        {/* Feature Coverage Diagnostic Side Panel */}
+        {showCoveragePanel && coverageReport && (
+          <div className="w-96 bg-white border-l border-slate-200 p-5 overflow-y-auto shadow-xl z-20 flex flex-col justify-between font-sans">
+            <div>
+              <div className="flex justify-between items-start mb-3 pb-3 border-b border-slate-200">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 m-0">
+                    📊 Diagnostic de Couverture
+                    <span className="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-full">v0.23.0</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1 m-0">
+                    Évaluation explicite des fonctionnalités (FEATURE) dans les parcours.
+                  </p>
+                </div>
+                <button className="text-slate-400 hover:text-slate-600 font-bold text-lg" onClick={() => setShowCoveragePanel(false)}>
+                  ✕
+                </button>
+              </div>
+
+              {/* Overall Rate Score */}
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl mb-4 text-center">
+                <div className="text-3xl font-black text-emerald-700">{coverageReport.coverageRate}%</div>
+                <div className="text-xs font-bold text-emerald-900 mt-1 uppercase tracking-wider">Taux de couverture réel</div>
+                <div className="text-[11px] text-emerald-800 mt-1">
+                  {coverageReport.coveredCount} / {coverageReport.totalFeatures} fonctionnalité(s) éligible(s) totalement couverte(s).
+                </div>
+              </div>
+
+              {/* Counters */}
+              <div className="grid grid-cols-2 gap-2 mb-4 text-xs font-bold">
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg">
+                  ✓ Couvertes : <span className="text-emerald-700">{coverageReport.coveredCount}</span>
+                </div>
+                <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg">
+                  ⚠️ Partielles : <span className="text-amber-700">{coverageReport.partiallyCoveredCount}</span>
+                </div>
+                <div className="p-2.5 bg-red-50 border border-red-200 text-red-900 rounded-lg">
+                  ❌ Orphelines : <span className="text-red-700">{coverageReport.orphanCount}</span>
+                </div>
+                <div className="p-2.5 bg-slate-100 border border-slate-200 text-slate-700 rounded-lg">
+                  📌 Exclues : <span>{coverageReport.excludedCount}</span>
+                </div>
+              </div>
+
+              {/* Detailed List by Feature */}
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">Détail par fonctionnalité ({coverageReport.details.length}) :</div>
+                {coverageReport.details.map((dt: FeatureCoverageDetail) => (
+                  <div
+                    key={dt.featureId}
+                    className={`p-3 rounded-lg border text-xs space-y-1.5 ${
+                      dt.status === 'COVERED' ? 'bg-emerald-50/50 border-emerald-200' :
+                      dt.status === 'PARTIALLY_COVERED' ? 'bg-amber-50/50 border-amber-200' :
+                      dt.status === 'ORPHAN' ? 'bg-red-50/50 border-red-200' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="font-bold text-slate-900">{dt.featureTitle}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold shrink-0 ${
+                        dt.status === 'COVERED' ? 'bg-emerald-100 text-emerald-800' :
+                        dt.status === 'PARTIALLY_COVERED' ? 'bg-amber-100 text-amber-800' :
+                        dt.status === 'ORPHAN' ? 'bg-red-100 text-red-800' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {dt.status}
+                      </span>
+                    </div>
+
+                    <div className="text-slate-600 text-[11px] leading-snug">{dt.reason}</div>
+
+                    {dt.missing.length > 0 && (
+                      <div className="text-[10px] text-amber-800 font-semibold bg-amber-100/60 p-1.5 rounded">
+                        Manquant : {dt.missing.join(', ')}
+                      </div>
+                    )}
+
+                    <div className="text-[10px] text-slate-500 italic">
+                      💡 {dt.recommendation}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
 
       {/* Export Modal */}
       <ExportAnalysisModal

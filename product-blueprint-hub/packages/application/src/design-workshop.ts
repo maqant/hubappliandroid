@@ -1,5 +1,6 @@
-import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal, computeFeaturePaths, normalizeJourneySteps } from "@pbh/domain";
-import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge, LinkSource, HistoricalDuplicateGroup, DuplicateSimilaritySignal, MergeProposalsResult } from "@pbh/domain";
+import { DesignLayer, DesignProposal, TargetPlatform, createDesignProposal, computeFeaturePaths, normalizeJourneySteps, computeFeatureCoverage } from "@pbh/domain";
+import type { EntityId, DesignGraph, DesignBaseline, DesignBaselineSummary, WeavingEdge, LinkSource, HistoricalDuplicateGroup, DuplicateSimilaritySignal, MergeProposalsResult, FeatureCoverageReport } from "@pbh/domain";
+
 import { createDesignGraph, createId } from "@pbh/domain";
 import type { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
@@ -2079,4 +2080,13 @@ MISSION : Génère 3 à 4 propositions enfants directement rattachées et décli
       updatedProposalsCount: modifiedProposals.size
     };
   }
+
+  /**
+   * Chantier 7 : Evaluates explicit feature coverage for a project's proposal graph.
+   */
+  async getFeatureCoverageReport(projectId: EntityId): Promise<FeatureCoverageReport> {
+    const proposals = await this.repos.designProposals.getByProjectId(projectId);
+    return computeFeatureCoverage(proposals);
+  }
 }
+

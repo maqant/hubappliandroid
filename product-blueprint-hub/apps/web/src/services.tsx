@@ -28,8 +28,12 @@ import type {
   FeaturePath,
   ProjectedPathNode,
   HistoricalDuplicateGroup,
+  FeatureCoverageStatus,
+  FeatureCoverageDetail,
+  FeatureCoverageReport,
 } from "@pbh/domain";
-import { projectFeaturePathsToVisualNodes, normalizeJourneySteps } from "@pbh/domain";
+import { projectFeaturePathsToVisualNodes, normalizeJourneySteps, computeFeatureCoverage } from "@pbh/domain";
+
 import {
   ProjectUseCases,
   SourceUseCases,
@@ -153,5 +157,9 @@ export type {
   FeaturePath,
   ProjectedPathNode,
   HistoricalDuplicateGroup,
+  FeatureCoverageStatus,
+  FeatureCoverageDetail,
+  FeatureCoverageReport,
 };
-export { projectFeaturePathsToVisualNodes, normalizeJourneySteps };
+export { projectFeaturePathsToVisualNodes, normalizeJourneySteps, computeFeatureCoverage };
+
