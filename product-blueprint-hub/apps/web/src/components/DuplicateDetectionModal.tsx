@@ -115,49 +115,102 @@ export function DuplicateDetectionModal({
   };
 
   const modalJSX = (
-    <div className="fixed inset-0 z-[9999] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 99999,
+        backgroundColor: 'rgba(15, 23, 42, 0.75)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px'
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div 
-        className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[85vh] my-auto flex flex-col overflow-hidden text-slate-900 font-sans"
+        style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '12px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
+          border: '1px solid #cbd5e1',
+          width: '100%',
+          maxWidth: '960px',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          color: '#0f172a',
+          fontFamily: 'system-ui, -apple-system, sans-serif'
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <header className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center shrink-0">
+        <header
+          style={{
+            padding: '16px 24px',
+            borderBottom: '1px solid #e2e8f0',
+            backgroundColor: '#f8fafc',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexShrink: 0
+          }}
+        >
           <div>
-            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2 m-0">
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
               🔍 Auditer &amp; Fusionner les Doublons Historiques
-              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 font-semibold rounded-full">v0.22.1</span>
+              <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#dbeafe', color: '#1e40af', fontWeight: 600, borderRadius: '9999px' }}>
+                v0.22.1
+              </span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5 m-0">
+            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', margin: 0 }}>
               Analyse consultative sans écriture. Détecte les redondances sémantiques et structurelles.
             </p>
           </div>
           <button
             onClick={onClose}
             aria-label="Fermer"
-            className="text-slate-400 hover:text-slate-700 text-xl font-bold px-2 py-1 rounded-md transition"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              fontSize: '20px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: '6px'
+            }}
           >
             ✕
           </button>
         </header>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg font-medium">
+            <div style={{ padding: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '12px', borderRadius: '8px', fontWeight: 500 }}>
               ⚠️ {error}
             </div>
           )}
 
           {isAnalyzing ? (
-            <div className="text-center py-12">
-              <div className="animate-spin text-3xl mb-3">🔍</div>
-              <p className="text-sm font-medium text-slate-600">Analyse des propositions historiques en cours...</p>
+            <div style={{ textAlign: 'center', padding: '48px 0' }}>
+              <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔍</div>
+              <p style={{ fontSize: '14px', fontWeight: 500, color: '#475569', margin: 0 }}>Analyse des propositions historiques en cours...</p>
             </div>
           ) : groups.length === 0 ? (
-            <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              <div className="text-4xl mb-3">✨</div>
-              <h4 className="text-sm font-bold text-slate-800">Aucun doublon historique détecté</h4>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            <div style={{ textAlign: 'center', padding: '48px 24px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
+              <div style={{ fontSize: '36px', marginBottom: '12px' }}>✨</div>
+              <h4 style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>Aucun doublon historique détecté</h4>
+              <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', maxWidth: '400px', marginLeft: 'auto', marginRight: 'auto' }}>
                 Toutes les propositions JOURNEY et SCREEN de ce projet présentent des périmètres et actions suffisamment distincts.
               </p>
             </div>
@@ -172,56 +225,56 @@ export function DuplicateDetectionModal({
               const sourceProps = confirmGroup.proposals.filter((p: DesignProposal) => p.id !== targetId);
 
               return (
-                <div className="space-y-6">
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
-                    <h4 className="font-bold text-sm flex items-center gap-2 m-0">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ padding: '16px', backgroundColor: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '12px', color: '#78350f' }}>
+                    <h4 style={{ fontWeight: 'bold', fontSize: '14px', margin: 0 }}>
                       🛡️ Confirmation de la fusion protégée (Groupe {confirmGroup.layer})
                     </h4>
-                    <p className="text-xs text-amber-800 mt-1 m-0">
+                    <p style={{ fontSize: '12px', color: '#92400e', marginTop: '4px', margin: 0 }}>
                       Vérifiez ci-dessous le transfert des liaisons avant de déclencher la fusion.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', fontSize: '12px' }}>
                     {/* Element conservé (Principal) */}
-                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
-                      <div className="font-bold text-emerald-900 text-sm flex items-center gap-1.5">
+                    <div style={{ padding: '16px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontWeight: 'bold', color: '#065f46', fontSize: '14px' }}>
                         ⭐ Élément principal conservé
                       </div>
-                      <div className="p-2.5 bg-white rounded border border-emerald-200">
-                        <div className="font-bold text-slate-900">{targetProp?.title}</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          Statut : <span className="font-semibold text-emerald-700">{targetProp?.status}</span> | ID: {targetProp?.id}
+                      <div style={{ padding: '10px', backgroundColor: '#ffffff', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                        <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{targetProp?.title}</div>
+                        <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                          Statut : <span style={{ fontWeight: 600, color: '#047857' }}>{targetProp?.status}</span> | ID: {targetProp?.id}
                         </div>
                       </div>
-                      <p className="text-slate-600 text-[11px] m-0">
+                      <p style={{ color: '#334155', fontSize: '11px', margin: 0 }}>
                         Cet élément recevra toutes les relations, dépendances et enfants des éléments secondaires.
                       </p>
                     </div>
 
                     {/* Eléments fusionnés (SUPERSEDED) */}
-                    <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-2">
-                      <div className="font-bold text-purple-900 text-sm flex items-center gap-1.5">
+                    <div style={{ padding: '16px', backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontWeight: 'bold', color: '#581c87', fontSize: '14px' }}>
                         📌 Éléments secondaires passés en SUPERSEDED ({sourceProps.length})
                       </div>
-                      <div className="space-y-1.5">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {sourceProps.map((s: DesignProposal) => (
-                          <div key={s.id} className="p-2 bg-white rounded border border-purple-200">
-                            <div className="font-bold text-slate-900">{s.title}</div>
-                            <div className="text-[10px] text-slate-500">Statut actuel : {s.status} | ID: {s.id}</div>
+                          <div key={s.id} style={{ padding: '8px', backgroundColor: '#ffffff', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+                            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{s.title}</div>
+                            <div style={{ fontSize: '10px', color: '#64748b' }}>Statut actuel : {s.status} | ID: {s.id}</div>
                           </div>
                         ))}
                       </div>
-                      <p className="text-slate-600 text-[11px] m-0">
+                      <p style={{ color: '#334155', fontSize: '11px', margin: 0 }}>
                         🔒 Aucun élément ne sera supprimé en base. Ils seront archivés sous le statut SUPERSEDED avec référence vers l&apos;élément principal.
                       </p>
                     </div>
                   </div>
 
                   {/* Impact Summary */}
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
-                    <div className="font-bold text-slate-800">📊 Conséquences estimées de la fusion :</div>
-                    <ul className="list-disc pl-5 text-slate-600 space-y-1 m-0">
+                  <div style={{ padding: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontWeight: 'bold', color: '#1e293b' }}>📊 Conséquences estimées de la fusion :</div>
+                    <ul style={{ paddingLeft: '20px', color: '#475569', margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <li><strong>{confirmGroup.mergeImpact.childCountToReassign}</strong> proposition(s) enfant(s) seront réaffectée(s) vers {targetProp?.title}.</li>
                       <li><strong>{confirmGroup.mergeImpact.dependentCountToReassign}</strong> liaison(s) dépendante(s) seront réorientée(s).</li>
                       <li>Les Experience Paths seront automatiquement recalculés sans interrompre le graphe.</li>
@@ -229,17 +282,17 @@ export function DuplicateDetectionModal({
                   </div>
 
                   {/* Actions Confirmation */}
-                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
                     <button
                       onClick={() => setConfirmingGroupId(null)}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg"
+                      style={{ padding: '8px 16px', backgroundColor: '#f1f5f9', color: '#334155', fontSize: '12px', fontWeight: 600, borderRadius: '8px', border: 'none', cursor: 'pointer' }}
                       disabled={isMerging}
                     >
                       &larr; Annuler et revenir
                     </button>
                     <button
                       onClick={() => handleExecuteMerge(confirmGroup)}
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-2"
+                      style={{ padding: '8px 20px', backgroundColor: '#059669', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
                       disabled={isMerging}
                     >
                       {isMerging ? "Fusion en cours..." : "🚀 Confirmer et exécuter la fusion"}
@@ -250,10 +303,10 @@ export function DuplicateDetectionModal({
             })()
           ) : (
             /* VIEW 1 : Liste et Comparaison */
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '24px' }}>
               {/* Left Column: Group Tabs */}
-              <div className="lg:col-span-4 space-y-2 border-r border-slate-200 pr-4">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 m-0">
+              <div style={{ flex: '1 1 260px', maxWidth: '320px', display: 'flex', flexDirection: 'column', gap: '8px', borderRight: '1px solid #e2e8f0', paddingRight: '16px' }}>
+                <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', margin: 0 }}>
                   Groupes Détectés ({groups.length})
                 </h4>
                 {groups.map((g: HistoricalDuplicateGroup, idx: number) => {
@@ -262,32 +315,42 @@ export function DuplicateDetectionModal({
                     <button
                       key={g.id}
                       onClick={() => setSelectedGroupIdx(idx)}
-                      className={`w-full text-left p-3 rounded-xl border transition flex justify-between items-start ${
-                        isSelected
-                          ? "bg-blue-50 border-blue-500 shadow-sm"
-                          : "bg-white border-slate-200 hover:border-slate-300"
-                      }`}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '12px',
+                        borderRadius: '10px',
+                        border: `2px solid ${isSelected ? '#3b82f6' : '#e2e8f0'}`,
+                        backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start'
+                      }}
                     >
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-slate-800">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '12px', color: '#0f172a' }}>
                             {g.layer === "JOURNEY" ? "🗺️ JOURNEY" : "🖥️ SCREEN"}
                           </span>
                           <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                              g.confidence === "HIGH"
-                                ? "bg-red-100 text-red-800"
-                                : "bg-amber-100 text-amber-800"
-                            }`}
+                            style={{
+                              fontSize: '10px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 'bold',
+                              backgroundColor: g.confidence === "HIGH" ? "#fee2e2" : "#fef3c7",
+                              color: g.confidence === "HIGH" ? "#991b1b" : "#92400e"
+                            }}
                           >
-                            {g.confidence === "HIGH" ? "Confiance Haute" : "Confiance Moyenne"}
+                            {g.confidence === "HIGH" ? "Haute" : "Moyenne"}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-600 mt-1 font-medium line-clamp-1">
+                        <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px', fontWeight: 500 }}>
                           {g.proposals.map((p: DesignProposal) => p.title).join(" vs ")}
                         </div>
                       </div>
-                      <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 rounded-full text-slate-700">
+                      <span style={{ fontSize: '11px', fontWeight: 'bold', padding: '2px 6px', backgroundColor: '#f1f5f9', borderRadius: '9999px', color: '#334155' }}>
                         {g.proposalIds.length}
                       </span>
                     </button>
@@ -297,16 +360,16 @@ export function DuplicateDetectionModal({
 
               {/* Right Column: Group Details & Side-by-Side Comparison */}
               {currentGroup && (
-                <div className="lg:col-span-8 space-y-5">
+                <div style={{ flex: '2 1 480px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {/* Similarity Signals & Differences Header */}
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <div style={{ padding: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div>
-                      <div className="text-xs font-bold text-slate-700 mb-1.5">💡 Signaux de ressemblance :</div>
-                      <div className="flex flex-wrap gap-2">
+                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>💡 Signaux de ressemblance :</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {currentGroup.similarities.map((sig, sIdx: number) => (
                           <span
                             key={sIdx}
-                            className="px-2.5 py-1 bg-blue-100 text-blue-800 text-[11px] font-semibold rounded-md border border-blue-200"
+                            style={{ padding: '4px 10px', backgroundColor: '#dbeafe', color: '#1e40af', fontSize: '11px', fontWeight: 600, borderRadius: '6px', border: '1px solid #bfdbfe' }}
                             title={sig.description}
                           >
                             ✓ {sig.label}
@@ -317,8 +380,8 @@ export function DuplicateDetectionModal({
 
                     {currentGroup.differences.length > 0 && (
                       <div>
-                        <div className="text-xs font-bold text-slate-700 mb-1">🔍 Différences notables :</div>
-                        <ul className="list-disc pl-4 text-[11px] text-slate-600 space-y-0.5 m-0">
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>🔍 Différences notables :</div>
+                        <ul style={{ paddingLeft: '18px', fontSize: '11px', color: '#475569', margin: 0 }}>
                           {currentGroup.differences.map((diff: string, dIdx: number) => (
                             <li key={dIdx}>{diff}</li>
                           ))}
@@ -329,10 +392,10 @@ export function DuplicateDetectionModal({
 
                   {/* Proposals Side-by-Side Cards */}
                   <div>
-                    <h5 className="text-xs font-bold text-slate-700 mb-2 m-0">
+                    <h5 style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155', margin: 0, marginBottom: '8px' }}>
                       Sélectionnez l&apos;élément principal à conserver :
                     </h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
                       {currentGroup.proposals.map((prop: DesignProposal) => {
                         const targetId = primarySelections[currentGroup.id] || currentGroup.primaryCandidateId;
                         const isPrimary = targetId === prop.id;
@@ -342,69 +405,75 @@ export function DuplicateDetectionModal({
                           <div
                             key={prop.id}
                             onClick={() => handleSelectPrimary(currentGroup.id, prop.id)}
-                            className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
-                              isPrimary
-                                ? "bg-emerald-50/60 border-emerald-500 shadow-md"
-                                : "bg-white border-slate-200 hover:border-slate-300"
-                            }`}
+                            style={{
+                              padding: '16px',
+                              borderRadius: '12px',
+                              border: `2px solid ${isPrimary ? '#10b981' : '#e2e8f0'}`,
+                              backgroundColor: isPrimary ? '#ecfdf5' : '#ffffff',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              boxShadow: isPrimary ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
+                            }}
                           >
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-start gap-2">
-                                <label className="flex items-center gap-2 font-bold text-xs text-slate-900 cursor-pointer">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '12px', color: '#0f172a', cursor: 'pointer' }}>
                                   <input
                                     type="radio"
                                     name={`primary-${currentGroup.id}`}
                                     checked={isPrimary}
                                     onChange={() => handleSelectPrimary(currentGroup.id, prop.id)}
-                                    className="text-emerald-600 focus:ring-emerald-500"
+                                    style={{ accentColor: '#10b981' }}
                                   />
                                   {prop.title}
                                 </label>
                                 {isRecommended && (
-                                  <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-800 font-bold rounded">
+                                  <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', fontWeight: 'bold', borderRadius: '4px' }}>
                                     ⭐ Recommandé
                                   </span>
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-2 text-[10px]">
-                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 font-semibold rounded">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px' }}>
+                                <span style={{ padding: '2px 6px', backgroundColor: '#f1f5f9', color: '#334155', fontWeight: 600, borderRadius: '4px' }}>
                                   {prop.status}
                                 </span>
-                                <span className="text-slate-400">ID: {prop.id}</span>
+                                <span style={{ color: '#94a3b8' }}>ID: {prop.id}</span>
                               </div>
 
-                              <p className="text-[11px] text-slate-600 line-clamp-3 m-0">
+                              <p style={{ fontSize: '11px', color: '#475569', margin: 0, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                 {prop.description || prop.shortPitch || "Aucune description renseignée."}
                               </p>
 
                               {/* Layer-Specific Normalized Details */}
                               {prop.layer === "JOURNEY" ? (
-                                <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] space-y-1">
-                                  <div className="font-bold text-slate-700">Étapes ({normalizeJourneySteps(prop.layerData).length}) :</div>
-                                  <div className="max-h-24 overflow-y-auto space-y-1">
+                                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #f1f5f9', fontSize: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div style={{ fontWeight: 'bold', color: '#334155' }}>Étapes ({normalizeJourneySteps(prop.layerData).length}) :</div>
+                                  <div style={{ maxHeight: '96px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     {normalizeJourneySteps(prop.layerData).map((st, sIdx) => (
-                                      <div key={sIdx} className="bg-slate-50 p-1 rounded border border-slate-100 text-slate-700">
-                                        <span className="font-bold">{st.order || sIdx + 1}.</span> {st.userAction}
+                                      <div key={sIdx} style={{ backgroundColor: '#f8fafc', padding: '4px 6px', borderRadius: '4px', border: '1px solid #f1f5f9', color: '#334155' }}>
+                                        <span style={{ fontWeight: 'bold' }}>{st.order || sIdx + 1}.</span> {st.userAction}
                                       </div>
                                     ))}
                                   </div>
                                 </div>
                               ) : (
-                                <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] space-y-1">
-                                  <div className="font-bold text-slate-700">Rôle d&apos;écran :</div>
-                                  <div className="text-slate-600 bg-slate-50 p-1 rounded border border-slate-100">
+                                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #f1f5f9', fontSize: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div style={{ fontWeight: 'bold', color: '#334155' }}>Rôle d&apos;écran :</div>
+                                  <div style={{ color: '#475569', backgroundColor: '#f8fafc', padding: '4px 6px', borderRadius: '4px', border: '1px solid #f1f5f9' }}>
                                     {(prop.layerData as any)?.role || "Non renseigné"}
                                   </div>
                                 </div>
                               )}
                             </div>
 
-                            <div className="mt-3 pt-2 text-[10px] font-bold text-center">
+                            <div style={{ marginTop: '12px', paddingTop: '8px', fontSize: '10px', fontWeight: 'bold', textAlign: 'center' }}>
                               {isPrimary ? (
-                                <span className="text-emerald-700">✓ Conservé comme principal</span>
+                                <span style={{ color: '#047857' }}>✓ Conservé comme principal</span>
                               ) : (
-                                <span className="text-purple-600">Passe en SUPERSEDED</span>
+                                <span style={{ color: '#7e22ce' }}>Passe en SUPERSEDED</span>
                               )}
                             </div>
                           </div>
@@ -414,10 +483,10 @@ export function DuplicateDetectionModal({
                   </div>
 
                   {/* Actions Footer */}
-                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
                     <button
                       onClick={() => setConfirmingGroupId(currentGroup.id)}
-                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-2"
+                      style={{ padding: '10px 20px', backgroundColor: '#2563eb', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
                     >
                       🛡️ Préparer la fusion de ce groupe &rarr;
                     </button>
