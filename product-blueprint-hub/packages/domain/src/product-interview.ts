@@ -226,7 +226,7 @@ export function validateProductArchitectResponse(response: ProductArchitectRespo
  */
 export function computeMaturity(
   assertions: KnowledgeAssertion[],
-  sections: Record<BlueprintSectionId, BlueprintSection>,
+  _sections: Record<BlueprintSectionId, BlueprintSection>,
   contradictions: ProductInterviewContradiction[]
 ): {
   confirmedCount: number;

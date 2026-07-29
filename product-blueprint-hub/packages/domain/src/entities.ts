@@ -703,7 +703,7 @@ export interface ModelUsage extends BaseEntity {
 
 export type ArtifactStatus = "DRAFT" | "REVIEW" | "PUBLISHED";
 
-export type BlueprintSection =
+export type AgentArtifactSection =
   | "PRODUCT_VISION"
   | "USERS_NEEDS"
   | "MVP_SCOPE"
@@ -724,7 +724,7 @@ export type BlueprintSection =
 
 export interface Artifact extends BaseEntity, Owned {
   readonly missionId: EntityId;
-  readonly section: BlueprintSection;
+  readonly section: AgentArtifactSection;
   readonly title: string;
   readonly content: string;
   readonly status: ArtifactStatus;

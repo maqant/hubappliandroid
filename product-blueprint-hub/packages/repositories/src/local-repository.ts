@@ -24,6 +24,11 @@ import type {
   IDesignGraphRepository,
   IDesignBaselineRepository,
   IPromptRepository,
+  IProductInterviewSessionRepository,
+  IKnowledgeAssertionRepository,
+  IProductInterviewMessageRepository,
+  IFunctionalBlueprintRepository,
+  IProductInterviewContradictionRepository,
   RepositoryRegistry,
 } from "./interfaces";
 import type {

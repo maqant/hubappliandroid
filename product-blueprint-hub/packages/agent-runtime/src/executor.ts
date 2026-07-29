@@ -4,7 +4,7 @@ import type {
   Run,
   RunEvent,
   MissionManifest,
-  BlueprintSection,
+  AgentArtifactSection,
   Artifact,
   Conflict,
 } from "@pbh/domain";
@@ -392,7 +392,7 @@ export class MissionExecutor {
 
   private async generateArtifacts(mission: MissionManifest): Promise<void> {
     const now = new Date().toISOString();
-    const sections: BlueprintSection[] = [
+    const sections: AgentArtifactSection[] = [
       "PRODUCT_VISION",
       "USERS_NEEDS",
       "MVP_SCOPE",
@@ -574,7 +574,7 @@ function createEvent(
   };
 }
 
-function formatSectionTitle(section: BlueprintSection): string {
+function formatSectionTitle(section: AgentArtifactSection): string {
   return section
     .split("_")
     .map((w) => w.charAt(0) + w.slice(1).toLowerCase())

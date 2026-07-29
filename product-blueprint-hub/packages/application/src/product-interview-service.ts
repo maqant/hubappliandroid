@@ -4,13 +4,13 @@ import {
   KnowledgeAssertion,
   ProductInterviewMessage,
   FunctionalBlueprint,
-  ProductInterviewContradiction,
   BlueprintSectionId,
   BlueprintSection,
   BLUEPRINT_SECTION_TITLES,
   computeMaturity,
   validateProductArchitectResponse,
   ProductArchitectResponse,
+  ProductInterviewContradiction,
 } from "@pbh/domain";
 import { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
@@ -38,7 +38,7 @@ export class ProductInterviewService {
 
     const project = await this.repos.projects.getById(projectId);
     const now = new Date().toISOString();
-    const sessionId = `pi_session_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const sessionId = `pi_session_${Date.now()}_${Math.random().toString(36).substring(2, 7)}` as EntityId;
 
     const session: ProductInterviewSession = {
       id: sessionId,
@@ -52,6 +52,8 @@ export class ProductInterviewService {
       allowFinalize: false,
       startedAt: now,
       lastActivityAt: now,
+      createdAt: now,
+      updatedAt: now,
       version: 1,
     };
 
@@ -90,10 +92,12 @@ export class ProductInterviewService {
     }
 
     const blueprint: FunctionalBlueprint = {
-      id: `pi_bp_${sessionId}`,
+      id: `pi_bp_${sessionId}` as EntityId,
       projectId,
       sessionId,
       sections,
+      createdAt: now,
+      updatedAt: now,
       version: 1,
     };
 
@@ -103,7 +107,7 @@ export class ProductInterviewService {
     // If project has description/idea, create an initial assertion
     if (project?.description) {
       const assertion: KnowledgeAssertion = {
-        id: `pi_assert_${Date.now()}_1`,
+        id: `pi_assert_${Date.now()}_1` as EntityId,
         projectId,
         sessionId,
         sectionId: "ORIGINAL_INTUITION",
@@ -177,6 +181,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
       prompt: fullPrompt,
       systemPrompt,
       tier: "SOL",
+      correlationId: `pi_${session.id}_${Date.now()}`,
     });
 
     // 3. Clean & Parse JSON Response
@@ -207,7 +212,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     // a. Record user message if provided
     if (userInput && userInput.trim().length > 0) {
       const userMsg: ProductInterviewMessage = {
-        id: `pi_msg_user_${Date.now()}`,
+        id: `pi_msg_user_${Date.now()}` as EntityId,
         sessionId: session.id,
         projectId,
         role: "USER",
@@ -216,6 +221,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
         createdAssertionIds: [],
         modifiedAssertionIds: [],
         createdAt: now,
+        updatedAt: now,
         version: 1,
       };
       await this.repos.productInterviewMessages.save(userMsg);
@@ -229,7 +235,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     if (Array.isArray(parsed.knowledgeUpdates)) {
       for (const ku of parsed.knowledgeUpdates) {
         if (ku.statement && ku.sectionId) {
-          const assId = `pi_assert_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+          const assId = `pi_assert_${Date.now()}_${Math.random().toString(36).substring(2, 5)}` as EntityId;
           const assertion: KnowledgeAssertion = {
             id: assId,
             projectId,
@@ -267,7 +273,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
 
     // Save assistant message
     const assistantMsg: ProductInterviewMessage = {
-      id: `pi_msg_ast_${Date.now()}`,
+      id: `pi_msg_ast_${Date.now()}` as EntityId,
       sessionId: session.id,
       projectId,
       role: "ASSISTANT",
@@ -277,6 +283,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
       createdAssertionIds,
       modifiedAssertionIds: [],
       createdAt: now,
+      updatedAt: now,
       version: 1,
     };
     await this.repos.productInterviewMessages.save(assistantMsg);
@@ -285,6 +292,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     const updatedBlueprint: FunctionalBlueprint = {
       ...blueprint,
       sections: updatedSections,
+      updatedAt: now,
       version: blueprint.version + 1,
     };
     await this.repos.functionalBlueprints.save(updatedBlueprint);
@@ -294,13 +302,14 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
       ...session,
       status: parsed.nextState || "WAITING_FOR_USER",
       maturityStep: parsed.readiness?.maturityStep || session.maturityStep,
-      activeQuestionId: parsed.question ? parsed.question.id : null,
+      activeQuestionId: parsed.question ? (parsed.question.id as EntityId) : null,
       questionCount: session.questionCount + (parsed.question ? 1 : 0),
       blockingUnknownsCount: parsed.readiness?.blockingUnknownsCount ?? session.blockingUnknownsCount,
       importantUnknownsCount: parsed.readiness?.importantUnknownsCount ?? session.importantUnknownsCount,
       openContradictionsCount: parsed.readiness?.blockingContradictionsCount ?? session.openContradictionsCount,
       allowFinalize: parsed.readiness?.canFinalize ?? session.allowFinalize,
       lastActivityAt: now,
+      updatedAt: now,
       version: session.version + 1,
     };
     await this.repos.productInterviewSessions.save(updatedSession);

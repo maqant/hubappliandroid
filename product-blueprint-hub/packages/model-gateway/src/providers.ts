@@ -821,7 +821,7 @@ export class FakeModelProvider implements IModelProvider {
   }
 
   private generateBlueprintSection(prompt: string): string {
-    const sections: import("@pbh/domain").BlueprintSection[] = [
+    const sections: import("@pbh/domain").AgentArtifactSection[] = [
       "PRODUCT_VISION",
       "USERS_NEEDS",
       "MVP_SCOPE",

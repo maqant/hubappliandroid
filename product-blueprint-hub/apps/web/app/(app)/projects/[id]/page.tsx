@@ -318,7 +318,6 @@ export function ProjectDetailPageContent() {
 
   const [isProcessingTurn, setIsProcessingTurn] = useState(false);
   const [userAnswerInput, setUserAnswerInput] = useState("");
-  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<any | null>(null);
 
   const handleStartInterview = async () => {
@@ -368,7 +367,6 @@ export function ProjectDetailPageContent() {
       setPiMessages(msg);
       setPiContradictions(ctr);
       setUserAnswerInput("");
-      setSelectedOptions([]);
       showToast("success", "Réponse traitée par l'Architecte Produit !");
     } catch (e: any) {
       showToast("error", e.message || String(e));
@@ -1091,6 +1089,7 @@ export function ProjectDetailPageContent() {
                     <span>✅ <strong>{piAssertions.filter((a) => a.status === "CONFIRMED").length}</strong> confirmés</span>
                     <span>💡 <strong>{piAssertions.filter((a) => a.status === "INFERRED").length}</strong> hypothèses</span>
                     <span>❓ <strong>{piSession.blockingUnknownsCount}</strong> inconnues</span>
+                    <span>⚡ <strong>{piContradictions.filter((c) => c.status === "OPEN").length}</strong> contradictions</span>
                   </div>
                   <button
                     className="btn btn-secondary btn-sm"
