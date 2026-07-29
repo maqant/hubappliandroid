@@ -287,12 +287,16 @@ class AnalysisLogCollector {
       if (typeof obj === "string") return this.sanitizeText(obj);
       return obj;
     }
-    if (seen.has(obj)) return "[Circular]";
+    if (seen.has(obj)) {
+      if (obj.id && typeof obj.id === "string") return { $ref: obj.id };
+      return undefined;
+    }
     seen.add(obj);
 
     if (Array.isArray(obj)) {
-      return obj.slice(0, 50).map((item) => this.sanitizeObject(item, seen));
+      return obj.slice(0, 50).map((item) => this.sanitizeObject(item, seen)).filter(item => item !== undefined);
     }
+
 
     const res: Record<string, any> = {};
     const secretKeysRegex = /apiKey|token|accessToken|refreshToken|sessionToken|authorization|bearer|password|secret|credential|privateKey|clientSecret|cookie|set-cookie|databaseUrl|connectionString/i;

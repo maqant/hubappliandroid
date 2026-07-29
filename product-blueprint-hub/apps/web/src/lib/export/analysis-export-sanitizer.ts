@@ -16,11 +16,20 @@ export function sanitizeAnalysisExport<T>(data: T, seen = new WeakSet()): T {
   if (typeof data === "string") return sanitizeText(data) as any;
   if (typeof data !== "object") return data;
 
-  if (seen.has(data as object)) return "[Circular]" as any;
+  // Cycle handling: Never output "[Circular]". Use explicit $ref or omit.
+  if (seen.has(data as object)) {
+    const obj = data as Record<string, any>;
+    if (obj.id && typeof obj.id === "string") {
+      return { $ref: obj.id } as any;
+    }
+    return undefined as any;
+  }
   seen.add(data as object);
 
   if (Array.isArray(data)) {
-    return data.map((item) => sanitizeAnalysisExport(item, seen)) as any;
+    return data
+      .map((item) => sanitizeAnalysisExport(item, seen))
+      .filter((item) => item !== undefined) as any;
   }
 
   const result: Record<string, any> = {};
@@ -30,7 +39,10 @@ export function sanitizeAnalysisExport<T>(data: T, seen = new WeakSet()): T {
     } else if (typeof val === "function") {
       continue;
     } else {
-      result[key] = sanitizeAnalysisExport(val, seen);
+      const sanitizedVal = sanitizeAnalysisExport(val, seen);
+      if (sanitizedVal !== undefined) {
+        result[key] = sanitizedVal;
+      }
     }
   }
 

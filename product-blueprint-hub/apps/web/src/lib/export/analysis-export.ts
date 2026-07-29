@@ -9,12 +9,14 @@ import {
   buildConceptionLisibleMd,
   buildExperiencePathsJson,
   buildDiagnosticTechniqueJson,
+  buildExportManifestJson,
   buildConsoleLogsJson,
   buildConsoleLisibleTxt,
   buildPromptsActifsTxt,
   normalizeProjectName,
   formatExportTimestamp,
   type ExportBuildContext,
+  type ExportFileRegistryEntry,
 } from "./analysis-export-builders";
 
 export interface AnalysisExportOptions {
@@ -28,13 +30,15 @@ export interface AnalysisExportOptions {
 
 export interface AnalysisExportResult {
   success: boolean;
+  overallStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED';
   fileName: string | null;
   includedFiles: string[];
   warnings: string[];
   errors: string[];
+  fileRegistry?: ExportFileRegistryEntry[];
 }
 
-const APP_VERSION = "0.16.1";
+const APP_VERSION = "0.24.0";
 
 export async function exportProjectForAnalysis(
   svc: any,
@@ -45,6 +49,7 @@ export async function exportProjectForAnalysis(
   const warnings: string[] = [];
   const errors: string[] = [];
   const includedFiles: string[] = [];
+  const fileRegistry: ExportFileRegistryEntry[] = [];
 
   options.onProgress?.("Chargement des données du projet...");
 
@@ -67,59 +72,78 @@ export async function exportProjectForAnalysis(
     rejectedItems = all.filter((p: any) => p.status === "REJECTED");
     deferredItems = all.filter((p: any) => p.status === "DEFERRED");
   } catch (e: any) {
-    errors.push(`Erreur lors du chargement des données : ${e.message || String(e)}`);
+    const errorMsg = `Erreur lors du chargement des données : ${e.message || String(e)}`;
+    errors.push(errorMsg);
     return {
       success: false,
+      overallStatus: 'FAILED',
       fileName: null,
       includedFiles: [],
       warnings,
-      errors,
+      errors: [errorMsg],
     };
   }
 
-  // 1. Map Image Capture
+  // 1. Map Image Capture with Explicit Diagnostics
   let hasMapImage = false;
   let mapImageBlob: Blob | null = null;
   let mapImageError: string | undefined = undefined;
+  let cartographyCaptureStatus: { status: 'SUCCESS' | 'FAILED' | 'SKIPPED'; reason?: string; details?: string } = {
+    status: 'SKIPPED',
+    reason: 'CAPTURE_NOT_REQUESTED',
+  };
 
-  if (options.includeMapImage !== false && getMapElement) {
-    options.onProgress?.("Génération de la cartographie...");
-    try {
-      const el = getMapElement();
-      if (el) {
-        const dataUrl = await htmlToImage.toPng(el, {
-          quality: 0.95,
-          pixelRatio: 1.5,
-          filter: (node) => {
-            if (node instanceof HTMLElement) {
-              if (
-                node.classList.contains("react-flow__controls") ||
-                node.classList.contains("react-flow__minimap") ||
-                node.getAttribute("role") === "dialog" ||
-                node.classList.contains("no-export")
-              ) {
-                return false;
+  if (options.includeMapImage !== false) {
+    if (getMapElement) {
+      options.onProgress?.("Génération de la cartographie...");
+      try {
+        const el = getMapElement();
+        if (!el) {
+          mapImageError = "CONTAINER_NOT_FOUND: Le conteneur HTML de la cartographie (ReactFlow) est introuvable.";
+          cartographyCaptureStatus = { status: 'FAILED', reason: 'CONTAINER_NOT_FOUND', details: mapImageError };
+          warnings.push(mapImageError);
+        } else if (el.offsetWidth === 0 || el.offsetHeight === 0) {
+          mapImageError = "ZERO_DIMENSIONS: Le conteneur de cartographie a une largeur ou hauteur nulle.";
+          cartographyCaptureStatus = { status: 'FAILED', reason: 'ZERO_DIMENSIONS', details: mapImageError };
+          warnings.push(mapImageError);
+        } else {
+          const dataUrl = await htmlToImage.toPng(el, {
+            quality: 0.95,
+            pixelRatio: 1.5,
+            filter: (node) => {
+              if (node instanceof HTMLElement) {
+                if (
+                  node.classList.contains("react-flow__controls") ||
+                  node.classList.contains("react-flow__minimap") ||
+                  node.getAttribute("role") === "dialog" ||
+                  node.classList.contains("no-export")
+                ) {
+                  return false;
+                }
               }
-            }
-            return true;
-          },
-        });
-        const res = await fetch(dataUrl);
-        mapImageBlob = await res.blob();
-        hasMapImage = true;
-      } else {
-        mapImageError = "Élément HTML de cartographie introuvable.";
+              return true;
+            },
+          });
+          const res = await fetch(dataUrl);
+          mapImageBlob = await res.blob();
+          hasMapImage = true;
+          cartographyCaptureStatus = { status: 'SUCCESS' };
+        }
+      } catch (err: any) {
+        mapImageError = `CAPTURE_EXCEPTION: ${err.message || String(err)}`;
+        cartographyCaptureStatus = { status: 'FAILED', reason: 'CAPTURE_EXCEPTION', details: mapImageError };
         warnings.push(mapImageError);
+        analysisLogCollector.addEntry({
+          timestamp: new Date().toISOString(),
+          level: "WARN",
+          category: "CARTOGRAPHY",
+          message: mapImageError,
+        });
       }
-    } catch (err: any) {
-      mapImageError = `Échec capture PNG : ${err.message || String(err)}`;
+    } else {
+      mapImageError = "NO_DOM_GETTER: Aucun sélecteur DOM n'a été fourni pour capturer la cartographie.";
+      cartographyCaptureStatus = { status: 'FAILED', reason: 'NO_DOM_GETTER', details: mapImageError };
       warnings.push(mapImageError);
-      analysisLogCollector.addEntry({
-        timestamp: new Date().toISOString(),
-        level: "WARN",
-        category: "CARTOGRAPHY",
-        message: mapImageError,
-      });
     }
   }
 
@@ -168,7 +192,7 @@ export async function exportProjectForAnalysis(
   const rawLogsJson = buildConsoleLogsJson(ctx);
   const logsLisibleTxt = buildConsoleLisibleTxt(ctx);
 
-  // 5. Sanitize Secrets
+  // 5. Sanitize Secrets (Without Circular string)
   options.onProgress?.("Sécurisation des données...");
   const conceptionJson = sanitizeAnalysisExport(rawConceptionJson);
   const pathsJson = sanitizeAnalysisExport(rawPathsJson);
@@ -179,37 +203,75 @@ export async function exportProjectForAnalysis(
   options.onProgress?.("Génération du fichier ZIP...");
   const zip = new JSZip();
 
-  zip.file("README.md", readmeMd);
-  includedFiles.push("README.md");
+  const addZipFile = (name: string, content: any, role: string, itemCount?: number) => {
+    try {
+      const strContent = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+      zip.file(name, strContent);
+      includedFiles.push(name);
+      fileRegistry.push({
+        fileName: name,
+        role,
+        status: 'SUCCESS',
+        sizeBytes: new Blob([strContent]).size,
+        itemCount,
+      });
+    } catch (e: any) {
+      fileRegistry.push({
+        fileName: name,
+        role,
+        status: 'FAILED',
+        error: e.message || String(e),
+      });
+      errors.push(`Échec écriture ${name} : ${e.message}`);
+    }
+  };
 
-  zip.file("conception-complete.json", JSON.stringify(conceptionJson, null, 2));
-  includedFiles.push("conception-complete.json");
-
-  zip.file("conception-lisible.md", conceptionLisibleMd);
-  includedFiles.push("conception-lisible.md");
-
-  zip.file("experience-paths.json", JSON.stringify(pathsJson, null, 2));
-  includedFiles.push("experience-paths.json");
+  addZipFile("README.md", readmeMd, "Documentation d'accueil et instructions", undefined);
+  addZipFile("conception-complete.json", conceptionJson, "Données canoniques uniques et relations par ID (v2.0)", proposals.length);
+  addZipFile("conception-lisible.md", conceptionLisibleMd, "Lecture humaine structurée par couche", proposals.length);
+  addZipFile("experience-paths.json", pathsJson, "Parcours d'expérience avec nœuds référentiels (v2.0)", paths.length);
+  addZipFile("diagnostic-technique.json", diagnosticJson, "Diagnostic technique et configuration de génération", undefined);
+  addZipFile("console-logs.json", logsJson, "Événements de session structurés sans secrets", logs.length);
+  addZipFile("console-lisible.txt", logsLisibleTxt, "Version textuelle lisible des logs", logs.length);
 
   if (hasMapImage && mapImageBlob) {
     zip.file("cartographie-complete.png", mapImageBlob);
     includedFiles.push("cartographie-complete.png");
+    fileRegistry.push({
+      fileName: "cartographie-complete.png",
+      role: "Capture graphique de la cartographie",
+      status: 'SUCCESS',
+      sizeBytes: mapImageBlob.size,
+    });
+  } else if (options.includeMapImage !== false) {
+    fileRegistry.push({
+      fileName: "cartographie-complete.png",
+      role: "Capture graphique de la cartographie",
+      status: 'FAILED',
+      error: mapImageError || 'PNG_CAPTURE_FAILED',
+    });
   }
-
-  zip.file("diagnostic-technique.json", JSON.stringify(diagnosticJson, null, 2));
-  includedFiles.push("diagnostic-technique.json");
-
-  zip.file("console-logs.json", JSON.stringify(logsJson, null, 2));
-  includedFiles.push("console-logs.json");
-
-  zip.file("console-lisible.txt", logsLisibleTxt);
-  includedFiles.push("console-lisible.txt");
 
   if (options.includeFullPrompts) {
     const promptsTxt = buildPromptsActifsTxt(ctx);
-    zip.file("prompts-actifs.txt", promptsTxt);
-    includedFiles.push("prompts-actifs.txt");
+    addZipFile("prompts-actifs.txt", promptsTxt, "Texte intégral des prompts d'agents", activePrompts.length);
   }
+
+  // 7. Overall Status Calculation
+  let overallStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' = 'SUCCESS';
+  if (cartographyCaptureStatus.status === 'FAILED' || warnings.length > 0) {
+    overallStatus = 'PARTIAL';
+  }
+  if (fileRegistry.some(f => f.role === 'Données canoniques' && f.status === 'FAILED')) {
+    overallStatus = 'FAILED';
+  }
+
+  // 8. Build export-manifest.json AS THE LAST FILE
+  const manifestJson = buildExportManifestJson(ctx, fileRegistry, overallStatus, cartographyCaptureStatus);
+  const sanitizedManifest = sanitizeAnalysisExport(manifestJson);
+  const manifestStr = JSON.stringify(sanitizedManifest, null, 2);
+  zip.file("export-manifest.json", manifestStr);
+  includedFiles.push("export-manifest.json");
 
   const normTitle = normalizeProjectName(project?.title);
   const dateStr = formatExportTimestamp();
@@ -222,122 +284,28 @@ export async function exportProjectForAnalysis(
     errors.push(`Erreur lors de la génération ZIP : ${e.message || String(e)}`);
     return {
       success: false,
+      overallStatus: 'FAILED',
       fileName: null,
       includedFiles: [],
       warnings,
       errors,
+      fileRegistry,
     };
   }
 
-  analysisLogCollector.addEntry({
-    timestamp: new Date().toISOString(),
-    level: "INFO",
-    category: "EXPORT",
-    message: `Export ZIP généré avec succès : ${zipFileName}`,
-  });
-
   return {
     success: true,
+    overallStatus,
     fileName: zipFileName,
     includedFiles,
     warnings,
     errors,
+    fileRegistry,
   };
 }
 
-export async function exportMapImageOnly(
-  projectTitle: string | undefined,
-  getMapElement: () => HTMLElement | null
-): Promise<{ success: boolean; fileName?: string; error?: string }> {
-  if (!getMapElement) return { success: false, error: "Élément introuvable." };
-  const el = getMapElement();
-  if (!el) return { success: false, error: "Canvas cartographie introuvable dans le DOM." };
-
-  try {
-    const dataUrl = await htmlToImage.toPng(el, {
-      quality: 0.95,
-      pixelRatio: 1.5,
-      filter: (node) => {
-        if (node instanceof HTMLElement) {
-          if (
-            node.classList.contains("react-flow__controls") ||
-            node.classList.contains("react-flow__minimap") ||
-            node.getAttribute("role") === "dialog" ||
-            node.classList.contains("no-export")
-          ) {
-            return false;
-          }
-        }
-        return true;
-      },
-    });
-
-    const normTitle = normalizeProjectName(projectTitle);
-    const dateStr = formatExportTimestamp();
-    const fileName = `PBH-cartographie-${normTitle}-${dateStr}.png`;
-
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    downloadBlob(blob, fileName);
-
-    return { success: true, fileName };
-  } catch (e: any) {
-    return { success: false, error: e.message || String(e) };
-  }
-}
-
-export async function exportLogsOnly(
-  _svc: any,
-  projectId: EntityId,
-  projectTitle?: string
-): Promise<{ success: boolean; fileName?: string; error?: string }> {
-  try {
-    const logs = analysisLogCollector.getEntries(true);
-    const logSession = analysisLogCollector.getSessionInfo();
-    const logStats = analysisLogCollector.getStatistics();
-
-    const ctx: ExportBuildContext = {
-      project: { id: projectId, title: projectTitle },
-      proposals: [],
-      paths: [],
-      briefItems: [],
-      decisions: [],
-      rejectedItems: [],
-      deferredItems: [],
-      logs,
-      logSession,
-      logStats,
-      appVersion: APP_VERSION,
-      hasMapImage: false,
-      includePrompts: false,
-    };
-
-    const rawDiagnosticJson = buildDiagnosticTechniqueJson(ctx);
-    const rawLogsJson = buildConsoleLogsJson(ctx);
-    const logsLisibleTxt = buildConsoleLisibleTxt(ctx);
-
-    const diagnosticJson = sanitizeAnalysisExport(rawDiagnosticJson);
-    const logsJson = sanitizeAnalysisExport(rawLogsJson);
-
-    const zip = new JSZip();
-    zip.file("console-logs.json", JSON.stringify(logsJson, null, 2));
-    zip.file("console-lisible.txt", logsLisibleTxt);
-    zip.file("diagnostic-technique.json", JSON.stringify(diagnosticJson, null, 2));
-
-    const normTitle = normalizeProjectName(projectTitle);
-    const dateStr = formatExportTimestamp();
-    const fileName = `PBH-logs-${normTitle}-${dateStr}.zip`;
-
-    const contentBlob = await zip.generateAsync({ type: "blob" });
-    downloadBlob(contentBlob, fileName);
-
-    return { success: true, fileName };
-  } catch (e: any) {
-    return { success: false, error: e.message || String(e) };
-  }
-}
-
 function downloadBlob(blob: Blob, fileName: string) {
+  if (typeof window === "undefined") return;
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -345,5 +313,60 @@ function downloadBlob(blob: Blob, fileName: string) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  URL.revokeObjectURL(url);
 }
+
+export async function exportLogsOnly(
+  _arg1?: any,
+  _arg2?: any,
+  _arg3?: any,
+  options: { includeDebugLogs?: boolean } = {}
+): Promise<{ success: boolean; fileName: string | null }> {
+  const logs = analysisLogCollector.getEntries(options.includeDebugLogs ?? false);
+  const sessionInfo = analysisLogCollector.getSessionInfo();
+
+  const exportData = {
+    exportedAt: new Date().toISOString(),
+    sessionInfo,
+    logs,
+  };
+
+  const sanitized = sanitizeAnalysisExport(exportData);
+  const str = JSON.stringify(sanitized, null, 2);
+  const blob = new Blob([str], { type: "application/json" });
+  const fileName = `PBH-logs-${formatExportTimestamp()}.json`;
+  downloadBlob(blob, fileName);
+  return { success: true, fileName };
+}
+
+export async function exportMapImageOnly(
+  arg1?: any,
+  arg2?: any
+): Promise<{ success: boolean; fileName?: string; error?: string }> {
+  try {
+    let getMapElement: (() => HTMLElement | null) | undefined;
+    let projectTitle: string | undefined;
+
+    if (typeof arg1 === "function") {
+      getMapElement = arg1;
+      projectTitle = typeof arg2 === "string" ? arg2 : undefined;
+    } else if (typeof arg2 === "function") {
+      getMapElement = arg2;
+      projectTitle = typeof arg1 === "string" ? arg1 : undefined;
+    }
+
+    const el = getMapElement ? getMapElement() : null;
+    if (!el) return { success: false, error: "CONTAINER_NOT_FOUND" };
+
+    const dataUrl = await htmlToImage.toPng(el, { quality: 0.95, pixelRatio: 1.5 });
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const fileName = `cartographie-${normalizeProjectName(projectTitle)}-${formatExportTimestamp()}.png`;
+    downloadBlob(blob, fileName);
+    return { success: true, fileName };
+  } catch (e: any) {
+    return { success: false, error: e.message || String(e) };
+  }
+}
+
+
