@@ -1,4 +1,4 @@
-import { type DesignProposal, type FeaturePath, type EntityId, normalizeJourneySteps, computeFeatureCoverage } from "@pbh/domain";
+import { type DesignProposal, type FeaturePath, type EntityId, normalizeJourneySteps, computeFeatureCoverage, computePlatformConsistency } from "@pbh/domain";
 import type { LogEvent } from "./analysis-log-collector";
 
 export interface ExportBuildContext {
@@ -413,6 +413,8 @@ export function buildExportManifestJson(
     layerCounts[p.layer] = (layerCounts[p.layer] || 0) + 1;
   });
 
+  const platformDiagnostic = computePlatformConsistency(ctx.project, ctx.proposals);
+
   return {
     exportFormatVersion: "2.0",
     projectId: ctx.project?.id || "",
@@ -441,6 +443,15 @@ export function buildExportManifestJson(
       orphanCount: coverage.orphanCount,
       excludedCount: coverage.excludedCount,
       totalEligibleFeatures: coverage.totalFeatures,
+    },
+    platformDiagnostic: {
+      canonicalPlatform: platformDiagnostic.canonicalPlatform,
+      status: platformDiagnostic.status,
+      incompatibleCount: platformDiagnostic.incompatibleCount,
+      incompatibleProposalIds: platformDiagnostic.incompatibleProposalIds,
+      conflictingSources: platformDiagnostic.conflictingSources,
+      warnings: platformDiagnostic.warnings,
+      recommendation: platformDiagnostic.recommendation,
     },
     cartographyCaptureStatus,
     warnings: ctx.hasMapImage ? [] : [cartographyCaptureStatus.reason || "PNG_CAPTURE_FAILED"],

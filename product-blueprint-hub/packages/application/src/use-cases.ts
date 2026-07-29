@@ -27,7 +27,10 @@ import { MissionExecutor } from "@pbh/agent-runtime";
 export class ProjectUseCases {
   constructor(private readonly repos: RepositoryRegistry) {}
 
-  async createProject(name: string, description: string, ideaText: string, targetPlatforms: TargetPlatform[] = ['WEB_NEXTJS']): Promise<Project> {
+  async createProject(name: string, description: string, ideaText: string, targetPlatforms: TargetPlatform[]): Promise<Project> {
+    if (!targetPlatforms || targetPlatforms.length === 0) {
+      throw new Error("PLATFORM_REQUIRED: Le choix d'une plateforme cible est obligatoire pour créer un projet.");
+    }
     const project = createProject({ name, description, ideaText, targetPlatforms });
     await this.repos.projects.save(project);
     return project;
@@ -43,18 +46,22 @@ export class ProjectUseCases {
 
   async updateProject(
     id: EntityId,
-    updates: Partial<Pick<Project, "name" | "description" | "ideaText" | "status">>,
+    updates: Partial<Pick<Project, "name" | "description" | "ideaText" | "status" | "targetPlatforms">>,
   ): Promise<Project> {
     const project = await this.repos.projects.getById(id);
     if (!project) throw new Error("Project not found");
     const updated: Project = {
       ...project,
       ...updates,
-      version: project.version + 1,
       updatedAt: new Date().toISOString(),
+      version: project.version + 1,
     };
     await this.repos.projects.save(updated);
     return updated;
+  }
+
+  async confirmTargetPlatform(id: EntityId, targetPlatform: TargetPlatform): Promise<Project> {
+    return this.updateProject(id, { targetPlatforms: [targetPlatform] });
   }
 
   async deleteProject(id: EntityId): Promise<void> {

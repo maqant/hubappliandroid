@@ -32,7 +32,8 @@ import type {
   FeatureCoverageDetail,
   FeatureCoverageReport,
 } from "@pbh/domain";
-import { projectFeaturePathsToVisualNodes, normalizeJourneySteps, computeFeatureCoverage } from "@pbh/domain";
+import { projectFeaturePathsToVisualNodes, normalizeJourneySteps, computeFeatureCoverage, computePlatformConsistency } from "@pbh/domain";
+import type { PlatformConsistencyReport, PlatformConsistencyStatus } from "@pbh/domain";
 
 import {
   ProjectUseCases,
@@ -160,6 +161,8 @@ export type {
   FeatureCoverageStatus,
   FeatureCoverageDetail,
   FeatureCoverageReport,
+  PlatformConsistencyReport,
+  PlatformConsistencyStatus,
 };
-export { projectFeaturePathsToVisualNodes, normalizeJourneySteps, computeFeatureCoverage };
+export { projectFeaturePathsToVisualNodes, normalizeJourneySteps, computeFeatureCoverage, computePlatformConsistency };
 

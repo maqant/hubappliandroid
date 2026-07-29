@@ -338,6 +338,12 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
       });
     });
 
+    let projectPlatforms: import("@pbh/domain").TargetPlatform[] = ["WEB_NEXTJS"];
+    try {
+      const proj = await this.repos.projects.getById(projectId);
+      if (proj?.targetPlatforms?.length) projectPlatforms = proj.targetPlatforms;
+    } catch (_) { /* use default */ }
+
     const createdJourneys: DesignProposal[] = [];
     for (const group of groups) {
       if (group.featureIds.length === 0) continue;
@@ -352,7 +358,7 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
         rationale: 'Regroupement automatique',
         alternatives: [],
         risks: [],
-        targetPlatforms: ["WEB_NEXTJS"],
+        targetPlatforms: projectPlatforms,
         category: "GENERATED",
         parentProposalIds: group.featureIds,
         layerData: {
@@ -379,6 +385,12 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
     const allProposals = await this.repos.designProposals.getByProjectId(projectId);
     const journeys = allProposals.filter(p => p.layer === 'JOURNEY' && p.status !== 'REJECTED');
     const existingScreens = allProposals.filter(p => p.layer === 'SCREEN' && p.status !== 'REJECTED');
+
+    let screenPlatforms: import("@pbh/domain").TargetPlatform[] = ["WEB_NEXTJS"];
+    try {
+      const proj = await this.repos.projects.getById(projectId);
+      if (proj?.targetPlatforms?.length) screenPlatforms = proj.targetPlatforms;
+    } catch (_) { /* use default */ }
 
     const createdScreens: DesignProposal[] = [];
 
@@ -424,7 +436,7 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
             rationale: 'Génération automatique',
             alternatives: [],
             risks: [],
-            targetPlatforms: ["WEB_NEXTJS"],
+            targetPlatforms: screenPlatforms,
             category: "GENERATED",
             parentId: journey.id,
             parentProposalIds: [journey.id],
@@ -723,11 +735,15 @@ private async buildAncestryContext(projectId: EntityId, layer: DesignLayer): Pro
     let parseStatus = "PENDING";
     let lastAgentId = "";
 
+    const canonicalPlat = project?.targetPlatforms?.[0] || "WEB_NEXTJS";
+    const platLabel = canonicalPlat === "ANDROID_EXPO" ? "ANDROID_EXPO (React Native / Expo)" : "WEB_NEXTJS (React / Next.js)";
+    const fwLabel = canonicalPlat === "ANDROID_EXPO" ? "React Native / Expo" : "React / Next.js";
+
     const hydratePrompt = (templateStr: string, agentData: { perspective: string }) => {
       return templateStr
         .replace(/{{LANGUAGE}}/g, "fr")
-        .replace(/{{TARGET_PLATFORM}}/g, project?.targetPlatforms?.join(", ") || "WEB_NEXTJS")
-        .replace(/{{TARGET_FRAMEWORK}}/g, "React / Next.js")
+        .replace(/{{TARGET_PLATFORM}}/g, platLabel)
+        .replace(/{{TARGET_FRAMEWORK}}/g, fwLabel)
         .replace(/{{PROJECT_TITLE}}/g, project?.name || "")
         .replace(/{{PROJECT_ID}}/g, projectId)
         .replace(/{{SOURCE_TEXT}}/g, project?.ideaText || "")

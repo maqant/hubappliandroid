@@ -22,6 +22,8 @@ import {
   type DesignProposal,
   type DesignBaselineSummary,
   type UpstreamContextPreview,
+  type PlatformConsistencyReport,
+  computePlatformConsistency,
 } from "@/services";
 import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
@@ -490,6 +492,10 @@ export function ProjectDetailPageContent() {
     return currentLayerProposals.filter((p: any) => (p.generationBatchId || 'LEGACY') === selectedBatchFilter);
   }, [currentLayerProposals, selectedBatchFilter]);
 
+  const platformReport: PlatformConsistencyReport = useMemo(() => {
+    return computePlatformConsistency(project, persistedProposals as any[]);
+  }, [project, persistedProposals]);
+
   const executeGeneration = async (mode: 'INITIAL' | 'VARIATION' | 'REPLACEMENT' = 'INITIAL', focus?: string, sourceBatchId?: string | null) => {
     if (isGenerating) return;
     setIsGenerating(true);
@@ -929,6 +935,40 @@ export function ProjectDetailPageContent() {
                   ? "Archivé"
                   : "Archived"
                 : project.status}
+          </span>
+          {/* Platform Consistency Badge */}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              padding: '0.2rem 0.6rem',
+              borderRadius: '999px',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'default',
+              backgroundColor:
+                platformReport.status === 'CONFIRMED' ? 'rgba(16,185,129,0.15)' :
+                platformReport.status === 'MISSING' ? 'rgba(245,158,11,0.15)' :
+                'rgba(239,68,68,0.15)',
+              color:
+                platformReport.status === 'CONFIRMED' ? '#10b981' :
+                platformReport.status === 'MISSING' ? '#f59e0b' :
+                '#ef4444',
+              border: `1px solid ${
+                platformReport.status === 'CONFIRMED' ? 'rgba(16,185,129,0.4)' :
+                platformReport.status === 'MISSING' ? 'rgba(245,158,11,0.4)' :
+                'rgba(239,68,68,0.4)'
+              }`,
+            }}
+            title={platformReport.recommendation}
+          >
+            {platformReport.status === 'CONFIRMED' ? '✅' : platformReport.status === 'MISSING' ? '⚠️' : '🔴'}
+            {' '}
+            {platformReport.canonicalPlatform === 'ANDROID_EXPO' ? '📱 Mobile' :
+             platformReport.canonicalPlatform === 'WEB_NEXTJS' ? '🌐 Web' :
+             lang === 'fr' ? 'Plateforme non définie' : 'No platform'}
+            {platformReport.status === 'CONTRADICTORY' && ` (${platformReport.incompatibleCount} contradiction${platformReport.incompatibleCount > 1 ? 's' : ''})`}
           </span>
         </div>
       </div>
