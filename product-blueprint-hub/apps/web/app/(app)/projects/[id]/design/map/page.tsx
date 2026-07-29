@@ -14,7 +14,8 @@ import ReactFlow, {
   Connection,
   MarkerType,
   ReactFlowProvider,
-  useReactFlow
+  useReactFlow,
+  useNodesInitialized
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { analysisLogCollector } from "@/lib/export/analysis-log-collector";
@@ -49,20 +50,28 @@ const LAYER_CONFIG: Record<DesignLayer, { label: string; icon: string; bg: strin
 
 function FitViewHelper({ nodeCount }: { nodeCount: number }) {
   const { fitView } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const hasFittedRef = useRef(false);
+
   useEffect(() => {
-    if (nodeCount > 0) {
+    hasFittedRef.current = false;
+  }, [nodeCount]);
+
+  useEffect(() => {
+    if (nodesInitialized && nodeCount > 0 && !hasFittedRef.current) {
+      hasFittedRef.current = true;
       setTimeout(() => {
-        fitView({ padding: 0.2, duration: 800 });
+        fitView({ padding: 0.2, duration: 400 });
         analysisLogCollector.addEntry({
           timestamp: new Date().toISOString(),
           level: "INFO",
           category: "CARTOGRAPHY",
           message: "CARTOGRAPHY_FITVIEW_EXECUTED",
-          context: { fitViewExecuted: true }
+          context: { fitViewExecuted: true, nodeCount, nodesInitialized }
         });
-      }, 100);
+      }, 50);
     }
-  }, [nodeCount, fitView]);
+  }, [nodesInitialized, nodeCount, fitView]);
   return null;
 }
 
@@ -662,7 +671,7 @@ function DesignMapPageContent() {
       {/* Main Canvas & Details Side Panels */}
       <div className="flex-1 flex relative overflow-hidden">
         {/* ReactFlow Canvas Workspace */}
-        <div className="flex-1 relative" ref={canvasRef} style={{ height: 'calc(100vh - 120px)' }}>
+        <div className="flex-1 relative" ref={canvasRef} style={{ height: 'calc(100vh - 120px)', minHeight: '600px', minWidth: '100%' }}>
           {isLoading ? (
             <div className="flex items-center justify-center h-full text-slate-500">
               <span>Chargement des Paths d&apos;Expérience...</span>
