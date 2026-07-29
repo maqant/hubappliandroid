@@ -154,6 +154,9 @@ export function ProjectDetailPageContent() {
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const [isPlatformModalOpen, setIsPlatformModalOpen] = useState(false);
+  const [selectedPlatformChoice, setSelectedPlatformChoice] = useState<'ANDROID_EXPO' | 'WEB_NEXTJS' | null>(null);
+  const [isConfirmingPlatform, setIsConfirmingPlatform] = useState(false);
 
   const showToast = (type: string, message: string) => {
     setToast({ type, message });
@@ -941,12 +944,12 @@ export function ProjectDetailPageContent() {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.25rem',
-              padding: '0.2rem 0.6rem',
+              gap: '0.35rem',
+              padding: '0.25rem 0.7rem',
               borderRadius: '999px',
               fontSize: '0.75rem',
               fontWeight: 600,
-              cursor: 'default',
+              cursor: platformReport.status !== 'CONFIRMED' ? 'pointer' : 'default',
               backgroundColor:
                 platformReport.status === 'CONFIRMED' ? 'rgba(16,185,129,0.15)' :
                 platformReport.status === 'MISSING' ? 'rgba(245,158,11,0.15)' :
@@ -961,7 +964,17 @@ export function ProjectDetailPageContent() {
                 'rgba(239,68,68,0.4)'
               }`,
             }}
-            title={platformReport.recommendation}
+            onClick={() => {
+              if (platformReport.status !== 'CONFIRMED') {
+                setSelectedPlatformChoice(platformReport.canonicalPlatform === 'ANDROID_EXPO' ? 'ANDROID_EXPO' : 'WEB_NEXTJS');
+                setIsPlatformModalOpen(true);
+              }
+            }}
+            title={
+              platformReport.status !== 'CONFIRMED'
+                ? `${platformReport.recommendation}\n(Cliquer pour résoudre et confirmer la plateforme)`
+                : platformReport.recommendation
+            }
           >
             {platformReport.status === 'CONFIRMED' ? '✅' : platformReport.status === 'MISSING' ? '⚠️' : '🔴'}
             {' '}
@@ -969,6 +982,11 @@ export function ProjectDetailPageContent() {
              platformReport.canonicalPlatform === 'WEB_NEXTJS' ? '🌐 Web' :
              lang === 'fr' ? 'Plateforme non définie' : 'No platform'}
             {platformReport.status === 'CONTRADICTORY' && ` (${platformReport.incompatibleCount} contradiction${platformReport.incompatibleCount > 1 ? 's' : ''})`}
+            {platformReport.status !== 'CONFIRMED' && (
+              <span style={{ marginLeft: '0.2rem', textDecoration: 'underline', fontSize: '0.7rem', opacity: 0.9 }}>
+                ⚙️ Résoudre
+              </span>
+            )}
           </span>
         </div>
       </div>
@@ -2840,6 +2858,163 @@ export function ProjectDetailPageContent() {
               >
                 Fermer
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Résolution de Plateforme Cible */}
+      {isPlatformModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "var(--color-bg-surface, #ffffff)",
+              color: "var(--color-text-main, #1e293b)",
+              borderRadius: "0.75rem",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              maxWidth: "600px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: "1.5rem",
+              border: "1px solid var(--color-border, #e2e8f0)",
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                ⚙️ Résolution de la plateforme cible
+              </h3>
+              <button
+                onClick={() => setIsPlatformModalOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.875rem' }}>
+              {/* Diagnostic actuel */}
+              <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: platformReport.status === 'CONTRADICTORY' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)', border: `1px solid ${platformReport.status === 'CONTRADICTORY' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}` }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem', color: platformReport.status === 'CONTRADICTORY' ? '#dc2626' : '#d97706' }}>
+                  Diagnostic : {platformReport.status === 'CONTRADICTORY' ? 'Contradictions de plateforme détectées' : 'Plateforme cible non définie'}
+                </div>
+                <p style={{ margin: 0, color: '#475569' }}>
+                  Plateforme actuellement enregistrée : <strong>{platformReport.canonicalPlatform === 'ANDROID_EXPO' ? 'Application Mobile (ANDROID_EXPO)' : platformReport.canonicalPlatform === 'WEB_NEXTJS' ? 'Application Web (WEB_NEXTJS)' : 'Non définie'}</strong>
+                </p>
+
+                {platformReport.conflictingSources.length > 0 && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.8rem', color: '#334155' }}>Sources de contradiction ({platformReport.conflictingSources.length}) :</div>
+                    <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0, fontSize: '0.8rem', color: '#475569' }}>
+                      {platformReport.conflictingSources.map((cs, idx) => (
+                        <li key={idx} style={{ marginBottom: '0.2rem' }}>
+                          {cs.reason || cs.declaredPlatform}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {platformReport.incompatibleCount > 0 && (
+                  <div style={{ marginTop: '0.5rem', fontWeight: 600, color: '#dc2626', fontSize: '0.8rem' }}>
+                    ⚠️ {platformReport.incompatibleCount} proposition(s) existante(s) déclarent une plateforme différente.
+                  </div>
+                )}
+              </div>
+
+              {/* Sélection explicite de la plateforme */}
+              <div>
+                <label style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>
+                  Choisissez la plateforme d&apos;autorité pour ce projet :
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div
+                    onClick={() => setSelectedPlatformChoice('ANDROID_EXPO')}
+                    style={{
+                      padding: '0.85rem',
+                      borderRadius: '0.5rem',
+                      border: `2px solid ${selectedPlatformChoice === 'ANDROID_EXPO' ? '#2563eb' : '#e2e8f0'}`,
+                      backgroundColor: selectedPlatformChoice === 'ANDROID_EXPO' ? 'rgba(37, 99, 235, 0.05)' : 'transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                      📱 Mobile (Android / Expo)
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b' }}>
+                      React Native & Expo pour smartphone Android.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setSelectedPlatformChoice('WEB_NEXTJS')}
+                    style={{
+                      padding: '0.85rem',
+                      borderRadius: '0.5rem',
+                      border: `2px solid ${selectedPlatformChoice === 'WEB_NEXTJS' ? '#2563eb' : '#e2e8f0'}`,
+                      backgroundColor: selectedPlatformChoice === 'WEB_NEXTJS' ? 'rgba(37, 99, 235, 0.05)' : 'transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                      🌐 Web (React / Next.js)
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b' }}>
+                      Application exécutée dans un navigateur web.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Explication non-destructive */}
+              <div style={{ padding: '0.65rem', borderRadius: '0.375rem', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', fontSize: '0.8rem', color: '#64748b' }}>
+                ℹ️ <strong>Conservation des données :</strong> La confirmation n&apos;efface et ne réécrit aucune proposition existante. Les propositions incompatibles resteront visibles et conservées sans perte.
+              </div>
+
+              {/* Actions de confirmation */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setIsPlatformModalOpen(false)}
+                  disabled={isConfirmingPlatform}
+                >
+                  Annuler
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={!selectedPlatformChoice || isConfirmingPlatform}
+                  onClick={async () => {
+                    if (!selectedPlatformChoice || !project) return;
+                    setIsConfirmingPlatform(true);
+                    try {
+                      await svc.projects.confirmTargetPlatform(project.id, selectedPlatformChoice);
+                      showToast('success', `Plateforme canonique confirmée avec succès : ${selectedPlatformChoice === 'ANDROID_EXPO' ? 'Application Mobile (Expo)' : 'Application Web (Next.js)'}`);
+                      setIsPlatformModalOpen(false);
+                      await load();
+                    } catch (err) {
+                      showToast('error', `Échec de la confirmation : ${String(err)}`);
+                    } finally {
+                      setIsConfirmingPlatform(false);
+                    }
+                  }}
+                >
+                  {isConfirmingPlatform ? 'Enregistrement...' : 'Confirmer la plateforme'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
