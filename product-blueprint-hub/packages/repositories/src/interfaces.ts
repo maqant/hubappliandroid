@@ -149,6 +149,29 @@ export interface IPromptRepository extends IRepository<PromptTemplate> {
   getPromptDiagnostic(agentId: string): Promise<PromptDiagnostic | null>;
 }
 
+// Product Interview Repositories
+export interface IProductInterviewSessionRepository extends IRepository<import("@pbh/domain").ProductInterviewSession> {
+  getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewSession | null>;
+}
+
+export interface IKnowledgeAssertionRepository extends IRepository<import("@pbh/domain").KnowledgeAssertion> {
+  getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").KnowledgeAssertion[]>;
+  getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").KnowledgeAssertion[]>;
+}
+
+export interface IProductInterviewMessageRepository extends IRepository<import("@pbh/domain").ProductInterviewMessage> {
+  getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProductInterviewMessage[]>;
+}
+
+export interface IFunctionalBlueprintRepository extends IRepository<import("@pbh/domain").FunctionalBlueprint> {
+  getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").FunctionalBlueprint | null>;
+  getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").FunctionalBlueprint | null>;
+}
+
+export interface IProductInterviewContradictionRepository extends IRepository<import("@pbh/domain").ProductInterviewContradiction> {
+  getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProductInterviewContradiction[]>;
+}
+
 // ============================================
 // Registry — single access point for all repos
 // ============================================
@@ -176,4 +199,9 @@ export interface RepositoryRegistry {
   auditEvents: IAuditEventRepository;
   users: IUserRepository;
   prompts: IPromptRepository;
+  productInterviewSessions: IProductInterviewSessionRepository;
+  knowledgeAssertions: IKnowledgeAssertionRepository;
+  productInterviewMessages: IProductInterviewMessageRepository;
+  functionalBlueprints: IFunctionalBlueprintRepository;
+  productInterviewContradictions: IProductInterviewContradictionRepository;
 }

@@ -46,6 +46,7 @@ import {
   BaselineUseCases,
   PackageUseCases,
   DesignWorkshopUseCases,
+  ProductInterviewService,
   type UpstreamContextPreview,
 } from "@pbh/application";
 import { createLocalRepositoryRegistry, seedPrompts } from "@pbh/repositories";
@@ -104,6 +105,7 @@ function createServices() {
     baselines: new BaselineUseCases(repos),
     packages: new PackageUseCases(repos),
     designWorkshop: new DesignWorkshopUseCases(repos, provider),
+    productInterview: new ProductInterviewService(repos),
     switchProviderMode: (mode: "openai" | "fake") => {
       gateway.setActiveProvider(mode);
       if (typeof window !== "undefined") {

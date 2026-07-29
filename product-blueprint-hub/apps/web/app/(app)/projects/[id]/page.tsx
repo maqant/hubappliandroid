@@ -28,6 +28,7 @@ type TabId =
   | "sources"
   | "brief"
   | "decisions"
+  | "interview"
   | "organization"
   | "control"
   | "conflicts"
@@ -51,7 +52,7 @@ export function ProjectDetailPageContent() {
   const [project, setProject] = useState<Project | null>(null);
   
   const rawTab = searchParams.get("tab") as TabId | null;
-  const validTabs: TabId[] = ["sources", "brief", "decisions", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
+  const validTabs: TabId[] = ["sources", "brief", "decisions", "interview", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
   const activeTab: TabId = rawTab && validTabs.includes(rawTab) ? rawTab : "sources";
 
   const handleTabChange = (newTab: TabId) => {
@@ -100,6 +101,14 @@ export function ProjectDetailPageContent() {
 
   const [baselineSummary, setBaselineSummary] = useState<DesignBaselineSummary | null>(null);
 
+  // Product Interview states
+  const [piSession, setPiSession] = useState<import("@pbh/domain").ProductInterviewSession | null>(null);
+  const [piBlueprint, setPiBlueprint] = useState<import("@pbh/domain").FunctionalBlueprint | null>(null);
+  const [piAssertions, setPiAssertions] = useState<import("@pbh/domain").KnowledgeAssertion[]>([]);
+  const [piMessages, setPiMessages] = useState<import("@pbh/domain").ProductInterviewMessage[]>([]);
+  const [piContradictions, setPiContradictions] = useState<import("@pbh/domain").ProductInterviewContradiction[]>([]);
+  const [isInitializingInterview, setIsInitializingInterview] = useState(false);
+
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -109,13 +118,14 @@ export function ProjectDetailPageContent() {
         return;
       }
       setProject(p);
-      const [src, brief, dec, conf, mis, bSummary] = await Promise.all([
+      const [src, brief, dec, conf, mis, bSummary, piSess] = await Promise.all([
         svc.sources.getSources(projectId as EntityId),
         svc.brief.getBriefItems(projectId as EntityId),
         svc.decisions.getDecisions(projectId as EntityId),
         svc.conflicts.getConflicts(projectId as EntityId),
         svc.missions.getMissions(projectId as EntityId),
         svc.designWorkshop.getDesignBaselineSummary(projectId as EntityId),
+        svc.productInterview.getSession(projectId as EntityId),
       ]);
       setSources(src);
       setBriefItems(brief);
@@ -123,6 +133,20 @@ export function ProjectDetailPageContent() {
       setConflicts(conf);
       setMissions(mis);
       setBaselineSummary(bSummary);
+      setPiSession(piSess);
+
+      if (piSess) {
+        const [bp, ass, msg, ctr] = await Promise.all([
+          svc.productInterview.getBlueprint(projectId as EntityId),
+          svc.productInterview.getAssertions(piSess.id),
+          svc.productInterview.getMessages(piSess.id),
+          svc.productInterview.getContradictions(piSess.id),
+        ]);
+        setPiBlueprint(bp);
+        setPiAssertions(ass);
+        setPiMessages(msg);
+        setPiContradictions(ctr);
+      }
 
       if (mis.length > 0) {
         const m = mis[0]!;
@@ -291,6 +315,28 @@ export function ProjectDetailPageContent() {
   const platformReport: PlatformConsistencyReport = useMemo(() => {
     return computePlatformConsistency(project, []);
   }, [project]);
+
+  const handleStartInterview = async () => {
+    setIsInitializingInterview(true);
+    try {
+      const { session, blueprint } = await svc.productInterview.initSession(projectId as EntityId);
+      setPiSession(session);
+      setPiBlueprint(blueprint);
+      const [ass, msg, ctr] = await Promise.all([
+        svc.productInterview.getAssertions(session.id),
+        svc.productInterview.getMessages(session.id),
+        svc.productInterview.getContradictions(session.id),
+      ]);
+      setPiAssertions(ass);
+      setPiMessages(msg);
+      setPiContradictions(ctr);
+      showToast("success", "Entretien Produit initialisé avec succès !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsInitializingInterview(false);
+    }
+  };
 
   const handleFreezeDesignBaseline = async () => {
     if (!window.confirm("Geler la baseline de conception ? Les propositions acceptées seront scellées comme référence pour la mission.")) return;
@@ -511,6 +557,7 @@ export function ProjectDetailPageContent() {
     { id: "sources", label: `📄 ${t("tab.sources")}`, count: sources.length },
     { id: "brief", label: `💡 ${t("tab.brief")}`, count: briefItems.length },
     { id: "decisions", label: `⚖️ ${t("tab.decisions")}`, count: decisions.length },
+    { id: "interview", label: "🧭 Entretien Produit", count: piSession ? piSession.questionCount : 0 },
     {
       id: "organization",
       label: `🏗️ ${t("tab.organization")}`,
@@ -952,6 +999,131 @@ export function ProjectDetailPageContent() {
                   )}
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {activeTab === "interview" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2>🧭 Entretien Produit</h2>
+                <p className="text-sm text-muted">
+                  Transformez une idée brute en une vision produit claire, explicite et traçable (basé sur <em>L’Architecture de la Pensée Produit</em>).
+                </p>
+              </div>
+              {piSession && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => showToast("info", "Les fondations de l'entretien sont prêtes. Le dialogue intelligent sera activé au prochain chantier.")}
+                >
+                  ▶️ Reprendre l&apos;entretien
+                </button>
+              )}
+            </div>
+
+            {!piSession ? (
+              <div className="card p-6 text-center space-y-4">
+                <div className="text-4xl mb-2">🧭</div>
+                <h3 className="text-lg font-bold">Aucun entretien produit démarré</h3>
+                <p className="text-sm text-muted max-w-xl mx-auto">
+                  L&apos;entretien produit vous guidera pas à pas pour formaliser le problème réel, la promesse minimale, la boucle de valeur et les 14 sections du blueprint avant l&apos;exécution des 18 agents.
+                </p>
+                <div className="pt-2">
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleStartInterview}
+                    disabled={isInitializingInterview}
+                  >
+                    {isInitializingInterview ? "⏳ Initialisation..." : "🚀 Commencer l'entretien"}
+                  </button>
+                </div>
+                <p className="text-xs text-muted pt-2 italic">
+                  Les fondations de l&apos;entretien sont prêtes. Le dialogue intelligent sera activé au prochain chantier.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Information Banner */}
+                <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm flex items-center justify-between">
+                  <div className="space-y-1">
+                    <div className="font-semibold flex items-center gap-2">
+                      <span>📌 Statut : <strong>{piSession.status}</strong></span>
+                      <span className="badge badge-info">{piSession.maturityStep}</span>
+                    </div>
+                    <p className="text-xs text-muted">
+                      Les fondations de l&apos;entretien sont prêtes. Le dialogue intelligent sera activé au prochain chantier.
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleStartInterview}
+                    disabled={isInitializingInterview}
+                  >
+                    🔄 Réinitialiser
+                  </button>
+                </div>
+
+                {/* Stat Counters */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="card p-3 text-center">
+                    <span className="text-xs text-muted block">🗣️ Messages</span>
+                    <strong className="text-lg block mt-1">{piMessages.length}</strong>
+                  </div>
+                  <div className="card p-3 text-center">
+                    <span className="text-xs text-muted block">✅ Confirmés</span>
+                    <strong className="text-lg block mt-1 text-green-500">
+                      {piAssertions.filter((a) => a.status === "CONFIRMED").length}
+                    </strong>
+                  </div>
+                  <div className="card p-3 text-center">
+                    <span className="text-xs text-muted block">💡 Hypothèses</span>
+                    <strong className="text-lg block mt-1 text-amber-500">
+                      {piAssertions.filter((a) => a.status === "INFERRED").length}
+                    </strong>
+                  </div>
+                  <div className="card p-3 text-center">
+                    <span className="text-xs text-muted block">❓ Inconnues Bloquantes</span>
+                    <strong className="text-lg block mt-1 text-red-500">{piSession.blockingUnknownsCount}</strong>
+                  </div>
+                  <div className="card p-3 text-center">
+                    <span className="text-xs text-muted block">⚡ Contradictions</span>
+                    <strong className="text-lg block mt-1">{piSession.openContradictionsCount}</strong>
+                  </div>
+                </div>
+
+                {/* 14 Blueprint Sections */}
+                <div>
+                  <h3 className="text-md font-bold mb-3">📘 Blueprint Fonctionnel (14 Sections)</h3>
+                  {piBlueprint ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {Object.values(piBlueprint.sections).map((sec) => (
+                        <div key={sec.id} className="card p-4 space-y-2 border border-border">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold text-sm">{sec.title}</h4>
+                            <span
+                              className={`badge text-xs ${
+                                sec.status === "CONFIRMED"
+                                  ? "badge-success"
+                                  : sec.status === "TO_CONFIRM" || sec.status === "INFERRED"
+                                  ? "badge-warning"
+                                  : "badge-secondary"
+                              }`}
+                            >
+                              {sec.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted">
+                            {sec.summary || "Section encore non renseignée."}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted">Chargement du blueprint...</div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         )}

@@ -7,3 +7,4 @@ export * from "./weaving-graph.types";
 export * from "./feature-paths";
 export * from "./feature-coverage";
 export * from "./platform-consistency";
+export * from "./product-interview";

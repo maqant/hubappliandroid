@@ -438,6 +438,76 @@ class LocalPromptRepository extends LocalRepo<PromptTemplate> implements IPrompt
   }
 }
 
+class LocalProductInterviewSessionRepository
+  extends LocalRepo<import("@pbh/domain").ProductInterviewSession>
+  implements IProductInterviewSessionRepository
+{
+  constructor() {
+    super("pi_sessions");
+  }
+  async getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewSession | null> {
+    const all = await this.filter((s) => s.projectId === projectId);
+    return all[0] ?? null;
+  }
+}
+
+class LocalKnowledgeAssertionRepository
+  extends LocalRepo<import("@pbh/domain").KnowledgeAssertion>
+  implements IKnowledgeAssertionRepository
+{
+  constructor() {
+    super("pi_assertions");
+  }
+  async getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").KnowledgeAssertion[]> {
+    return this.filter((a) => a.projectId === projectId);
+  }
+  async getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").KnowledgeAssertion[]> {
+    return this.filter((a) => a.sessionId === sessionId);
+  }
+}
+
+class LocalProductInterviewMessageRepository
+  extends LocalRepo<import("@pbh/domain").ProductInterviewMessage>
+  implements IProductInterviewMessageRepository
+{
+  constructor() {
+    super("pi_messages");
+  }
+  async getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProductInterviewMessage[]> {
+    const messages = await this.filter((m) => m.sessionId === sessionId);
+    return messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+}
+
+class LocalFunctionalBlueprintRepository
+  extends LocalRepo<import("@pbh/domain").FunctionalBlueprint>
+  implements IFunctionalBlueprintRepository
+{
+  constructor() {
+    super("pi_blueprints");
+  }
+  async getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").FunctionalBlueprint | null> {
+    const all = await this.filter((b) => b.projectId === projectId);
+    return all[0] ?? null;
+  }
+  async getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").FunctionalBlueprint | null> {
+    const all = await this.filter((b) => b.sessionId === sessionId);
+    return all[0] ?? null;
+  }
+}
+
+class LocalProductInterviewContradictionRepository
+  extends LocalRepo<import("@pbh/domain").ProductInterviewContradiction>
+  implements IProductInterviewContradictionRepository
+{
+  constructor() {
+    super("pi_contradictions");
+  }
+  async getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProductInterviewContradiction[]> {
+    return this.filter((c) => c.sessionId === sessionId);
+  }
+}
+
 // ============================================
 // Registry factory
 // ============================================
@@ -466,6 +536,11 @@ export function createLocalRepositoryRegistry(): RepositoryRegistry {
     auditEvents: new LocalAuditEventRepository(),
     users: new LocalUserRepository(),
     prompts: new LocalPromptRepository(),
+    productInterviewSessions: new LocalProductInterviewSessionRepository(),
+    knowledgeAssertions: new LocalKnowledgeAssertionRepository(),
+    productInterviewMessages: new LocalProductInterviewMessageRepository(),
+    functionalBlueprints: new LocalFunctionalBlueprintRepository(),
+    productInterviewContradictions: new LocalProductInterviewContradictionRepository(),
   };
 }
 
