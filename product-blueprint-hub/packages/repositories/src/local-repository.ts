@@ -63,24 +63,45 @@ const STORAGE_PREFIX = "pbh_v" + SCHEMA_VERSION + "_";
 // ============================================
 
 class LocalRepo<T extends { id: EntityId }> implements IRepository<T> {
+  protected isDegraded = false;
+
   constructor(protected readonly storageKey: string) {}
 
   protected getStore(): Map<string, T> {
     if (typeof window === "undefined") return new Map();
-    const raw = localStorage.getItem(STORAGE_PREFIX + this.storageKey);
+    const key = STORAGE_PREFIX + this.storageKey;
+    const raw = localStorage.getItem(key);
     if (!raw) return new Map();
     try {
       const entries: [string, T][] = JSON.parse(raw);
       return new Map(entries);
-    } catch {
+    } catch (err) {
+      console.error(`[LocalRepo] Erreur de lecture sur la clé ${key}. Entrée en mode dégradé (lecture seule).`, err);
+      this.isDegraded = true;
+      try {
+        localStorage.setItem(`${key}_corrupt_${Date.now()}`, raw);
+      } catch (e) {
+        console.error(`[LocalRepo] Échec de la mise en quarantaine de ${key}`, e);
+      }
       return new Map();
     }
   }
 
   protected setStore(store: Map<string, T>): void {
     if (typeof window === "undefined") return;
+    if (this.isDegraded) {
+      throw new Error(`[LocalRepo] Écriture bloquée : le repository '${this.storageKey}' est en mode dégradé suite à un échec de lecture/parsing pour prévenir toute perte de données.`);
+    }
+
+    const key = STORAGE_PREFIX + this.storageKey;
+    const raw = localStorage.getItem(key);
+    if (store.size === 0 && raw && raw.trim().length > 2) {
+      console.warn(`[LocalRepo] Protection anti-écrasement activée : tentative d'écrire un store vide sur la clé non-vide '${key}'.`);
+      return;
+    }
+
     localStorage.setItem(
-      STORAGE_PREFIX + this.storageKey,
+      key,
       JSON.stringify(Array.from(store.entries())),
     );
   }
@@ -308,7 +329,23 @@ class LocalUserRepository extends LocalRepo<User> implements IUserRepository {
 
 class LocalDesignProposalRepository extends LocalRepo<DesignProposal> implements IDesignProposalRepository {
   constructor() {
-    super(STORAGE_PREFIX + "design_proposals");
+    super("design_proposals");
+  }
+
+  protected override getStore(): Map<string, DesignProposal> {
+    const store = super.getStore();
+    for (const [id, proposal] of store.entries()) {
+      let modified = false;
+      const parentProposalIds = Array.isArray(proposal.parentProposalIds) ? [...proposal.parentProposalIds] : [];
+      if (proposal.parentId && !parentProposalIds.includes(proposal.parentId)) {
+        parentProposalIds.push(proposal.parentId);
+        modified = true;
+      }
+      if (modified) {
+        store.set(id, { ...proposal, parentProposalIds });
+      }
+    }
+    return store;
   }
 
   async getByProjectId(projectId: EntityId): Promise<DesignProposal[]> {
@@ -322,7 +359,7 @@ class LocalDesignProposalRepository extends LocalRepo<DesignProposal> implements
 
 class LocalDesignGraphRepository extends LocalRepo<DesignGraph> implements IDesignGraphRepository {
   constructor() {
-    super(STORAGE_PREFIX + "design_graphs");
+    super("design_graphs");
   }
 
   async getByProjectId(projectId: EntityId): Promise<DesignGraph | null> {
@@ -333,7 +370,7 @@ class LocalDesignGraphRepository extends LocalRepo<DesignGraph> implements IDesi
 
 class LocalDesignBaselineRepository extends LocalRepo<DesignBaseline> implements IDesignBaselineRepository {
   constructor() {
-    super(STORAGE_PREFIX + "design_baselines");
+    super("design_baselines");
   }
 
   async getByProjectId(projectId: EntityId): Promise<DesignBaseline[]> {

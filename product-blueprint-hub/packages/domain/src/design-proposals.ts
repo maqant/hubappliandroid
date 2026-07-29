@@ -216,6 +216,7 @@ export interface DesignProposal extends BaseEntity, Owned {
   readonly status: ProposalStatus;
   readonly origin: 'AI_ASSISTED' | 'MANUAL' | 'IMPORTED_FROM_BRIEF';
   readonly alternatives: FeatureAlternative[];
+  /** @deprecated Utiliser parentProposalIds comme source de vérité unique pour la parenté */
   readonly parentId?: EntityId | null;
   readonly rootProposalId?: EntityId | null;
   readonly childrenIds?: EntityId[];
