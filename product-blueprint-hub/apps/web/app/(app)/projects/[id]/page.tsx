@@ -218,31 +218,39 @@ export function ProjectDetailPageContent() {
     try {
       const proposals = await svc.designWorkshop.getProposals(projectId as EntityId, selectedLayer);
       setPersistedProposals(proposals);
-      // If we have persisted proposals but no workshopResult, build a workshopResult from them
-      if (proposals.length > 0 && !workshopResult) {
-        setWorkshopResult({
-          proposals: proposals.map(p => ({
-            id: p.id,
-            title: p.title,
-            description: p.description,
-            shortPitch: p.shortPitch || p.title,
-            type: p.category,
-            originPerspective: p.originPerspective || 'Système',
-            confidence: p.confidence || 50,
-            priority: p.priority || 'MEDIUM',
-            complexity: p.complexity || 'M',
-            justification: p.rationale,
-            userValue: p.userValue || '',
-            dependencies: p.dependencyIds || [],
-            childrenIds: p.childrenIds || [],
-            parentId: p.parentId || null,
-            status: p.status,
-          })),
-          summary: `${proposals.length} propositions existantes pour la couche ${selectedLayer}`,
-          questions: [],
-          assumptions: [],
-          warnings: [],
-        });
+      // Map persisted proposals from repository ensuring layer property is set
+      const mappedProposals = proposals.map(p => ({
+        id: p.id,
+        layer: p.layer || selectedLayer,
+        title: p.title,
+        description: p.description,
+        shortPitch: p.shortPitch || p.title,
+        type: p.category,
+        originPerspective: p.originPerspective || 'Système',
+        confidence: p.confidence || 50,
+        priority: p.priority || 'MEDIUM',
+        complexity: p.complexity || 'M',
+        justification: p.rationale,
+        userValue: p.userValue || '',
+        dependencies: p.dependencyIds || [],
+        childrenIds: p.childrenIds || [],
+        parentId: p.parentId || null,
+        status: p.status,
+        generationBatchId: p.generationBatchId,
+        generationMode: p.generationMode,
+        variationIndex: p.variationIndex,
+      }));
+
+      // Ensure workshopResult is initialized if proposals exist
+      if (proposals.length > 0) {
+        setWorkshopResult(prev => ({
+          ...prev,
+          proposals: mappedProposals,
+          summary: prev?.summary || `${proposals.length} propositions existantes pour la couche ${selectedLayer}`,
+          questions: prev?.questions || [],
+          assumptions: prev?.assumptions || [],
+          warnings: prev?.warnings || [],
+        }));
       }
     } catch (e) {
       console.error('Failed to load proposals:', e);
@@ -425,9 +433,32 @@ export function ProjectDetailPageContent() {
   };
 
   const currentLayerProposals = useMemo(() => {
+    if (persistedProposals && persistedProposals.length > 0) {
+      return persistedProposals.map((p: any) => ({
+        id: p.id,
+        layer: p.layer || selectedLayer,
+        title: p.title,
+        description: p.description,
+        shortPitch: p.shortPitch || p.title,
+        type: p.category,
+        originPerspective: p.originPerspective || 'Système',
+        confidence: p.confidence || 50,
+        priority: p.priority || 'MEDIUM',
+        complexity: p.complexity || 'M',
+        justification: p.rationale,
+        userValue: p.userValue || '',
+        dependencies: p.dependencyIds || [],
+        childrenIds: p.childrenIds || [],
+        parentId: p.parentId || null,
+        status: p.status,
+        generationBatchId: p.generationBatchId,
+        generationMode: p.generationMode,
+        variationIndex: p.variationIndex,
+      }));
+    }
     if (!workshopResult?.proposals) return [];
-    return workshopResult.proposals.filter((p: any) => p.layer === selectedLayer);
-  }, [workshopResult, selectedLayer]);
+    return workshopResult.proposals.filter((p: any) => !p.layer || p.layer === selectedLayer);
+  }, [persistedProposals, workshopResult, selectedLayer]);
 
   const batches = useMemo(() => {
     const map = new Map<string, { id: string; label: string; count: number }>();
@@ -1675,8 +1706,8 @@ export function ProjectDetailPageContent() {
               {/* Zone Détail */}
               <div className="card p-4 w-96 bg-surface flex flex-col overflow-y-auto">
                 <h3 className="font-semibold mb-4">Détails</h3>
-                {selectedProposalId && workshopResult?.proposals ? (() => {
-                  const p = workshopResult.proposals.find((p: any) => p.id === selectedProposalId);
+                {selectedProposalId && (currentLayerProposals.length > 0 || workshopResult?.proposals) ? (() => {
+                  const p = currentLayerProposals.find((p: any) => p.id === selectedProposalId) || (workshopResult?.proposals ? workshopResult.proposals.find((p: any) => p.id === selectedProposalId) : null);
                   if (!p) return <div className="text-muted">Proposition introuvable</div>;
                   return (
                     <div className="flex flex-col gap-4 text-sm">
