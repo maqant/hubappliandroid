@@ -1378,15 +1378,16 @@ export function ProjectDetailPageContent() {
                       <option value="EXHAUSTIVE">Exhaustive (8 perspectives)</option>
                     </select>
                   </div>
-                  <div className="flex gap-2 flex-wrap items-center">
-                    {selectedLayer === 'FEATURE' && (() => {
-                      const hasAcceptedIntention = briefItems.some(b => b.status === 'ACCEPTED' || b.status === 'LOCKED');
-                      const hasAcceptedCapability = (layerProposalCounts['CAPABILITY'] || 0) > 0;
-                      const canSwarmPaths = hasAcceptedIntention && hasAcceptedCapability;
+                </div>
 
+                {/* Barre d'actions hiérarchisée (Chantier 10) */}
+                <div className="atelier-toolbar">
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const canSwarmPaths = (layerProposalCounts['INTENTION'] || 0) > 0 && (layerProposalCounts['CAPABILITY'] || 0) > 0;
                       return (
                         <button
-                          className="btn btn-primary btn-sm"
+                          className="btn btn-sm bg-purple-600 hover:bg-purple-700 text-white font-medium shadow-sm"
                           onClick={handleGenerateVerticalPaths}
                           disabled={isGenerating || !canSwarmPaths}
                           title={
@@ -1395,53 +1396,63 @@ export function ProjectDetailPageContent() {
                               : "Tisse automatiquement les fonctionnalités, parcours et écrans de bout en bout sous forme de Feature Paths"
                           }
                         >
-                          {isGenerating ? '⏳ Tissage vertical…' : '🚀 Générer les paths fonctionnels (Cascades 4→6)'}
+                          {isGenerating ? '⏳ Tissage vertical…' : '🚀 Tisser les Feature Paths (Cascades 4→6)'}
                         </button>
                       );
                     })()}
                     {currentLayerProposals.length === 0 ? (
                       <button 
-                        className="btn btn-secondary btn-sm"
+                        className="action-primary"
                         onClick={() => executeGeneration('INITIAL')}
                         disabled={isGenerating}
                       >
-                        {isGenerating ? '⏳ Exploration…' : `✨ Essaimer (${selectedLayer})`}
+                        {isGenerating ? '⏳ Génération...' : `🚀 Lancer la génération (${selectedLayer})`}
                       </button>
                     ) : (
                       <button 
-                        className="btn btn-primary btn-sm"
+                        className="action-primary"
                         onClick={() => setIsVariationModalOpen(true)}
                         disabled={isGenerating}
-                        title="Explore de nouvelles propositions pour cette couche en tenant compte de celles déjà générées. Les propositions actuelles sont conservées."
+                        title="Explore de nouvelles propositions pour cette couche en tenant compte de celles déjà générées."
                       >
                         {isGenerating ? '⏳ Exploration…' : '✨ Nouvelle variation'}
                       </button>
                     )}
+                  </div>
+                  <div className="action-secondary-group">
                     <button
-                      className="btn btn-secondary btn-sm"
+                      className="action-secondary"
                       onClick={() => setIsDuplicateModalOpen(true)}
                       title="Auditer et fusionner les doublons historiques (JOURNEY & SCREEN)"
                     >
-                      🔍 Auditer les doublons
+                      🔍 Auditer doublons
                     </button>
                     <button
-                      className="btn btn-secondary btn-sm"
+                      className="action-secondary"
+                      onClick={() => router.push(`/projects/${projectId}/design/map`)}
+                      title="Accéder à la Cartographie d'Impact dynamique"
+                    >
+                      🗺️ Cartographie
+                    </button>
+                    <button
+                      className="action-secondary"
                       onClick={() => setIsExportModalOpen(true)}
                       title="Télécharge la conception, les paths, la cartographie et les diagnostics dans un fichier ZIP."
                     >
                       📦 Exporter pour analyse
                     </button>
+                    {deferredCount > 0 && (
+                      <button
+                        className="action-secondary text-amber-700 dark:text-amber-400"
+                        onClick={handleDownloadRoadmap}
+                        title={`${deferredCount} idée(s) reportée(s) — exporter en roadmap .md`}
+                      >
+                        📋 Roadmap ({deferredCount})
+                      </button>
+                    )}
                   </div>
-                  {deferredCount > 0 && (
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleDownloadRoadmap}
-                      title={`${deferredCount} idée(s) reportée(s) — exporter en roadmap .md`}
-                    >
-                      📋 Roadmap DEFERRED ({deferredCount})
-                    </button>
-                  )}
                 </div>
+
                 {generationError && <p className="text-sm text-red-600 mb-2">{generationError}</p>}
                 
                 {(() => {
@@ -1627,7 +1638,22 @@ export function ProjectDetailPageContent() {
                       </div>
                     )}
 
-                    {currentLayerProposals.length > 0 && (
+                    {currentLayerProposals.length === 0 ? (
+                      <div className="empty-state">
+                        <div className="empty-state-icon">💡</div>
+                        <div className="empty-state-title">Aucune proposition pour la couche {selectedLayer}</div>
+                        <div className="empty-state-desc">
+                          L&apos;atelier n&apos;a pas encore généré de propositions pour la couche {selectedLayer}. Cliquez ci-dessous pour lancer l&apos;essaim d&apos;idéation.
+                        </div>
+                        <button
+                          className="action-primary"
+                          onClick={() => executeGeneration('INITIAL')}
+                          disabled={isGenerating}
+                        >
+                          {isGenerating ? '⏳ Génération en cours…' : `🚀 Lancer la génération (${selectedLayer})`}
+                        </button>
+                      </div>
+                    ) : (
                       <div>
                         <div className="flex justify-between items-center mb-2">
                           <h4 className="font-semibold text-lg">
@@ -1650,7 +1676,7 @@ export function ProjectDetailPageContent() {
                                 key={p.id || idx} 
                                 onClick={() => setSelectedProposalId(p.id)}
                                 className={`p-4 border rounded-md cursor-pointer transition-all ${
-                                  isSelected ? 'border-primary shadow-md ring-1 ring-primary' : 'border-border hover:border-gray-400'
+                                  isSelected ? 'proposal-card--selected' : 'border-border hover:border-gray-400'
                                 } ${brainstormingMode ? 'bg-surface relative' : 'bg-surface'}`}
                                 tabIndex={0}
                                 role="option"
@@ -1834,29 +1860,29 @@ export function ProjectDetailPageContent() {
                           )}
                         </div>
 
-                        {/* Zone 1 : Actions Directes (en l'état) */}
+                        {/* Zone 1 : Actions Directes */}
                         <div className="flex flex-col gap-1.5">
                           <button 
-                            className="btn btn-sm btn-primary w-full text-xs justify-start" 
+                            className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white border-none w-full text-xs font-semibold justify-start shadow-sm" 
                             onClick={() => handleProposalAction(p.id, 'ACCEPTED')}
                             disabled={p.status === 'ACCEPTED' || isSubmittingAction}
                           >
-                            ✅ Accepter en l&apos;état
+                            ✅ Accepter la proposition
                           </button>
                           <div className="grid grid-cols-2 gap-2">
                             <button 
-                              className="btn btn-sm btn-secondary text-xs" 
+                              className="btn btn-sm bg-red-600 hover:bg-red-700 text-white border-none text-xs font-medium" 
                               onClick={() => handleProposalAction(p.id, 'REJECTED')}
                               disabled={p.status === 'REJECTED' || isSubmittingAction}
                             >
                               ❌ Refuser
                             </button>
                             <button 
-                              className="btn btn-sm btn-secondary text-xs" 
+                              className="btn btn-sm bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 text-xs font-medium" 
                               onClick={() => handleProposalAction(p.id, 'DEFERRED')}
                               disabled={p.status === 'DEFERRED' || isSubmittingAction}
                             >
-                              📋 Prévoir à la Roadmap
+                              📋 Roadmap
                             </button>
                           </div>
                         </div>
