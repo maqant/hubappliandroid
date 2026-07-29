@@ -27,6 +27,7 @@ import type {
   WeavingEdge,
   FeaturePath,
   ProjectedPathNode,
+  HistoricalDuplicateGroup,
 } from "@pbh/domain";
 import { projectFeaturePathsToVisualNodes, normalizeJourneySteps } from "@pbh/domain";
 import {
@@ -151,5 +152,6 @@ export type {
   UpstreamContextPreview,
   FeaturePath,
   ProjectedPathNode,
+  HistoricalDuplicateGroup,
 };
 export { projectFeaturePathsToVisualNodes, normalizeJourneySteps };

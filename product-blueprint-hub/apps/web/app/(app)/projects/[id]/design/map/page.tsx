@@ -28,6 +28,7 @@ import {
   normalizeJourneySteps
 } from "@/services";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
+import { DuplicateDetectionModal } from "@/components/DuplicateDetectionModal";
 import { exportMapImageOnly } from "@/lib/export/analysis-export";
 
 type ProjectionMode = 'EXPERIENCE_PATHS' | 'STRATEGIC_MAP' | 'GLOBAL_GRAPH';
@@ -91,9 +92,10 @@ function DesignMapPageContent() {
   const [showOrphans, setShowOrphans] = useState(true);
   const [isolatedPathId, setIsolatedPathId] = useState<string | null>(null);
 
-  // Export & Canvas Ref
+  // Export & Duplicate Modal state
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [project, setProject] = useState<any>(null);
 
   const showToast = (msg: string) => {
@@ -598,6 +600,12 @@ function DesignMapPageContent() {
           <button className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-md font-medium" onClick={loadGraphData}>
             🔄 Rafraîchir
           </button>
+          <button 
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-xs flex items-center gap-1 shadow-sm"
+            onClick={() => setIsDuplicateModalOpen(true)}
+          >
+            🔍 Auditer les doublons
+          </button>
           <button className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-medium border border-slate-300" onClick={() => { fitView({ padding: 0.2, duration: 800 }); analysisLogCollector.addEntry({ timestamp: new Date().toISOString(), level: "INFO", category: "CARTOGRAPHY", message: "CARTOGRAPHY_FITVIEW_EXECUTED", context: { fitViewExecuted: true }}); }}>
             🔍 Ajuster à l&apos;écran
           </button>
@@ -889,6 +897,16 @@ function DesignMapPageContent() {
         projectTitle={project?.title}
         getMapElement={() => canvasRef.current}
         showToast={(msg) => showToast(msg)}
+      />
+
+      {/* Duplicate Detection Modal */}
+      <DuplicateDetectionModal
+        isOpen={isDuplicateModalOpen}
+        onClose={() => setIsDuplicateModalOpen(false)}
+        projectId={projectId as EntityId}
+        proposals={allProposals}
+        onMerged={loadGraphData}
+        showToast={showToast}
       />
     </div>
   );

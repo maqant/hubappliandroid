@@ -25,6 +25,7 @@ import {
 } from "@/services";
 import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
+import { DuplicateDetectionModal } from "@/components/DuplicateDetectionModal";
 
 type TabId =
   | "sources"
@@ -150,6 +151,7 @@ export function ProjectDetailPageContent() {
   const [resolveRationale, setResolveRationale] = useState("");
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
 
   const showToast = (type: string, message: string) => {
     setToast({ type, message });
@@ -1357,6 +1359,13 @@ export function ProjectDetailPageContent() {
                         {isGenerating ? '⏳ Exploration…' : '✨ Nouvelle variation'}
                       </button>
                     )}
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setIsDuplicateModalOpen(true)}
+                      title="Auditer et fusionner les doublons historiques (JOURNEY & SCREEN)"
+                    >
+                      🔍 Auditer les doublons
+                    </button>
                     <button
                       className="btn btn-secondary btn-sm"
                       onClick={() => setIsExportModalOpen(true)}
@@ -2702,6 +2711,16 @@ export function ProjectDetailPageContent() {
         onClose={() => setIsExportModalOpen(false)}
         projectId={projectId as EntityId}
         projectTitle={project?.name || (project as any)?.title}
+        showToast={(msg) => showToast("info", msg)}
+      />
+
+      {/* Duplicate Detection Modal */}
+      <DuplicateDetectionModal
+        isOpen={isDuplicateModalOpen}
+        onClose={() => setIsDuplicateModalOpen(false)}
+        projectId={projectId as EntityId}
+        proposals={persistedProposals}
+        onMerged={loadProposals}
         showToast={(msg) => showToast("info", msg)}
       />
 
