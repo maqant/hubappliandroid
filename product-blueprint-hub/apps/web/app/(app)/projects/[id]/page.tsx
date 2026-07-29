@@ -267,7 +267,7 @@ export function ProjectDetailPageContent() {
     } catch (e) {
       console.error('Failed to load layer counts:', e);
     }
-  }, [projectId, selectedLayer, svc, workshopResult]);
+  }, [projectId, selectedLayer, svc]);
 
   // Load proposals when switching to design tab or changing layer
   useEffect(() => {
