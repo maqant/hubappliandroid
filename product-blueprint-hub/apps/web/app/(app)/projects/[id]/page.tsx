@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useParams, useRouter, useSearchParams, usePathname } from "next/navigation";
-import { analysisLogCollector } from "@/lib/export/analysis-log-collector";
 import {
   useServices,
   type Project,
@@ -18,16 +17,12 @@ import {
   type ExecutionPackage,
   type RunEvent,
   type EntityId,
-  type DesignLayer,
-  type DesignProposal,
   type DesignBaselineSummary,
-  type UpstreamContextPreview,
   type PlatformConsistencyReport,
   computePlatformConsistency,
 } from "@/services";
 import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
-import { DuplicateDetectionModal } from "@/components/DuplicateDetectionModal";
 
 type TabId =
   | "sources"
@@ -42,20 +37,7 @@ type TabId =
   | "package"
   | "settings";
 
-const LAYER_INFO: Record<DesignLayer, { title: string; icon: string; desc: string; question: string }> = {
-  INTENTION: { title: "Intention", icon: "🎯", desc: "La vision et les objectifs métier fondamentaux.", question: "Pourquoi ce produit existe-t-il ?" },
-  HYPOTHESIS: { title: "Hypothèse", icon: "🔬", desc: "Les paris sur les utilisateurs et le marché à prouver.", question: "Que devons-nous valider ?" },
-  CAPABILITY: { title: "Capacité", icon: "⚙️", desc: "Les grandes aptitudes que le système doit offrir.", question: "De quoi le système doit-il être capable ?" },
-  FEATURE: { title: "Fonctionnalité", icon: "🧩", desc: "Les modules fonctionnels précis concrétisant les capacités.", question: "Comment le produit répond-il aux besoins ?" },
-  JOURNEY: { title: "Parcours", icon: "🗺️", desc: "Les étapes vécues par l'utilisateur de bout en bout.", question: "Comment l'utilisateur navigue-t-il ?" },
-  SCREEN: { title: "Écran", icon: "🖥️", desc: "Les vues et éléments d'interface affichés.", question: "Que voit et manipule l'utilisateur ?" },
-};
 
-const formatConfidence = (confidence?: number): string => {
-  if (confidence === undefined || confidence === null) return "80%";
-  const val = confidence <= 1 ? confidence * 100 : confidence;
-  return `${Math.round(val)}%`;
-};
 
 export function ProjectDetailPageContent() {
   const params = useParams();
@@ -92,52 +74,7 @@ export function ProjectDetailPageContent() {
   const [pkg, setPkg] = useState<ExecutionPackage | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   
-  const [generationError, setGenerationError] = useState<string | null>(null);
-  const [workshopResult, setWorkshopResult] = useState<any>(null);
-  const [selectedLayer, setSelectedLayer] = useState<DesignLayer>("INTENTION");
-  const [layerAgentStatuses, setLayerAgentStatuses] = useState<
-    Record<string, Record<string, string>>
-  >({});
 
-  const updateAgentStatus = (layer: string, agentId: string, status: string) => {
-    setLayerAgentStatuses((prev) => ({
-      ...prev,
-      [layer]: { ...(prev[layer] ?? {}), [agentId]: status },
-    }));
-  };
-
-  const resetLayerStatuses = (layer: string) => {
-    setLayerAgentStatuses((prev) => ({ ...prev, [layer]: {} }));
-  };
-  
-  // Ideation Swarm states
-  const [ideationIntensity, setIdeationIntensity] = useState<'STANDARD' | 'ABUNDANT' | 'EXHAUSTIVE'>('ABUNDANT');
-  const brainstormingMode = true; // Mode créatif unique et permanent
-  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
-  const [isVariationModalOpen, setIsVariationModalOpen] = useState(false);
-  const [isReplacementModalOpen, setIsReplacementModalOpen] = useState(false);
-  const [userDiversityFocus, setUserDiversityFocus] = useState("");
-  const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>("ALL");
-  const [generationSummaryModal, setGenerationSummaryModal] = useState<{
-    open: boolean;
-    title: string;
-    receivedCount: number;
-    addedCount: number;
-    duplicateCount: number;
-    invalidCount: number;
-    toReviewCount: number;
-    diversityFocus?: string | null;
-  } | null>(null);
-  const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
-  const [persistedProposals, setPersistedProposals] = useState<DesignProposal[]>([]);
-  const [layerProposalCounts, setLayerProposalCounts] = useState<Record<string, number>>({});
-  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
-  const [featurePaths, setFeaturePaths] = useState<import("@pbh/domain").FeaturePath[]>([]);
-  const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
-  const [upstreamPreview, setUpstreamPreview] = useState<UpstreamContextPreview | null>(null);
-  const [upstreamPanelOpen, setUpstreamPanelOpen] = useState(false);
-  const [deferredCount, setDeferredCount] = useState(0);
-  const [userFeedbackText, setUserFeedbackText] = useState("");
   
   // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -152,7 +89,6 @@ export function ProjectDetailPageContent() {
   const [resolveRationale, setResolveRationale] = useState("");
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [isPlatformModalOpen, setIsPlatformModalOpen] = useState(false);
   const [selectedPlatformChoice, setSelectedPlatformChoice] = useState<'ANDROID_EXPO' | 'WEB_NEXTJS' | null>(null);
   const [isConfirmingPlatform, setIsConfirmingPlatform] = useState(false);
@@ -219,93 +155,7 @@ export function ProjectDetailPageContent() {
     load();
   }, [load]);
 
-  // Load persisted proposals for the current layer
-  const loadProposals = useCallback(async () => {
-    try {
-      const proposals = await svc.designWorkshop.getProposals(projectId as EntityId, selectedLayer);
-      setPersistedProposals(proposals);
-      // Map persisted proposals from repository ensuring layer property is set
-      const mappedProposals = proposals.map(p => ({
-        id: p.id,
-        layer: p.layer || selectedLayer,
-        title: p.title,
-        description: p.description,
-        shortPitch: p.shortPitch || p.title,
-        type: p.category,
-        originPerspective: p.originPerspective || 'Système',
-        confidence: p.confidence || 50,
-        priority: p.priority || 'MEDIUM',
-        complexity: p.complexity || 'M',
-        justification: p.rationale,
-        userValue: p.userValue || '',
-        dependencies: p.dependencyIds || [],
-        childrenIds: p.childrenIds || [],
-        parentId: p.parentId || null,
-        status: p.status,
-        generationBatchId: p.generationBatchId,
-        generationMode: p.generationMode,
-        variationIndex: p.variationIndex,
-      }));
 
-      // Ensure workshopResult is initialized if proposals exist
-      if (proposals.length > 0) {
-        setWorkshopResult((prev: any) => ({
-          ...prev,
-          proposals: mappedProposals,
-          summary: prev?.summary || `${proposals.length} propositions existantes pour la couche ${selectedLayer}`,
-          questions: prev?.questions || [],
-          assumptions: prev?.assumptions || [],
-          warnings: prev?.warnings || [],
-        }));
-      }
-    } catch (e) {
-      console.error('Failed to load proposals:', e);
-    }
-    // Also load counts for all layers
-    try {
-      const layers: DesignLayer[] = ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'];
-      const counts: Record<string, number> = {};
-      for (const layer of layers) {
-        const ps = await svc.designWorkshop.getProposals(projectId as EntityId, layer);
-        counts[layer] = ps.length;
-      }
-      setLayerProposalCounts(counts);
-    } catch (e) {
-      console.error('Failed to load layer counts:', e);
-    }
-  }, [projectId, selectedLayer, svc]);
-
-  // Load proposals when switching to design tab or changing layer
-  useEffect(() => {
-    if (activeTab === 'design') {
-      loadProposals();
-    }
-  }, [activeTab, selectedLayer, loadProposals]);
-
-  // Load upstream context preview when layer changes (design tab)
-  useEffect(() => {
-    if (activeTab !== 'design' || !projectId) return;
-    svc.designWorkshop.getUpstreamContextPreview(projectId as EntityId, selectedLayer)
-      .then(preview => setUpstreamPreview(preview))
-      .catch(() => setUpstreamPreview(null));
-  }, [activeTab, selectedLayer, projectId, svc]);
-
-  // Load deferred count across all layers
-  useEffect(() => {
-    if (activeTab !== 'design' || !projectId) return;
-    const allLayers: DesignLayer[] = ['INTENTION', 'HYPOTHESIS', 'CAPABILITY', 'FEATURE', 'JOURNEY', 'SCREEN'];
-    Promise.all(allLayers.map(l => svc.designWorkshop.getProposals(projectId as EntityId, l)))
-      .then(results => {
-        const count = results.flatMap(r => r).filter(p => p.status === 'DEFERRED').length;
-        setDeferredCount(count);
-      })
-      .catch(() => {});
-  }, [activeTab, projectId, svc]);
-
-  // Clear feedback text when switching selected proposal
-  useEffect(() => {
-    setUserFeedbackText("");
-  }, [selectedProposalId]);
 
   // ---- Actions ----
 
@@ -438,204 +288,9 @@ export function ProjectDetailPageContent() {
     }
   };
 
-  const currentLayerProposals = useMemo(() => {
-    if (persistedProposals && persistedProposals.length > 0) {
-      return persistedProposals.map((p: any) => ({
-        id: p.id,
-        layer: p.layer || selectedLayer,
-        title: p.title,
-        description: p.description,
-        shortPitch: p.shortPitch || p.title,
-        type: p.category,
-        originPerspective: p.originPerspective || 'Système',
-        confidence: p.confidence || 50,
-        priority: p.priority || 'MEDIUM',
-        complexity: p.complexity || 'M',
-        justification: p.rationale,
-        userValue: p.userValue || '',
-        dependencies: p.dependencyIds || [],
-        childrenIds: p.childrenIds || [],
-        parentId: p.parentId || null,
-        status: p.status,
-        generationBatchId: p.generationBatchId,
-        generationMode: p.generationMode,
-        variationIndex: p.variationIndex,
-      }));
-    }
-    if (!workshopResult?.proposals) return [];
-    return workshopResult.proposals.filter((p: any) => !p.layer || p.layer === selectedLayer);
-  }, [persistedProposals, workshopResult, selectedLayer]);
-
-  const batches = useMemo(() => {
-    const map = new Map<string, { id: string; label: string; count: number }>();
-    currentLayerProposals.forEach((p: any) => {
-      const bId = p.generationBatchId || 'LEGACY';
-      if (!map.has(bId)) {
-        let label = "Génération antérieure";
-        if (p.generationBatchId) {
-          if (p.generationMode === 'INITIAL' || p.variationIndex === 0) label = "Génération initiale";
-          else if (p.generationMode === 'REPLACEMENT') label = `Remplacement (Var ${p.variationIndex || 1})`;
-          else label = `Variation ${p.variationIndex || 1}`;
-        }
-        map.set(bId, { id: bId, label, count: 0 });
-      }
-      map.get(bId)!.count++;
-    });
-    return Array.from(map.values());
-  }, [currentLayerProposals]);
-
-  const lastBatch = useMemo(() => {
-    const valid = batches.filter(b => b.id !== 'LEGACY');
-    return valid.length > 0 ? valid[valid.length - 1] : null;
-  }, [batches]);
-
-  const filteredProposals = useMemo(() => {
-    if (selectedBatchFilter === 'ALL') return currentLayerProposals;
-    return currentLayerProposals.filter((p: any) => (p.generationBatchId || 'LEGACY') === selectedBatchFilter);
-  }, [currentLayerProposals, selectedBatchFilter]);
-
   const platformReport: PlatformConsistencyReport = useMemo(() => {
-    return computePlatformConsistency(project, persistedProposals as any[]);
-  }, [project, persistedProposals]);
-
-  const executeGeneration = async (mode: 'INITIAL' | 'VARIATION' | 'REPLACEMENT' = 'INITIAL', focus?: string, sourceBatchId?: string | null) => {
-    if (isGenerating) return;
-    setIsGenerating(true);
-    setGenerationError(null);
-    resetLayerStatuses(selectedLayer);
-    try {
-      const result = await svc.designWorkshop.generateProposals(
-        projectId as EntityId,
-        selectedLayer,
-        ideationIntensity,
-        true,
-        (agentId, status) => {
-          updateAgentStatus(selectedLayer, agentId, status);
-        },
-        {
-          generationMode: mode,
-          sourceBatchId: sourceBatchId || null,
-          userDiversityFocus: focus || undefined,
-          onLog: (event: any) => {
-            analysisLogCollector.addEntry({
-              timestamp: new Date().toISOString(),
-              level: "INFO",
-              category: event.category || "GENERATION",
-              message: event.message,
-              context: event.context
-            });
-          }
-        }
-      );
-      setWorkshopResult(result);
-      load();
-      loadProposals();
-
-      const added = result.addedCount ?? result.proposals?.length ?? 0;
-      const received = result.receivedCount ?? result.proposals?.length ?? 0;
-      const dupes = result.duplicateCount ?? 0;
-      const invalid = result.diagnostic?.invalidCount ?? 0;
-
-      if (added === 0 && mode !== 'INITIAL') {
-        showToast("info", "Aucune proposition suffisamment différente n'a été trouvée. Essayez un angle d'exploration plus précis.");
-      } else {
-        showToast("success", mode === 'INITIAL' ? "Génération initiale terminée" : mode === 'REPLACEMENT' ? "Remplacement terminé" : "Nouvelle variation terminée");
-      }
-
-      setGenerationSummaryModal({
-        open: true,
-        title: mode === 'INITIAL' ? "Génération initiale terminée" : mode === 'REPLACEMENT' ? "Remplacement terminé" : "Nouvelle variation terminée",
-        receivedCount: received,
-        addedCount: added,
-        duplicateCount: dupes,
-        invalidCount: invalid,
-        toReviewCount: added,
-        diversityFocus: result.userDiversityFocus || focus || null
-      });
-    } catch (e: any) {
-      setGenerationError(e.message || String(e));
-      showToast("error", e.message || String(e));
-    } finally {
-      setIsGenerating(false);
-      setIsVariationModalOpen(false);
-      setIsReplacementModalOpen(false);
-      setUserDiversityFocus("");
-    }
-  };
-
-  const handleGenerateProposals = () => executeGeneration(currentLayerProposals.length === 0 ? 'INITIAL' : 'VARIATION');
-  void isReplacementModalOpen;
-  void setSelectedBatchFilter;
-  void lastBatch;
-  void handleGenerateProposals;
-
-  const handleProposalAction = async (proposalId: string, action: 'ACCEPTED' | 'REJECTED' | 'DEFERRED' | 'PROPOSED') => {
-    try {
-      await svc.designWorkshop.updateProposalStatus(proposalId as EntityId, action);
-      // Update workshopResult in-place for instant UI feedback
-      setWorkshopResult((prev: any) => {
-        if (!prev?.proposals) return prev;
-        return {
-          ...prev,
-          proposals: prev.proposals.map((p: any) =>
-            p.id === proposalId ? { ...p, status: action } : p
-          ),
-        };
-      });
-      const labels: Record<string, string> = { ACCEPTED: 'acceptée', REJECTED: 'refusée', DEFERRED: 'reportée à la roadmap', PROPOSED: 'réinitialisée' };
-      showToast("success", `Proposition ${labels[action] || action}`);
-      loadProposals(); // Reload counts
-    } catch (e: any) {
-      showToast("error", e.message || String(e));
-    }
-  };
-
-  const handleFeedbackThenAction = async (proposalId: string, action: 'ACCEPTED' | 'DEFERRED') => {
-    const feedback = userFeedbackText.trim();
-    if (!feedback || isSubmittingAction) return;
-    setIsSubmittingAction(true);
-    try {
-      const updated = await svc.designWorkshop.submitUserFeedback(proposalId as EntityId, feedback);
-      setWorkshopResult((prev: any) => {
-        if (!prev?.proposals) return prev;
-        return {
-          ...prev,
-          proposals: prev.proposals.map((p: any) =>
-            p.id === proposalId ? { ...p, justification: updated.rationale } : p
-          ),
-        };
-      });
-      await handleProposalAction(proposalId, action);
-      setUserFeedbackText("");
-    } catch (e: any) {
-      showToast("error", e.message || String(e));
-    } finally {
-      setIsSubmittingAction(false);
-    }
-  };
-
-  const handleBulkAccept = async () => {
-    for (const id of selectedProposalIds) {
-      await handleProposalAction(id, 'ACCEPTED');
-    }
-    setSelectedProposalIds(new Set());
-  };
-
-  const handleDownloadRoadmap = async () => {
-    try {
-      const md = await svc.designWorkshop.generateDeferredRoadmap(projectId as EntityId);
-      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `roadmap-deferred-${projectId}.md`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('success', '📋 Roadmap des idées reportées générée et téléchargée !');
-    } catch (e: any) {
-      showToast('error', e.message || String(e));
-    }
-  };
+    return computePlatformConsistency(project, []);
+  }, [project]);
 
   const handleFreezeDesignBaseline = async () => {
     if (!window.confirm("Geler la baseline de conception ? Les propositions acceptées seront scellées comme référence pour la mission.")) return;
@@ -643,47 +298,11 @@ export function ProjectDetailPageContent() {
     try {
       await svc.designWorkshop.freezeBaseline(projectId as EntityId, "v1", "User");
       showToast("success", "Conception validée avec succès ! La mission peut maintenant être lancée dans l'onglet Organisation.");
-      await load(); // Reload project to update designStatus to 'VALIDATED'
+      await load();
     } catch (e: any) {
       showToast("error", e.message || String(e));
     } finally {
       setIsFreezing(false);
-    }
-  };
-
-
-  const handleGenerateVerticalPaths = async () => {
-    if (isGenerating) return;
-    setIsGenerating(true);
-    setGenerationError(null);
-    showToast("info", "🚀 Lancement de l'essaimage vertical (CAPABILITY -> FEATURE -> JOURNEY -> SCREEN)...");
-    try {
-      const res = await svc.designWorkshop.generateVerticalPathsFromCapabilities(
-        projectId as EntityId,
-        ideationIntensity,
-        brainstormingMode
-      );
-      setFeaturePaths(res.paths);
-      showToast("success", res.summary);
-      await loadProposals();
-    } catch (e: any) {
-      setGenerationError(e.message || String(e));
-      showToast("error", e.message || String(e));
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleArbitratePath = async (capabilityId: EntityId, action: 'ACCEPT_PROPOSED' | 'DEFER_PROPOSED' | 'REJECT_BRANCH') => {
-    try {
-      const res = await svc.designWorkshop.arbitratePath(projectId as EntityId, capabilityId, action);
-      const labels = { ACCEPT_PROPOSED: 'acceptées', DEFER_PROPOSED: 'reportées à la roadmap', REJECT_BRANCH: 'refusées' };
-      showToast("success", `${res.updatedCount} proposition(s) du path ${labels[action]}`);
-      await loadProposals();
-      const updatedPaths = await svc.designWorkshop.getFeaturePaths(projectId as EntityId);
-      setFeaturePaths(updatedPaths);
-    } catch (e: any) {
-      showToast("error", e.message || String(e));
     }
   };
 
@@ -1292,14 +911,7 @@ export function ProjectDetailPageContent() {
             )}
           </div>
         )}
-                  <div className="flex-1 flex items-center justify-center text-muted border-2 border-dashed border-border rounded-lg p-4 text-center">
-                    Sélectionnez une proposition pour voir ses détails et agir dessus.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+
         {activeTab === "decisions" && (
           <div>
             <h2 className="mb-4">{t("tab.decisions")}</h2>
@@ -2157,96 +1769,7 @@ export function ProjectDetailPageContent() {
         showToast={(msg) => showToast("info", msg)}
       />
 
-      {/* Duplicate Detection Modal */}
-      <DuplicateDetectionModal
-        isOpen={isDuplicateModalOpen}
-        onClose={() => setIsDuplicateModalOpen(false)}
-        projectId={projectId as EntityId}
-        proposals={persistedProposals}
-        onMerged={loadProposals}
-        showToast={(msg) => showToast("info", msg)}
-      />
 
-      {/* Modal Nouvelle Variation */}
-      {isVariationModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface p-6 rounded-lg max-w-md w-full border border-border shadow-xl space-y-4">
-            <h3 className="text-lg font-bold">Générer une nouvelle variation</h3>
-            <p className="text-sm text-muted">
-              L’IA cherchera de nouvelles propositions différentes de celles déjà générées pour cette couche. Les propositions actuelles seront conservées.
-            </p>
-            <div className="bg-muted p-3 rounded-md text-xs space-y-1">
-              <div><span className="font-semibold">Couche :</span> {selectedLayer}</div>
-              <div><span className="font-semibold">Propositions existantes conservées :</span> {currentLayerProposals.length}</div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Angle à explorer (optionnel)</label>
-              <input
-                type="text"
-                className="input w-full"
-                placeholder="Exemple : simplicité, automatisation, usage hors ligne, accessibilité…"
-                value={userDiversityFocus}
-                onChange={(e) => setUserDiversityFocus(e.target.value)}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  setIsVariationModalOpen(false);
-                  setUserDiversityFocus("");
-                }}
-              >
-                Annuler
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                disabled={isGenerating}
-                onClick={() => executeGeneration('VARIATION', userDiversityFocus)}
-              >
-                {isGenerating ? '⏳ Génération…' : '✨ Générer une nouvelle variation'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Résumé de Génération */}
-      {generationSummaryModal && generationSummaryModal.open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface p-6 rounded-lg max-w-md w-full border border-border shadow-xl space-y-4">
-            <h3 className="text-lg font-bold text-green-700 dark:text-green-400">{generationSummaryModal.title}</h3>
-            {generationSummaryModal.addedCount === 0 ? (
-              <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded-md text-sm">
-                Aucune proposition suffisamment différente n’a été trouvée. Essayez un angle d’exploration plus précis.
-              </div>
-            ) : (
-              <div className="space-y-2 text-sm">
-                {generationSummaryModal.diversityFocus && (
-                  <div className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 p-2 rounded">
-                    🎯 <strong>Angle d&apos;exploration :</strong> {generationSummaryModal.diversityFocus}
-                  </div>
-                )}
-                <ul className="divide-y divide-border border rounded-md text-xs">
-                  <li className="p-2 flex justify-between"><span>Propositions reçues :</span><span className="font-bold">{generationSummaryModal.receivedCount}</span></li>
-                  <li className="p-2 flex justify-between text-green-700 dark:text-green-400"><span>Nouvelles propositions ajoutées :</span><span className="font-bold">+{generationSummaryModal.addedCount}</span></li>
-                  <li className="p-2 flex justify-between text-amber-700 dark:text-amber-400"><span>Doublons écartés :</span><span className="font-bold">{generationSummaryModal.duplicateCount}</span></li>
-                  <li className="p-2 flex justify-between text-gray-500"><span>Propositions invalides écartées :</span><span className="font-bold">{generationSummaryModal.invalidCount}</span></li>
-                  <li className="p-2 flex justify-between font-bold border-t"><span>Propositions à examiner :</span><span>{generationSummaryModal.toReviewCount}</span></li>
-                </ul>
-              </div>
-            )}
-            <div className="flex justify-end pt-2">
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => setGenerationSummaryModal(null)}
-              >
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal de Résolution de Plateforme Cible */}
       {isPlatformModalOpen && (
