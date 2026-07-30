@@ -1404,13 +1404,30 @@ export function ProjectDetailPageContent() {
                     <span>⚡ <strong>{piContradictions.filter((c) => c.status === "OPEN").length}</strong> contradictions</span>
                     <span>🎯 <strong>{piConsequences.filter((c) => c.status === "PROPOSED").length}</strong> conséquences à arbitrer</span>
                   </div>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={handleStartInterview}
-                    disabled={isInitializingInterview || isProcessingTurn}
-                  >
-                    🔄 Réinitialiser
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-outline btn-primary btn-sm"
+                      onClick={async () => {
+                        if (!piSession) return;
+                        try {
+                          await svc.productInterview.requestEarlyReview(piSession.id);
+                          showToast("info", "Relecture anticipée demandée ! L'Architecte adaptera son prochain tour vers la synthèse.");
+                          load();
+                        } catch (e: any) {
+                          showToast("error", e.message || String(e));
+                        }
+                      }}
+                    >
+                      🎯 Préparer la relecture maintenant
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleStartInterview}
+                      disabled={isInitializingInterview || isProcessingTurn}
+                    >
+                      🔄 Réinitialiser
+                    </button>
+                  </div>
                 </div>
 
                 {/* Pending Decisions Alert Banner */}

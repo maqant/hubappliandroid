@@ -31,6 +31,7 @@ import {
 } from "@pbh/domain";
 import { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
+import { computeThemeSaturation, computeAdaptiveBudget, validateArcs } from "./theme-saturation-engine";
 
 export class ProductInterviewService {
   constructor(
@@ -252,6 +253,8 @@ export class ProductInterviewService {
     // 1. Evaluate Axis States & Select Target
     const currentAxisStates = evaluateAxes(assertions);
     const questionTarget = selectNextQuestionTarget(currentAxisStates, session.maturityStep, contradictions);
+    const themeSaturation = computeThemeSaturation(assertions, session.questionCount);
+    const adaptiveBudget = computeAdaptiveBudget(themeSaturation, session.questionCount, (session as any).userRequestedEarlyReview);
 
     // 2. Active Sources for LLM Context (Filter out INACTIVE sources)
     const allSources = await this.repos.sources.getByProjectId(projectId);
@@ -268,6 +271,9 @@ export class ProductInterviewService {
         excerpt: s.content.slice(0, 300),
       })),
       session: { status: session.status, maturityStep: session.maturityStep, questionCount: session.questionCount },
+      themeSaturation,
+      adaptiveBudget,
+      userRequestedEarlyReview: !!(session as any).userRequestedEarlyReview,
       targetToClarify: {
         axis: questionTarget.axis,
         sectionId: AXIS_TO_SECTION[questionTarget.axis],
@@ -282,15 +288,16 @@ export class ProductInterviewService {
     const activePromptTemplate = await this.repos.prompts.getActivePrompt("PRODUCT-INTERVIEW-ARCHITECT");
     const systemPrompt =
       activePromptTemplate?.systemPrompt ||
-      "Tu es l'Architecte Produit. Pose UNE SEULE question ciblée et propose d'éventuelles conséquences structurées.";
+      "Tu es l'Architecte Produit visible de Product Blueprint Hub. Tu conduis un entretien humain, adaptatif et convergent.";
 
     const fullPrompt = `[CONTEXTE COMPACT ET CIBLE ORBITE]
 ${JSON.stringify(compactContext, null, 2)}
 
-[CONSIGNE IMPÉRATIVE DE CIBLAGE]
+[CONSIGNE IMPÉRATIVE DE CIBLAGE ET CONVERGENCE]
 Votre prochaine question doit OBLIGATOIREMENT cibler l'axe ORBITE : "${questionTarget.axis}" (Section affectée : ${AXIS_TO_SECTION[questionTarget.axis]}).
 Raison du ciblage : ${questionTarget.reason}.
 Catégorie de la réponse utilisateur : ${category}.
+Budget adaptatif : ${adaptiveBudget.shouldTransitionToReview ? "Proposer une synthèse ou la relecture finale." : `Questions restantes cibles: ${adaptiveBudget.remainingQuestions}`}
 
 [DERNIER MESSAGE UTILISATEUR]
 ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
@@ -324,6 +331,10 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     const val = validateProductArchitectResponse(parsed);
     if (!val.valid) {
       throw new Error(`Contrat IA violé : ${val.reason}`);
+    }
+
+    if (parsed.arcs) {
+      (parsed as any).arcs = validateArcs(parsed.arcs);
     }
 
     // Process Proposed Consequences
@@ -774,6 +785,13 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     return computePreReviewReadiness(session, assertions, blueprint, consequences, contradictions);
   }
 
+  async requestEarlyReview(sessionId: EntityId): Promise<void> {
+    const session = await this.repos.productInterviewSessions.getById(sessionId);
+    if (!session) throw new Error("Session non trouvée");
+    (session as any).userRequestedEarlyReview = true;
+    await this.repos.productInterviewSessions.save(session);
+  }
+
   async requestFinalReview(sessionId: EntityId): Promise<OrbiteReviewResult> {
     const readiness = await this.checkPreReviewReadiness(sessionId);
     if (!readiness.ready) {
@@ -930,6 +948,12 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
       arbitratedFindings,
       canonicalInventories,
       narrativeSummary: narrativeSummary || "Baseline de cadrage validée par l'utilisateur.",
+      arcs: (session as any).arcs || [],
+      roadmap: (session as any).roadmap || [],
+      extensionPoints: (session as any).extensionPoints || [],
+      remainingDecisions: (session as any).remainingDecisions || [],
+      themeSaturation: computeThemeSaturation(assertions, session.questionCount),
+      promptVersion: "2",
     };
 
     await this.repos.productInterviewBaselines.save(baseline);

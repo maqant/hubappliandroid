@@ -411,7 +411,107 @@ export interface TurnImpactSummary {
   readonly updatedSectionsCount: number;
 }
 
+// ─── Chantier 10B — Arcs Produit, Roadmap, Points d'Extension & Saturation ───
+
+export type ThemeFamily =
+  | 'HUMAN_CONTEXT'
+  | 'PAIN_AND_COST'
+  | 'PROMISE_AND_VALUE'
+  | 'VALUE_LOOP'
+  | 'MVP_AND_SCOPE'
+  | 'DATA_AND_TRUST'
+  | 'WEAK_STATES'
+  | 'EVOLUTION';
+
+export type ArcHorizon =
+  | 'MVP_CORE'
+  | 'MVP_SUPPORT'
+  | 'NEXT'
+  | 'FUTURE'
+  | 'EXCLUDED'
+  | 'UNKNOWN_HORIZON';
+
+export type ArcStatus =
+  | 'PROPOSED'
+  | 'CONFIRMED'
+  | 'CORRECTED'
+  | 'DEFERRED'
+  | 'EXCLUDED'
+  | 'SUPERSEDED';
+
+export interface ProductArc {
+  readonly id: EntityId;
+  readonly projectId: EntityId;
+  readonly sessionId?: EntityId;
+  readonly title: string;
+  readonly summary: string;
+  readonly purpose?: string;
+  readonly trigger?: string;
+  readonly outcome?: string;
+  readonly relationToPromise?: string;
+  readonly horizon: ArcHorizon;
+  readonly status: ArcStatus;
+  readonly confidence?: number;
+  readonly supportingAssertionIds?: EntityId[];
+  readonly affectedSectionIds?: BlueprintSectionId[];
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly version?: number;
+}
+
+export interface RoadmapItem {
+  readonly id: EntityId;
+  readonly projectId: EntityId;
+  readonly sessionId?: EntityId;
+  readonly relatedArcId?: EntityId;
+  readonly bucket: 'NEXT_EVOLUTION' | 'LATER' | 'OUT_OF_SCOPE';
+  readonly label: string;
+  readonly purpose?: string;
+  readonly horizon?: ArcHorizon;
+  readonly deferReason?: string;
+  readonly likelyDependencies?: string[];
+  readonly extensionPointToPreserve?: string;
+  readonly mustNotBuildNow?: string;
+  readonly reconsiderWhen?: string;
+  readonly status?: 'DEFERRED' | 'PROPOSED' | 'CONFIRMED';
+  readonly provenance?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly version?: number;
+}
+
+export interface ExtensionPoint {
+  readonly id: EntityId;
+  readonly projectId: EntityId;
+  readonly sessionId?: EntityId;
+  readonly relatedArcId?: EntityId;
+  readonly description: string;
+  readonly evolutionConcerned?: string;
+  readonly decisionToNotFreeze?: string;
+  readonly boundaryToPreserve?: string;
+  readonly mustNotBuildNow?: string;
+  readonly reconsiderCondition?: string;
+  readonly impact?: string;
+  readonly provenance?: string;
+}
+
+export interface RemainingDecision {
+  readonly id: EntityId;
+  readonly question: string;
+  readonly category: 'BLOCKING_DECISION' | 'IMPORTANT_DECISION' | 'SPECIALIST_DECISION' | 'FUTURE_DECISION';
+  readonly themeFamily?: ThemeFamily;
+  readonly blocking: boolean;
+}
+
+export interface ThemeSaturationState {
+  readonly family: ThemeFamily;
+  readonly score: number; // 0..1, déterministe
+  readonly assertionCount: number;
+  readonly saturated: boolean;
+}
+
 export interface ProductArchitectResponse {
+  readonly schemaVersion?: 'v1' | 'v2';
   readonly assistantMessage: string;
   readonly question?: SingleQuestion | null;
   readonly answerClassification?: { category: AnswerCategory; explanation?: string };
@@ -424,7 +524,16 @@ export interface ProductArchitectResponse {
   readonly readiness: ReadinessEvaluation;
   readonly turnImpact?: TurnImpactSummary;
   readonly questionTarget?: { axis: OrbiteAxis; reason?: string };
+  readonly arcs?: ProductArc[];
+  readonly roadmap?: RoadmapItem[];
+  readonly extensionPoints?: ExtensionPoint[];
+  readonly remainingDecisions?: RemainingDecision[];
+  readonly saturation?: ThemeSaturationState[];
+  readonly transition?: string;
+  readonly requestedPhaseTransition?: 'CONTINUE' | 'REVIEW';
 }
+
+export type ProductArchitectResponseV2 = ProductArchitectResponse;
 
 /**
  * Valide le contrat de réponse IA.
@@ -1085,6 +1194,12 @@ export interface ProductInterviewBaseline {
   readonly arbitratedFindings: ReviewFinding[];
   readonly canonicalInventories: CanonicalInventories;
   readonly narrativeSummary: string;
+  readonly arcs?: ProductArc[];
+  readonly roadmap?: RoadmapItem[];
+  readonly extensionPoints?: ExtensionPoint[];
+  readonly remainingDecisions?: RemainingDecision[];
+  readonly themeSaturation?: ThemeSaturationState[];
+  readonly promptVersion?: string;
 }
 
 export const PRODUCT_INTERVIEW_BASELINE_CONTRACT = `
