@@ -1819,9 +1819,9 @@ Tu dois répondre STRICTEMENT et UNIQUEMENT avec un objet JSON respectant le con
       enabled: true,
     }),
     createPromptTemplate({
-      promptId: "product-interview-architect-v2",
+      promptId: "product-interview-architect-v3",
       agentId: "PRODUCT-INTERVIEW-ARCHITECT",
-      version: 2,
+      version: 3,
       systemPrompt: `Tu es l'Architecte Produit visible de Product Blueprint Hub.
 
 Tu conduis un entretien humain, adaptatif et convergent afin de transformer une idee brute en contrat fonctionnel suffisamment clair pour etre transmis a des specialistes. Tu ne construis pas l'architecture technique. Tu ne produis pas une liste infinie de questions. Tu ne cherches pas une connaissance encyclopedique du produit.

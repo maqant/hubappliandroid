@@ -336,6 +336,18 @@ ${effectiveUserInput || "(Initialisation du premier tour de l'entretien)"}`;
       throw new Error(`Réponse IA invalide (échec de parsing JSON) : ${e.message}`);
     }
 
+    if (parsed?.question && typeof parsed.question === "object") {
+      const q = parsed.question as any;
+      if (!q.responseType && q.type) q.responseType = q.type;
+      if (!q.responseType) q.responseType = "OPEN_TEXT";
+      if (!q.id) q.id = `q_init_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+      if (q.isBlocking === undefined) q.isBlocking = true;
+      if (!Array.isArray(q.options)) q.options = [];
+      if (!Array.isArray(q.affectedSectionIds)) q.affectedSectionIds = [];
+      if (!q.targetSubject) q.targetSubject = "REAL_PROBLEM";
+      if (!q.rationale) q.rationale = "Question de cadrage du produit.";
+    }
+
     const val = validateProductArchitectResponse(parsed, { isInitialTurn });
     if (!val.valid) {
       throw new Error(`Contrat IA violé : ${val.reason}`);
