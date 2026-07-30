@@ -163,6 +163,16 @@ class LocalSourceRepository extends LocalRepo<Source> implements ISourceReposito
   async getByProjectId(projectId: EntityId): Promise<Source[]> {
     return this.filter((s) => s.projectId === projectId);
   }
+  async updateContextStatus(sourceId: EntityId, status: import("@pbh/domain").SourceContextStatus): Promise<Source> {
+    const source = await this.getById(sourceId);
+    if (!source) throw new Error("Source non trouvée");
+    const updated: Source = {
+      ...source,
+      contextStatus: status,
+    };
+    await this.save(updated);
+    return updated;
+  }
 }
 
 class LocalBriefItemRepository extends LocalRepo<BriefItem> implements IBriefItemRepository {

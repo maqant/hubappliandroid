@@ -60,6 +60,7 @@ export interface IDesignBaselineRepository extends IRepository<DesignBaseline> {
 
 export interface ISourceRepository extends IRepository<Source> {
   getByProjectId(projectId: EntityId): Promise<Source[]>;
+  updateContextStatus(sourceId: EntityId, status: import("@pbh/domain").SourceContextStatus): Promise<Source>;
 }
 
 export interface IBriefItemRepository extends IRepository<BriefItem> {

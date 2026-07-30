@@ -68,12 +68,14 @@ export function createProject(params: {
 // ============================================
 
 export type SourceType = "TEXT" | "FILE_TXT" | "FILE_MD" | "CONVERSATION";
+export type SourceContextStatus = "ACTIVE" | "INACTIVE";
 
 export interface Source extends BaseEntity, Owned {
   readonly type: SourceType;
   readonly label: string;
   readonly content: string;
   readonly segments: SourceSegment[];
+  readonly contextStatus?: SourceContextStatus;
 }
 
 export interface SourceSegment {

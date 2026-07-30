@@ -26,7 +26,6 @@ import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 
 type TabId =
-  | "sources"
   | "brief"
   | "decisions"
   | "interview"
@@ -53,8 +52,15 @@ export function ProjectDetailPageContent() {
   const [project, setProject] = useState<Project | null>(null);
   
   const rawTab = searchParams.get("tab") as TabId | null;
-  const validTabs: TabId[] = ["sources", "brief", "decisions", "interview", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
-  const activeTab: TabId = rawTab && validTabs.includes(rawTab) ? rawTab : "sources";
+  const validTabs: TabId[] = ["brief", "decisions", "interview", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
+  const activeTab: TabId = rawTab && validTabs.includes(rawTab) ? rawTab : "interview";
+
+  // Redirection transparente pour l'ancienne URL ?tab=sources
+  useEffect(() => {
+    if (searchParams.get("tab") === "sources") {
+      router.replace(`${pathname}?tab=interview&context=open`, { scroll: false });
+    }
+  }, [searchParams, pathname, router]);
 
   const handleTabChange = (newTab: TabId) => {
     router.replace(`${pathname}?tab=${newTab}`, { scroll: false });
@@ -115,6 +121,10 @@ export function ProjectDetailPageContent() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [isValidatingBaseline, setIsValidatingBaseline] = useState(false);
   const [viewMode, setViewMode] = useState<"conversation" | "blueprint">("conversation");
+  const [showContextPanel, setShowContextPanel] = useState<boolean>(searchParams.get("context") === "open");
+  const [newContextLabel, setNewContextLabel] = useState("");
+  const [newContextText, setNewContextText] = useState("");
+  const [newContextType, setNewContextType] = useState<import("@pbh/domain").SourceType>("TEXT");
   const [showJeNeSaisPasOptions, setShowJeNeSaisPasOptions] = useState(false);
   const [isInitializingInterview, setIsInitializingInterview] = useState(false);
 
@@ -585,6 +595,46 @@ export function ProjectDetailPageContent() {
     }
   };
 
+  // ─── Chantier 6 — Handlers Contexte Utilisé ───
+
+  const handleToggleSourceStatus = async (
+    sourceId: EntityId,
+    currentStatus?: import("@pbh/domain").SourceContextStatus
+  ) => {
+    const nextStatus: import("@pbh/domain").SourceContextStatus =
+      currentStatus === "INACTIVE" ? "ACTIVE" : "INACTIVE";
+    try {
+      await svc.productInterview.toggleSourceContextStatus(sourceId, nextStatus);
+      showToast(
+        "success",
+        nextStatus === "ACTIVE"
+          ? "Source réactivée pour le contexte de l'entretien."
+          : "Source désactivée du contexte de l'entretien."
+      );
+      load();
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleAddContextSource = async () => {
+    if (!newContextText.trim()) return;
+    try {
+      await svc.sources.addSource(
+        projectId as EntityId,
+        newContextType,
+        newContextLabel.trim() || "Note de contexte",
+        newContextText.trim()
+      );
+      setNewContextText("");
+      setNewContextLabel("");
+      showToast("success", "Ce contexte a été ajouté. Il sera pris en compte lors du prochain échange avec l'Architecte Produit.");
+      load();
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
   const handleFreezeDesignBaseline = async () => {
     if (!window.confirm("Geler la baseline de conception ? Les propositions acceptées seront scellées comme référence pour la mission.")) return;
     setIsFreezing(true);
@@ -801,10 +851,9 @@ export function ProjectDetailPageContent() {
   if (!project) return null;
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
-    { id: "sources", label: `📄 ${t("tab.sources")}`, count: sources.length },
+    { id: "interview", label: "🧭 Entretien Produit", count: piSession ? piSession.questionCount : 0 },
     { id: "brief", label: `💡 ${t("tab.brief")}`, count: briefItems.length },
     { id: "decisions", label: `⚖️ ${t("tab.decisions")}`, count: decisions.length },
-    { id: "interview", label: "🧭 Entretien Produit", count: piSession ? piSession.questionCount : 0 },
     {
       id: "organization",
       label: `🏗️ ${t("tab.organization")}`,
@@ -922,102 +971,6 @@ export function ProjectDetailPageContent() {
         </div>
 
         {/* Tab content */}
-        {activeTab === "sources" && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2>{t("tab.sources")}</h2>
-              <button
-                className="btn btn-primary"
-                onClick={analyze}
-                disabled={isAnalyzing || (!project.ideaText && sources.length === 0)}
-              >
-                {isAnalyzing ? (
-                  <>
-                    <div
-                      className="loading-spinner"
-                      style={{ width: 14, height: 14, borderWidth: 2 }}
-                    />{" "}
-                    {t("action.loading")}
-                  </>
-                ) : lang === "fr" ? (
-                  "🔬 Analyser mon idée"
-                ) : (
-                  "🔬 Analyze my idea"
-                )}
-              </button>
-            </div>
-
-            {project.ideaText && (
-              <div className="card mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4>💡 {lang === "fr" ? "Idée originale" : "Original Idea"}</h4>
-                  <span className="badge badge-info">
-                    {lang === "fr" ? "Principale" : "Primary"}
-                  </span>
-                </div>
-                <p className="text-sm" style={{ whiteSpace: "pre-wrap" }}>
-                  {project.ideaText}
-                </p>
-              </div>
-            )}
-
-            {sources.map((s) => (
-              <div key={s.id} className="card mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4>{s.label}</h4>
-                  <span className="badge badge-draft">{s.type}</span>
-                </div>
-                <p
-                  className="text-sm"
-                  style={{ whiteSpace: "pre-wrap", maxHeight: 200, overflow: "auto" }}
-                >
-                  {s.content}
-                </p>
-                <div className="text-xs text-muted mt-2">{s.segments.length} segments</div>
-              </div>
-            ))}
-
-            {/* Add source */}
-            <div className="card mt-6">
-              <h4 className="mb-4">{lang === "fr" ? "Ajouter une Source" : "Add a Source"}</h4>
-              <div className="mb-4">
-                <label htmlFor="source-label" className="label">
-                  {lang === "fr" ? "Nom" : "Label"}
-                </label>
-                <input
-                  id="source-label"
-                  className="input"
-                  value={newSourceLabel}
-                  onChange={(e) => setNewSourceLabel(e.target.value)}
-                  placeholder={lang === "fr" ? "ex: Notes de réunion" : "e.g., Meeting notes"}
-                />
-              </div>
-              <div className="mb-4">
-                <label htmlFor="source-text" className="label">
-                  {lang === "fr" ? "Contenu" : "Content"}
-                </label>
-                <textarea
-                  id="source-text"
-                  className="textarea"
-                  value={newSourceText}
-                  onChange={(e) => setNewSourceText(e.target.value)}
-                  placeholder={
-                    lang === "fr"
-                      ? "Collez du texte additionnel, des notes ou du contexte..."
-                      : "Paste additional text, notes, or context..."
-                  }
-                />
-              </div>
-              <button
-                className="btn btn-secondary"
-                onClick={addSource}
-                disabled={!newSourceText.trim()}
-              >
-                {lang === "fr" ? "Ajouter la Source" : "Add Source"}
-              </button>
-            </div>
-          </div>
-        )}
 
         {activeTab === "brief" && (
           <div>
@@ -1291,6 +1244,12 @@ export function ProjectDetailPageContent() {
                   </div>
 
                   <button
+                    className={`btn btn-sm ${showContextPanel ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => setShowContextPanel(!showContextPanel)}
+                  >
+                    📎 Contexte utilisé ({sources.filter((s) => s.contextStatus !== "INACTIVE").length + 1})
+                  </button>
+                  <button
                     className="btn btn-secondary btn-sm"
                     onClick={handleRequestFinalReview}
                     disabled={isReviewing}
@@ -1300,6 +1259,159 @@ export function ProjectDetailPageContent() {
                 </div>
               )}
             </div>
+
+            {/* CONTEXTE UTILISÉ DRAWER / PANEL */}
+            {showContextPanel && (
+              <div className="card p-5 bg-surface border-2 border-primary/30 rounded-xl space-y-4 shadow-md">
+                <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">📎</span>
+                    <div>
+                      <h3 className="font-bold text-md text-foreground">Contexte utilisé</h3>
+                      <p className="text-xs text-muted">
+                        Documents, notes et paramètres pris en compte par l&apos;Architecte Produit lors des échanges.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm text-xs"
+                    onClick={() => setShowContextPanel(false)}
+                  >
+                    ✕ Fermer le panneau
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Section Idée & Plateforme */}
+                  <div className="space-y-3">
+                    <div className="p-3 bg-muted/40 rounded-lg border border-border/60 text-xs space-y-1">
+                      <span className="font-bold text-primary block">💡 Idée initiale du Projet</span>
+                      <p className="font-semibold text-foreground">{project.name}</p>
+                      <p className="text-muted italic whitespace-pre-wrap">{project.description || "Aucune description initiale."}</p>
+                    </div>
+
+                    <div className="p-3 bg-muted/40 rounded-lg border border-border/60 text-xs space-y-1">
+                      <span className="font-bold text-primary block">📱 Plateforme Canonique</span>
+                      <span className="badge badge-info">
+                        {(project as any).platform === "ANDROID_EXPO" ? "Mobile Android Expo" : "Web Next.js"}
+                      </span>
+                    </div>
+
+                    {/* Brief Items Contextual Summary */}
+                    {briefItems.length > 0 && (
+                      <div className="p-3 bg-muted/30 rounded-lg border border-border/40 text-xs space-y-1">
+                        <span className="font-bold text-muted block">💡 Contexte historique (Brief)</span>
+                        <p className="text-muted">
+                          {briefItems.length} élément(s) de brief enregistrés.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section Formulaire d'Ajout de Contexte */}
+                  <div className="p-4 bg-background border border-border rounded-lg text-xs space-y-3 shadow-sm">
+                    <h4 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                      <span>➕ Ajouter du contexte</span>
+                    </h4>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="label text-[11px] mb-1">Titre / Libellé facultatif :</label>
+                        <input
+                          type="text"
+                          className="input w-full text-xs"
+                          placeholder="ex: Notes d'entretien, spécifications..."
+                          value={newContextLabel}
+                          onChange={(e) => setNewContextLabel(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="label text-[11px] mb-1">Type de contexte :</label>
+                        <select
+                          className="input w-full text-xs"
+                          value={newContextType}
+                          onChange={(e) => setNewContextType(e.target.value as any)}
+                        >
+                          <option value="TEXT">Texte libre / Notes</option>
+                          <option value="FILE_TXT">Fichier texte / Note</option>
+                          <option value="FILE_MD">Fichier Markdown</option>
+                          <option value="CONVERSATION">Extrait de conversation</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label text-[11px] mb-1">Contenu documentaire :</label>
+                        <textarea
+                          className="textarea w-full text-xs"
+                          rows={3}
+                          placeholder="Collez ici le texte ou les notes à mettre à disposition..."
+                          value={newContextText}
+                          onChange={(e) => setNewContextText(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        className="btn btn-primary btn-sm w-full font-semibold"
+                        onClick={handleAddContextSource}
+                        disabled={!newContextText.trim()}
+                      >
+                        Ajouter au contexte 📎
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Liste des Sources et Toggles */}
+                <div className="space-y-2 pt-2 border-t border-border/60">
+                  <h4 className="font-bold text-xs uppercase tracking-wider text-muted flex items-center justify-between">
+                    <span>Document de Contexte ({sources.length})</span>
+                    <span className="text-[11px] text-muted font-normal">
+                      {sources.filter((s) => s.contextStatus !== "INACTIVE").length} actif(s) pour le prochain tour
+                    </span>
+                  </h4>
+
+                  {sources.length === 0 ? (
+                    <div className="p-3 bg-muted/20 rounded border border-border/40 text-xs text-muted text-center italic">
+                      L&apos;entretien utilise actuellement l&apos;idée initiale et la plateforme du projet. Vous pouvez ajouter des notes ou documents ci-dessus.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                      {sources.map((src) => {
+                        const isActive = src.contextStatus !== "INACTIVE";
+                        return (
+                          <div
+                            key={src.id}
+                            className={`p-3 rounded-lg border text-xs flex items-center justify-between gap-3 transition-all ${
+                              isActive
+                                ? "bg-background border-border shadow-sm"
+                                : "bg-muted/30 border-border/40 opacity-60"
+                            }`}
+                          >
+                            <div className="space-y-0.5 flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-foreground truncate">{src.label}</span>
+                                <span className={`badge text-[9px] ${isActive ? "badge-success" : "badge-secondary"}`}>
+                                  {isActive ? "ACTIVE" : "INACTIVE"}
+                                </span>
+                                <span className="badge badge-outline text-[9px]">{src.type}</span>
+                              </div>
+                              <p className="text-muted line-clamp-2 italic">{src.content}</p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                className={`btn btn-xs ${isActive ? "btn-secondary" : "btn-primary"}`}
+                                onClick={() => handleToggleSourceStatus(src.id, src.contextStatus)}
+                                title={isActive ? "Exclure du prochain tour d'entretien" : "Inclure dans le prochain tour d'entretien"}
+                              >
+                                {isActive ? "Désactiver ⏸️" : "Activer ▶️"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Validated Product Interview Baseline Card */}
             {piBaseline && (

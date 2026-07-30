@@ -254,9 +254,20 @@ export class ProductInterviewService {
     const lastAxis = session.activeQuestionTarget?.axis || null;
     const questionTarget = selectNextQuestionTarget(currentAxisStates, lastAxis, contradictions);
 
-    // 2. Context for LLM
+    // 2. Active Sources for LLM Context (Filter out INACTIVE sources)
+    const allSources = await this.repos.sources.getByProjectId(projectId);
+    const activeSources = allSources.filter((s) => s.contextStatus !== "INACTIVE");
+
+    // 3. Context for LLM
     const compactContext = {
       project: { name: project?.name, description: project?.description },
+      canonicalPlatform: project ? (project as any).platform || "WEB_NEXTJS" : "WEB_NEXTJS",
+      activeSources: activeSources.map((s) => ({
+        id: s.id,
+        label: s.label,
+        type: s.type,
+        excerpt: s.content.slice(0, 300),
+      })),
       session: { status: session.status, maturityStep: session.maturityStep, questionCount: session.questionCount },
       targetToClarify: {
         axis: questionTarget.axis,
@@ -926,6 +937,13 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
 
   async listBaselines(projectId: EntityId): Promise<ProductInterviewBaseline[]> {
     return this.repos.productInterviewBaselines.getByProjectId(projectId);
+  }
+
+  async toggleSourceContextStatus(
+    sourceId: EntityId,
+    status: import("@pbh/domain").SourceContextStatus
+  ): Promise<import("@pbh/domain").Source> {
+    return this.repos.sources.updateContextStatus(sourceId, status);
   }
 
   private async refreshSessionMaturity(sessionId: EntityId): Promise<void> {
