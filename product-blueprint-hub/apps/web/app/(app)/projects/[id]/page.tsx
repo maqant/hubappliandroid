@@ -26,16 +26,14 @@ import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 
 type TabId =
-  | "decisions"
   | "interview"
   | "organization"
   | "control"
-  | "conflicts"
   | "blueprint"
-  | "audits"
-  | "baseline"
-  | "package"
+  | "delivery"
   | "settings";
+
+type DeliverySubTab = "audits" | "baseline" | "conflicts" | "package";
 
 export function ProjectDetailPageContent() {
   const params = useParams();
@@ -48,17 +46,31 @@ export function ProjectDetailPageContent() {
 
   const [project, setProject] = useState<Project | null>(null);
   
-  const rawTab = searchParams.get("tab") as TabId | null;
-  const validTabs: TabId[] = ["decisions", "interview", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
-  const activeTab: TabId = rawTab && validTabs.includes(rawTab) ? rawTab : "interview";
+  const rawTab = searchParams.get("tab") as string | null;
+  const rawSub = searchParams.get("sub") as DeliverySubTab | null;
+  const validTabs: TabId[] = ["interview", "organization", "control", "blueprint", "delivery", "settings"];
+  const activeTab: TabId = rawTab && (validTabs as string[]).includes(rawTab) ? (rawTab as TabId) : "interview";
+  const activeDeliverySub: DeliverySubTab = rawSub && ["audits", "baseline", "conflicts", "package"].includes(rawSub) ? rawSub : "audits";
 
-  // Redirections transparentes pour les anciennes URL (sources, brief, understanding, comprehension)
+  // Redirections transparentes des URL legacy vers la navigation 5 phases
   useEffect(() => {
     const currentTab = searchParams.get("tab");
-    if (currentTab === "sources") {
+    if (!currentTab) return;
+
+    if (currentTab === "decisions" || currentTab === "decision" || currentTab === "arbitrations") {
+      router.replace(`${pathname}?tab=interview&view=blueprint&panel=decisions`, { scroll: false });
+    } else if (currentTab === "sources") {
       router.replace(`${pathname}?tab=interview&context=open`, { scroll: false });
     } else if (currentTab === "brief" || currentTab === "understanding" || currentTab === "comprehension") {
       router.replace(`${pathname}?tab=interview&view=blueprint`, { scroll: false });
+    } else if (currentTab === "conflicts") {
+      router.replace(`${pathname}?tab=delivery&sub=conflicts`, { scroll: false });
+    } else if (currentTab === "audits") {
+      router.replace(`${pathname}?tab=delivery&sub=audits`, { scroll: false });
+    } else if (currentTab === "baseline") {
+      router.replace(`${pathname}?tab=delivery&sub=baseline`, { scroll: false });
+    } else if (currentTab === "package") {
+      router.replace(`${pathname}?tab=delivery&sub=package`, { scroll: false });
     }
   }, [searchParams, pathname, router]);
 
@@ -117,12 +129,14 @@ export function ProjectDetailPageContent() {
   const [piConsequences, setPiConsequences] = useState<import("@pbh/domain").ProposedConsequence[]>([]);
   const [piBaseline, setPiBaseline] = useState<import("@pbh/domain").ProductInterviewBaseline | null>(null);
   const [projectAuthority, setProjectAuthority] = useState<import("@pbh/domain").ProjectProductAuthority | null>(null);
+  const [decisionRegister, setDecisionRegister] = useState<readonly import("@pbh/domain").DecisionRegisterEntry[]>([]);
   const [preReviewReadiness, setPreReviewReadiness] = useState<import("@pbh/domain").PreReviewReadiness | null>(null);
   const [orbiteReviewResult, setOrbiteReviewResult] = useState<import("@pbh/domain").OrbiteReviewResult | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
   const [isValidatingBaseline, setIsValidatingBaseline] = useState(false);
   const [viewMode, setViewMode] = useState<"conversation" | "blueprint">("conversation");
   const [showContextPanel, setShowContextPanel] = useState<boolean>(searchParams.get("context") === "open");
+  const [showDecisionsPanel, setShowDecisionsPanel] = useState<boolean>(searchParams.get("panel") === "decisions");
   const [newContextLabel, setNewContextLabel] = useState("");
   const [newContextText, setNewContextText] = useState("");
   const [newContextType, setNewContextType] = useState<import("@pbh/domain").SourceType>("TEXT");
@@ -138,7 +152,7 @@ export function ProjectDetailPageContent() {
         return;
       }
       setProject(p);
-      const [src, brief, dec, conf, mis, bSummary, piSess, bsl, auth] = await Promise.all([
+      const [src, brief, dec, conf, mis, bSummary, piSess, bsl, auth, dReg] = await Promise.all([
         svc.sources.getSources(projectId as EntityId),
         svc.brief.getBriefItems(projectId as EntityId),
         svc.decisions.getDecisions(projectId as EntityId),
@@ -148,6 +162,7 @@ export function ProjectDetailPageContent() {
         svc.productInterview.getSession(projectId as EntityId),
         svc.productInterview.getLatestBaseline(projectId as EntityId),
         svc.productInterview.resolveAuthority(projectId as EntityId),
+        svc.productInterview.getDecisionRegister(projectId as EntityId),
       ]);
       setSources(src);
       setBriefItems(brief);
@@ -158,6 +173,7 @@ export function ProjectDetailPageContent() {
       setPiSession(piSess);
       setPiBaseline(bsl);
       setProjectAuthority(auth);
+      setDecisionRegister(dReg);
 
       if (piSess) {
         const [bp, ass, msg, ctr, cons] = await Promise.all([
@@ -854,23 +870,19 @@ export function ProjectDetailPageContent() {
   if (!project) return null;
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
-    { id: "interview", label: "🧭 Entretien Produit", count: piSession ? piSession.questionCount : 0 },
-    { id: "decisions", label: `⚖️ ${t("tab.decisions")}`, count: decisions.length },
+    { id: "interview", label: "🧭 1. Entretien Produit", count: piSession ? piSession.questionCount : 0 },
     {
       id: "organization",
-      label: `🏗️ ${t("tab.organization")}`,
+      label: `🏗️ 2. ${t("tab.organization")}`,
       count: missions.length > 0 ? missions[0]!.agents.length : 0,
     },
     {
       id: "control",
-      label: `🎮 ${t("tab.control")}`,
+      label: `🎮 3. ${t("tab.control")}`,
       count: missions.length > 0 ? missions[0]!.tasks.length : 0,
     },
-    { id: "conflicts", label: `⚡ ${t("tab.conflicts")}`, count: conflicts.length },
-    { id: "blueprint", label: `📘 ${t("tab.blueprint")}`, count: artifacts.length },
-    { id: "audits", label: `🔍 ${t("tab.audits")}`, count: findings.length },
-    { id: "baseline", label: `📌 ${t("tab.baseline")}`, count: baselines.length },
-    { id: "package", label: `📦 ${t("tab.package")}` },
+    { id: "blueprint", label: `📐 4. Blueprint technique`, count: artifacts.length },
+    { id: "delivery", label: `🚀 5. Validation & Livraison`, count: findings.length + conflicts.length },
     { id: "settings", label: `⚙️ ${t("tab.settings")}` },
   ];
 
@@ -1082,6 +1094,12 @@ export function ProjectDetailPageContent() {
                   </div>
 
                   <button
+                    className={`btn btn-sm ${showDecisionsPanel ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => setShowDecisionsPanel(!showDecisionsPanel)}
+                  >
+                    ⚖️ Décisions & Arbitrages ({decisionRegister.length})
+                  </button>
+                  <button
                     className={`btn btn-sm ${showContextPanel ? "btn-primary" : "btn-secondary"}`}
                     onClick={() => setShowContextPanel(!showContextPanel)}
                   >
@@ -1097,6 +1115,74 @@ export function ProjectDetailPageContent() {
                 </div>
               )}
             </div>
+
+            {/* DÉCISIONS & ARBITRAGES REGISTRE TRANSVERSAL PANEL */}
+            {showDecisionsPanel && (
+              <div className="card p-5 bg-surface border-2 border-amber-500/30 rounded-xl space-y-4 shadow-md">
+                <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⚖️</span>
+                    <div>
+                      <h3 className="font-bold text-md text-foreground">Registre Transversal des Arbitrages ({decisionRegister.length})</h3>
+                      <p className="text-xs text-muted">
+                        Vue unifiée de l&apos;ensemble des choix, confirmations, exclusions, reports et risques assumés.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm text-xs"
+                    onClick={() => setShowDecisionsPanel(false)}
+                  >
+                    ✕ Fermer
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {decisionRegister.length === 0 ? (
+                    <div className="p-4 bg-muted/20 rounded border border-border/40 text-xs text-muted text-center italic">
+                      Aucun arbitrage ou décision enregistré pour le moment. Répondez aux questions de l&apos;Architecte Produit pour alimenter ce registre.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 max-h-[400px] overflow-y-auto pr-1">
+                      {decisionRegister.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="p-3 bg-background border border-border rounded-lg text-xs space-y-1.5 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="font-bold text-sm text-foreground">{entry.title}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`badge text-[10px] ${
+                                entry.status === "ACTIVE" ? "badge-success" :
+                                entry.status === "ASSUMED_RISK" ? "badge-warning" :
+                                entry.status === "DEFERRED" ? "badge-info" :
+                                "badge-secondary"
+                              }`}>
+                                {entry.status}
+                              </span>
+                              <span className="badge badge-outline text-[10px]">{entry.arbitrationType}</span>
+                            </div>
+                          </div>
+
+                          <p className="text-foreground font-medium">{entry.statement}</p>
+
+                          {entry.rationale && (
+                            <div className="p-2 bg-muted/30 rounded italic text-muted text-[11px]">
+                              💡 <strong>Justification / Rationale :</strong> {entry.rationale}
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between text-[11px] text-muted pt-1 border-t border-border/40">
+                            <span>Provenance : <strong>{entry.provenance}</strong></span>
+                            <span>{new Date(entry.decidedAt).toLocaleString("fr-FR")}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* CONTEXTE UTILISÉ DRAWER / PANEL */}
             {showContextPanel && (
@@ -2501,109 +2587,341 @@ export function ProjectDetailPageContent() {
           </div>
         )}
 
-        {activeTab === "audits" && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2>{t("tab.audits")}</h2>
-              <button
-                className="btn btn-primary"
-                onClick={runAudits}
-                disabled={
-                  isAuditing || missions.length === 0 || missions[0]!.status !== "COMPLETED"
-                }
-              >
-                {isAuditing ? (
-                  <>
-                    <div
-                      className="loading-spinner"
-                      style={{ width: 14, height: 14, borderWidth: 2 }}
-                    />{" "}
-                    {t("action.loading")}
-                  </>
-                ) : (
-                  `🔍 ${lang === "fr" ? "Lancer les audits" : "Run Audits"}`
-                )}
-              </button>
+        {activeTab === "delivery" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-border pb-3 flex-wrap gap-2">
+              <div>
+                <h2>🚀 5. Validation et livraison</h2>
+                <p className="text-sm text-muted">
+                  Audits de conformité, gel de la baseline technique, résolution des conflits et paquet final de livraison.
+                </p>
+              </div>
+
+              {/* Sub-tabs bar */}
+              <div className="flex items-center gap-1.5 bg-surface border border-border p-1 rounded-lg text-xs">
+                <button
+                  className={`px-3 py-1.5 rounded-md font-medium transition-all ${
+                    activeDeliverySub === "audits"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                  onClick={() => router.replace(`${pathname}?tab=delivery&sub=audits`, { scroll: false })}
+                >
+                  🔍 Audits ({findings.length})
+                </button>
+                <button
+                  className={`px-3 py-1.5 rounded-md font-medium transition-all ${
+                    activeDeliverySub === "baseline"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                  onClick={() => router.replace(`${pathname}?tab=delivery&sub=baseline`, { scroll: false })}
+                >
+                  📌 Baseline ({baselines.length})
+                </button>
+                <button
+                  className={`px-3 py-1.5 rounded-md font-medium transition-all ${
+                    activeDeliverySub === "conflicts"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                  onClick={() => router.replace(`${pathname}?tab=delivery&sub=conflicts`, { scroll: false })}
+                >
+                  ⚡ Conflits ({conflicts.length})
+                </button>
+                <button
+                  className={`px-3 py-1.5 rounded-md font-medium transition-all ${
+                    activeDeliverySub === "package"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                  onClick={() => router.replace(`${pathname}?tab=delivery&sub=package`, { scroll: false })}
+                >
+                  📦 Package Final
+                </button>
+              </div>
             </div>
-            {gates.length > 0 && (
-              <div className="mb-6">
-                <h3 className="mb-3">{lang === "fr" ? "Portes de validation" : "Gates"}</h3>
-                {gates.map((g) => (
-                  <div key={g.id} className="card mb-2" style={{ padding: "var(--space-3)" }}>
-                    <div className="flex items-center gap-3">
-                      <span className={`badge badge-${g.status.toLowerCase()}`}>
-                        {g.status === "PASSED"
-                          ? lang === "fr"
-                            ? "Réussie"
-                            : "Passed"
-                          : lang === "fr"
-                            ? "Bloquée"
-                            : "Blocked"}
-                      </span>
-                      <span className="font-semibold">{g.name}</span>
-                      {g.blocking && (
-                        <span className="badge badge-blocking">
-                          {lang === "fr" ? "Bloquant" : "Blocking"}
-                        </span>
-                      )}
+
+            {/* Sub-view: Audits */}
+            {activeDeliverySub === "audits" && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2>{t("tab.audits")}</h2>
+                  <button
+                    className="btn btn-primary"
+                    onClick={runAudits}
+                    disabled={
+                      isAuditing || missions.length === 0 || missions[0]!.status !== "COMPLETED"
+                    }
+                  >
+                    {isAuditing ? (
+                      <>
+                        <div
+                          className="loading-spinner"
+                          style={{ width: 14, height: 14, borderWidth: 2 }}
+                        />{" "}
+                        {t("action.loading")}
+                      </>
+                    ) : (
+                      `🔍 ${lang === "fr" ? "Lancer les audits" : "Run Audits"}`
+                    )}
+                  </button>
+                </div>
+                {gates.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="mb-3">{t("audits.gates")}</h3>
+                    <div className="grid grid-2">
+                      {gates.map((g) => (
+                        <div key={g.id} className="card">
+                          <div className="flex items-center justify-between mb-2">
+                            <span
+                              className={`badge badge-${g.status === "PASSED" ? "completed" : "warning"}`}
+                            >
+                              {g.status === "PASSED"
+                                ? lang === "fr"
+                                  ? "Validé"
+                                  : "Passed"
+                                : g.status}
+                            </span>
+                            {g.blocking && (
+                              <span
+                                className="text-xs font-semibold"
+                                style={{ color: "var(--color-warning)" }}
+                              >
+                                {lang === "fr" ? "Bloquant" : "Blocking"}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-sm font-semibold">{g.name}</h4>
+                          <p className="text-xs text-muted mt-1">{g.description}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-            {findings.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-icon">🔍</div>
-                <h3>{lang === "fr" ? "Aucun constat" : "No findings yet"}</h3>
-                <p>{t("empty.audits")}</p>
-              </div>
-            ) : (
-              findings.map((f) => (
-                <div key={f.id} className="card mb-3">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className={`badge badge-${f.severity.toLowerCase()}`}>
-                      {f.severity === "BLOCKING"
-                        ? lang === "fr"
-                          ? "Bloquant"
-                          : "Blocking"
-                        : f.severity === "WARNING"
-                          ? lang === "fr"
-                            ? "Avertissement"
-                            : "Warning"
-                          : "Info"}
-                    </span>
-                    <h4 className="text-sm">{f.title}</h4>
-                    <span className="badge badge-info">{f.auditType}</span>
+                )}
+
+                <h3 className="mb-3">{t("audits.findings")}</h3>
+                {findings.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="empty-state-icon">🔍</div>
+                    <h3>{lang === "fr" ? "Aucune observation d'audit" : "No audit findings"}</h3>
+                    <p>{t("empty.audits")}</p>
                   </div>
-                  <p className="text-sm mb-1">{f.description}</p>
-                  <p className="text-xs text-muted">
-                    {lang === "fr" ? "Correction : " : "Correction: "}
-                    {f.correction}
-                  </p>
-                </div>
-              ))
+                ) : (
+                  findings.map((f) => (
+                    <div key={f.id} className="card mb-3">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`badge badge-${f.severity.toLowerCase()}`}>
+                          {f.severity === "BLOCKING"
+                            ? lang === "fr"
+                              ? "Bloquant"
+                              : "Blocking"
+                            : f.severity === "WARNING"
+                              ? lang === "fr"
+                                ? "Avertissement"
+                                : "Warning"
+                              : "Info"}
+                        </span>
+                        <h4 className="text-sm">{f.title}</h4>
+                        <span className="badge badge-info">{f.auditType}</span>
+                      </div>
+                      <p className="text-sm mb-1">{f.description}</p>
+                      <p className="text-xs text-muted">
+                        {lang === "fr" ? "Correction : " : "Correction: "}
+                        {f.correction}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        {activeTab === "baseline" && (
-          <div>
-            {(() => {
-              const hasDraftArtifacts = artifacts.some((a) => a.status === "DRAFT");
-              const hasBlockingGates = gates.some((g) => g.blocking && g.status === "BLOCKED");
+            {/* Sub-view: Baseline */}
+            {activeDeliverySub === "baseline" && (
+              <div>
+                {(() => {
+                  const hasDraftArtifacts = artifacts.some((a) => a.status === "DRAFT");
+                  const hasBlockingGates = gates.some((g) => g.blocking && g.status === "BLOCKED");
 
-              return (
-                <>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2>{t("tab.baseline")}</h2>
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-4">
+                        <h2>{t("tab.baseline")}</h2>
+                        <button
+                          className="btn btn-primary"
+                          onClick={freezeBaseline}
+                          disabled={
+                            isFreezing || gates.length === 0 || hasBlockingGates || hasDraftArtifacts
+                          }
+                        >
+                          {isFreezing ? (
+                            <>
+                              <div
+                                className="loading-spinner"
+                                style={{ width: 14, height: 14, borderWidth: 2 }}
+                              />{" "}
+                              {t("action.loading")}
+                            </>
+                          ) : (
+                            `📌 ${t("baseline.freezeBtn")}`
+                          )}
+                        </button>
+                      </div>
+
+                      {hasBlockingGates && (
+                        <div
+                          className="card mb-4"
+                          style={{
+                            background: "rgba(239,68,68,0.1)",
+                            border: "1px solid rgba(239,68,68,0.2)",
+                            color: "rgb(239,68,68)",
+                          }}
+                        >
+                          <p className="text-sm font-semibold">{t("baseline.blockedMsg")}</p>
+                        </div>
+                      )}
+
+                      {hasDraftArtifacts && (
+                        <div
+                          className="card mb-4"
+                          style={{
+                            background: "rgba(234,179,8,0.1)",
+                            border: "1px solid rgba(234,179,8,0.2)",
+                            color: "rgb(234,179,8)",
+                          }}
+                        >
+                          <p className="text-sm font-semibold">{t("baseline.draftBlockedMsg")}</p>
+                        </div>
+                      )}
+
+                      {baselines.length === 0 ? (
+                        <div className="empty-state">
+                          <div className="empty-state-icon">📌</div>
+                          <h3>{lang === "fr" ? "Aucune baseline gelée" : "No baseline yet"}</h3>
+                          <p>{t("empty.baseline")}</p>
+                        </div>
+                      ) : (
+                        baselines.map((b) => (
+                          <div key={b.id} className="card mb-4">
+                            <div className="flex items-center gap-3 mb-2">
+                              <span
+                                className={`badge badge-${b.status === "FROZEN" ? "locked" : "draft"}`}
+                              >
+                                {b.status === "FROZEN"
+                                  ? lang === "fr"
+                                    ? "Gelée"
+                                    : "Frozen"
+                                  : b.status}
+                              </span>
+                              <h4>{b.name}</h4>
+                            </div>
+                            <p className="text-sm text-muted">
+                              {lang === "fr" ? "Gelé le : " : "Frozen at: "}
+                              {new Date(b.frozenAt).toLocaleString()}
+                            </p>
+                            <p className="text-sm text-muted">
+                              {t("baseline.details")
+                                .replace("{art}", b.artifactIds.length.toString())
+                                .replace("{gates}", b.gateIds.length.toString())}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Sub-view: Conflicts */}
+            {activeDeliverySub === "conflicts" && (
+              <div>
+                <h2 className="mb-4">{t("tab.conflicts")}</h2>
+                {conflicts.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="empty-state-icon">⚡</div>
+                    <h3>{lang === "fr" ? "Aucune contradiction détectée" : "No conflicts detected"}</h3>
+                    <p>{t("empty.conflicts")}</p>
+                  </div>
+                ) : (
+                  conflicts.map((c) => (
+                    <div key={c.id} className="card mb-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span
+                          className={`badge badge-${c.status === "DETECTED" ? "warning" : "completed"}`}
+                        >
+                          {c.status === "DETECTED"
+                            ? lang === "fr"
+                              ? "Détecté"
+                              : "Detected"
+                            : lang === "fr"
+                              ? "Résolu"
+                              : "Resolved"}
+                        </span>
+                        <h4>{c.title}</h4>
+                      </div>
+                      <p className="mb-3 text-sm">{c.description}</p>
+
+                      {c.status === "DETECTED" && (
+                        <div>
+                          <h4 className="text-sm font-semibold mb-3">Options:</h4>
+                          {c.options.map((opt) => (
+                            <div
+                              key={opt.id}
+                              className="card mb-2"
+                              style={{ padding: "var(--space-3)" }}
+                            >
+                              <h4 className="text-sm">{opt.label}</h4>
+                              <p className="text-xs text-muted mb-2">{opt.description}</p>
+                              <p className="text-xs" style={{ color: "var(--color-warning)" }}>
+                                Impact: {opt.impact}
+                              </p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <input
+                                  className="input text-xs"
+                                  style={{ flex: 1 }}
+                                  placeholder={
+                                    lang === "fr"
+                                      ? "Justification de ce choix..."
+                                      : "Rationale for this choice..."
+                                  }
+                                  value={conflictRationale[c.id] || ""}
+                                  onChange={(e) =>
+                                    setConflictRationale({
+                                      ...conflictRationale,
+                                      [c.id]: e.target.value,
+                                    })
+                                  }
+                                />
+                                <button
+                                  className="btn btn-sm btn-primary"
+                                  onClick={() => resolveConflict(c.id, opt.id)}
+                                >
+                                  {t("action.resolve")}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Sub-view: Package Final */}
+            {activeDeliverySub === "package" && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2>{t("tab.package")}</h2>
+                  <div className="flex gap-3">
                     <button
                       className="btn btn-primary"
-                      onClick={freezeBaseline}
-                      disabled={
-                        isFreezing || gates.length === 0 || hasBlockingGates || hasDraftArtifacts
-                      }
+                      onClick={generatePackage}
+                      disabled={isGenerating || baselines.length === 0}
                     >
-                      {isFreezing ? (
+                      {isGenerating ? (
                         <>
                           <div
                             className="loading-spinner"
@@ -2612,141 +2930,9 @@ export function ProjectDetailPageContent() {
                           {t("action.loading")}
                         </>
                       ) : (
-                        `📌 ${t("baseline.freezeBtn")}`
+                        `📦 ${t("package.generateBtn")}`
                       )}
                     </button>
-                  </div>
-
-                  {hasBlockingGates && (
-                    <div
-                      className="card mb-4"
-                      style={{
-                        background: "rgba(239,68,68,0.1)",
-                        border: "1px solid rgba(239,68,68,0.2)",
-                        color: "rgb(239,68,68)",
-                      }}
-                    >
-                      <p className="text-sm font-semibold">{t("baseline.blockedMsg")}</p>
-                    </div>
-                  )}
-
-                  {hasDraftArtifacts && (
-                    <div
-                      className="card mb-4"
-                      style={{
-                        background: "rgba(234,179,8,0.1)",
-                        border: "1px solid rgba(234,179,8,0.2)",
-                        color: "rgb(234,179,8)",
-                      }}
-                    >
-                      <p className="text-sm font-semibold">{t("baseline.draftBlockedMsg")}</p>
-                    </div>
-                  )}
-
-                  {baselines.length === 0 ? (
-                    <div className="empty-state">
-                      <div className="empty-state-icon">📌</div>
-                      <h3>{lang === "fr" ? "Aucune baseline gelée" : "No baseline yet"}</h3>
-                      <p>{t("empty.baseline")}</p>
-                    </div>
-                  ) : (
-                    baselines.map((b) => (
-                      <div key={b.id} className="card mb-4">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span
-                            className={`badge badge-${b.status === "FROZEN" ? "locked" : "draft"}`}
-                          >
-                            {b.status === "FROZEN"
-                              ? lang === "fr"
-                                ? "Gelée"
-                                : "Frozen"
-                              : b.status}
-                          </span>
-                          <h4>{b.name}</h4>
-                        </div>
-                        <p className="text-sm text-muted">
-                          {lang === "fr" ? "Gelé le : " : "Frozen at: "}
-                          {new Date(b.frozenAt).toLocaleString()}
-                        </p>
-                        <p className="text-sm text-muted">
-                          {t("baseline.details")
-                            .replace("{art}", b.artifactIds.length.toString())
-                            .replace("{gates}", b.gateIds.length.toString())}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
-
-        {activeTab === "package" && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2>{t("tab.package")}</h2>
-              <div className="flex gap-3">
-                <button
-                  className="btn btn-primary"
-                  onClick={generatePackage}
-                  disabled={isGenerating || baselines.length === 0}
-                >
-                  {isGenerating ? (
-                    <>
-                      <div
-                        className="loading-spinner"
-                        style={{ width: 14, height: 14, borderWidth: 2 }}
-                      />{" "}
-                      {t("action.loading")}
-                    </>
-                  ) : (
-                    `📦 ${t("package.generateBtn")}`
-                  )}
-                </button>
-                {pkg && (
-                  <button className="btn btn-secondary" onClick={downloadPackage}>
-                    {t("package.downloadBtn")}
-                  </button>
-                )}
-              </div>
-            </div>
-            {!pkg ? (
-              <div className="empty-state">
-                <div className="empty-state-icon">📦</div>
-                <h3>{lang === "fr" ? "Aucun paquet généré" : "No package yet"}</h3>
-                <p>{t("empty.package")}</p>
-              </div>
-            ) : (
-              <div>
-                <div className="card mb-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className={`badge badge-${pkg.status.toLowerCase()}`}>
-                      {pkg.status === "READY" ? (lang === "fr" ? "Prêt" : "Ready") : pkg.status}
-                    </span>
-                    <h4>{lang === "fr" ? "Paquet de livraison" : "Execution Package"}</h4>
-                  </div>
-                  <p className="text-sm text-muted">
-                    {lang === "fr" ? "Fichiers : " : "Files: "}
-                    {pkg.files.length} | {lang === "fr" ? "Généré le : " : "Generated: "}
-                    {new Date(pkg.generatedAt).toLocaleString()}
-                  </p>
-                </div>
-                <h3 className="mb-4">{t("package.files")}</h3>
-                {pkg.files.map((f, i) => (
-                  <details key={i} className="card mb-2">
-                    <summary
-                      style={{ cursor: "pointer" }}
-                      className="flex items-center justify-between"
-                    >
-                      <span className="text-sm font-semibold">{f.filename}</span>
-                      <span className="text-xs text-muted">
-                        {(f.sizeBytes / 1024).toFixed(1)} KB
-                      </span>
-                    </summary>
-                    <pre
-                      className="text-xs mt-3"
-                      style={{
                         whiteSpace: "pre-wrap",
                         maxHeight: 300,
                         overflow: "auto",

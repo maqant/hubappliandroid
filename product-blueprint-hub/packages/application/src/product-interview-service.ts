@@ -960,6 +960,21 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     });
   }
 
+  async getDecisionRegister(projectId: EntityId): Promise<readonly import("@pbh/domain").DecisionRegisterEntry[]> {
+    const session = await this.getSession(projectId);
+    const [decisions, contradictions, consequences] = await Promise.all([
+      this.repos.decisions.getByProjectId(projectId),
+      session ? this.repos.productInterviewContradictions.getBySessionId(session.id) : Promise.resolve([]),
+      session ? this.repos.proposedConsequences.getBySessionId(session.id) : Promise.resolve([]),
+    ]);
+
+    return import("@pbh/domain").buildDecisionRegisterEntries({
+      decisions,
+      contradictions,
+      consequences,
+    });
+  }
+
   private async refreshSessionMaturity(sessionId: EntityId): Promise<void> {
     const session = await this.repos.productInterviewSessions.getById(sessionId);
     if (!session) return;

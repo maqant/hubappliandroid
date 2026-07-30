@@ -935,3 +935,127 @@ export function resolveProjectProductAuthority(
   };
 }
 
+// ─── Chantier 8 — Registre Transversal des Arbitrages ───
+
+export type DecisionRegisterSource =
+  | 'decision'
+  | 'arbitrage'
+  | 'accepted-consequence'
+  | 'resolved-contradiction'
+  | 'orbite-finding';
+
+export type DecisionRegisterStatus =
+  | 'ACTIVE'
+  | 'SUPERSEDED'
+  | 'REJECTED'
+  | 'DEFERRED'
+  | 'HISTORICAL'
+  | 'ASSUMED_RISK';
+
+export interface DecisionRegisterEntry {
+  readonly id: EntityId;
+  readonly source: DecisionRegisterSource;
+  readonly sourceId: EntityId;
+  readonly title: string;
+  readonly statement: string;
+  readonly rationale?: string;
+  readonly status: DecisionRegisterStatus;
+  readonly arbitrationType: string;
+  readonly decidedAt: string;
+  readonly provenance: string;
+  readonly relatedSectionIds?: readonly BlueprintSectionId[];
+}
+
+export function buildDecisionRegisterEntries(input: {
+  decisions: readonly any[];
+  contradictions: readonly ProductInterviewContradiction[];
+  consequences: readonly ProposedConsequence[];
+  orbiteFindings?: readonly ReviewFinding[];
+  assertions?: readonly KnowledgeAssertion[];
+}): readonly DecisionRegisterEntry[] {
+  const entries: DecisionRegisterEntry[] = [];
+
+  // 1. Map explicit Decisions
+  for (const d of input.decisions) {
+    entries.push({
+      id: `decision:${d.id}`,
+      source: 'decision',
+      sourceId: d.id,
+      title: d.title || 'Décision utilisateur',
+      statement: d.statement || d.title,
+      rationale: d.rationale,
+      status: d.status === 'ACTIVE' ? 'ACTIVE' : d.status === 'SUPERSEDED' ? 'SUPERSEDED' : 'HISTORICAL',
+      arbitrationType: 'DECISION_USER',
+      decidedAt: d.createdAt || new Date().toISOString(),
+      provenance: d.provenance || 'Décision utilisateur',
+      relatedSectionIds: d.relatedSectionIds || [],
+    });
+  }
+
+  // 2. Map Resolved Contradictions
+  for (const ctr of input.contradictions) {
+    if (ctr.status === 'RESOLVED') {
+      entries.push({
+        id: `contradiction:${ctr.id}`,
+        source: 'resolved-contradiction',
+        sourceId: ctr.id,
+        title: `Contradiction résolue : ${ctr.topic}`,
+        statement: ctr.resolutionRationale || ctr.topic,
+        rationale: `Arbitrage entre assertion A et assertion B sur l'axe ${ctr.axis}`,
+        status: 'ACTIVE',
+        arbitrationType: 'CONTRADICTION_RESOLVED',
+        decidedAt: ctr.updatedAt || ctr.createdAt,
+        provenance: 'Entretien Produit',
+        relatedSectionIds: [AXIS_TO_SECTION[ctr.axis]],
+      });
+    }
+  }
+
+  // 3. Map Accepted/Rejected Consequences
+  for (const cons of input.consequences) {
+    if (cons.status === 'ACCEPTED' || cons.status === 'REJECTED' || cons.status === 'DEFERRED') {
+      entries.push({
+        id: `consequence:${cons.id}`,
+        source: 'accepted-consequence',
+        sourceId: cons.id,
+        title: `Conséquence : ${cons.targetSectionId}`,
+        statement: cons.statement,
+        rationale: cons.userJustification || cons.impactDescription,
+        status: cons.status === 'ACCEPTED' ? 'ACTIVE' : cons.status === 'DEFERRED' ? 'DEFERRED' : 'REJECTED',
+        arbitrationType: cons.status === 'ACCEPTED' ? 'CONSEQUENCE_ACCEPTED' : cons.status === 'DEFERRED' ? 'DEFERRAL' : 'CONSEQUENCE_REJECTED',
+        decidedAt: cons.updatedAt || cons.createdAt,
+        provenance: cons.sourceAssertionId ? 'Inférence Blueprint' : 'Architecte Produit',
+        relatedSectionIds: [cons.targetSectionId],
+      });
+    }
+  }
+
+  // 4. Map Arbitrated Orbite Findings
+  if (input.orbiteFindings) {
+    for (const fnd of input.orbiteFindings) {
+      if (fnd.decision) {
+        entries.push({
+          id: `finding:${fnd.id}`,
+          source: 'orbite-finding',
+          sourceId: fnd.id,
+          title: `Arbitrage ORBITE : ${fnd.title}`,
+          statement: fnd.observation,
+          rationale: fnd.suggestedResolution,
+          status: fnd.decision === 'ACCEPTED' ? 'ACTIVE' : fnd.decision === 'MAINTAINED' ? 'ASSUMED_RISK' : fnd.decision === 'DEFERRED' ? 'DEFERRED' : 'REJECTED',
+          arbitrationType: 'REVIEW_FINDING_DECIDED',
+          decidedAt: new Date().toISOString(),
+          provenance: 'Relecteur ORBITE Silencieux',
+          relatedSectionIds: [],
+        });
+      }
+    }
+  }
+
+  // 5. Deterministic sorting: decidedAt desc, then id asc
+  return entries.sort((a, b) => {
+    const timeDiff = new Date(b.decidedAt).getTime() - new Date(a.decidedAt).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return a.id.localeCompare(b.id);
+  });
+}
+
