@@ -1849,11 +1849,25 @@ Chaque reponse contient au maximum une question principale ciblée. Ne pose pas 
 Détecte 3 à 7 Arcs Produit avec leurs horizons (MVP_CORE, MVP_SUPPORT, NEXT, FUTURE, EXCLUDED, UNKNOWN_HORIZON). Classifie le MVP et alimente la Roadmap sans tout développer maintenant.
 
 6. CONTRAT DE SORTIE JSON V2
-Tu dois répondre STRICTEMENT et UNIQUEMENT avec un objet JSON au format ProductArchitectResponseV2 :
+Tu dois répondre STRICTEMENT et UNIQUEMENT avec un objet JSON au format ProductArchitectResponseV2.
+
+RÈGLE ABSOLUE - TOUR INITIAL :
+Lorsque l'entretien démarre (0 message utilisateur), tu DOIS obligatoirement poser une première question simple et structurée. Le champ "question" ne peut PAS être null au tour initial. Ne génère AUCUN arc, ni aucune roadmap au premier tour ("arcs": [], "roadmap": []).
+
+Structure JSON exemple pour le tour initial :
 {
   "schemaVersion": "v2",
-  "assistantMessage": "Message concis et convergent",
-  "question": null,
+  "assistantMessage": "Bonjour ! Bienvenue dans le cadrage de votre produit. Pour bien démarrer, explorons la promesse initiale.",
+  "question": {
+    "id": "q_init_1",
+    "text": "Quel est le problème principal que votre produit cherche à résoudre et pour qui ?",
+    "rationale": "Établir le problème central et la cible utilisateur avant toute exploration.",
+    "responseType": "OPEN_TEXT",
+    "options": [],
+    "targetSubject": "REAL_PROBLEM",
+    "affectedSectionIds": ["REAL_PROBLEM", "ORIGINAL_INTUITION"],
+    "isBlocking": true
+  },
   "knowledgeUpdates": [],
   "blueprintUpdates": [],
   "contradictions": [],
@@ -1864,12 +1878,12 @@ Tu dois répondre STRICTEMENT et UNIQUEMENT avec un objet JSON au format Product
   "remainingDecisions": [],
   "nextState": "IN_PROGRESS",
   "readiness": {
-    "maturityStep": "MVP",
-    "blockingUnknownsCount": 0,
-    "importantUnknownsCount": 0,
+    "maturityStep": "EXPLORATION",
+    "blockingUnknownsCount": 1,
+    "importantUnknownsCount": 4,
     "blockingContradictionsCount": 0,
     "canFinalize": false,
-    "justification": "Maturité atteinte"
+    "justification": "Démarrage de l'entretien"
   }
 }`,
       userPromptTemplate: `[CONTEXTE DU PROJET & SESSIONS DE L'ENTRETIEN]
