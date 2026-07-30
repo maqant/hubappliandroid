@@ -1,17 +1,10 @@
-import type {
-  EntityId,
-  TaskDefinition,
-  Run,
-  RunEvent,
-  MissionManifest,
-  AgentArtifactSection,
-  Artifact,
-  Conflict,
-} from "@pbh/domain";
+import type { EntityId, TaskDefinition, Run, RunEvent, MissionManifest, AgentArtifactSection, Artifact, Conflict } from "@pbh/domain";
 import { createId } from "@pbh/domain";
 import type { IModelProvider, ModelRequest } from "@pbh/model-gateway";
 import type { RepositoryRegistry } from "@pbh/repositories";
+import { PRODUCT_INTERVIEW_COMMON_BLUEPRINT_SYSTEM } from "@pbh/repositories";
 import { isLegacyWorkshopAgent } from "./planner";
+import { buildProductInterviewAgentContext, assembleProductInterviewUserPrompt, validateResolvedPrompt } from "./context-builder";
 
 // ============================================
 // Mission Executor — runs task graph
@@ -315,27 +308,49 @@ export class MissionExecutor {
       throw new Error(`Agent '${task.agentId}' appartient au Workshop historique (déprécié en v0.37.0). Les agents Workshop ne peuvent pas être utilisés dans une mission fondée sur une Product Interview Baseline.`);
     }
 
-    const promptTpl = await this.repos.prompts.getActivePrompt(task.agentId);
+    const mission = await this.repos.missions.getById(missionId);
+    const project = mission ? await this.repos.projects.getById(mission.projectId) : null;
+    const piBaseline = mission ? await this.repos.productInterviewBaselines.getLatestByProjectId(mission.projectId) : null;
 
-    let systemPrompt = `You are agent ${task.agentId}. Analyze and produce structured output for: ${task.description}${baselineContext}`;
-    let userPrompt = `Execute task: ${task.name}\nDescription: ${task.description}\nAgent: ${task.agentId}`;
-    let promptId = "hardcoded";
-    let promptVersion = 0;
+    let systemPrompt = "";
+    let userPrompt = "";
+    let promptId = `blueprint-${task.agentId.toLowerCase()}`;
+    let promptVersion = 1;
 
-    if (promptTpl) {
-      systemPrompt = promptTpl.systemPrompt;
-      userPrompt = promptTpl.userPromptTemplate
-        .replace(/{{MISSION_NAME}}/g, "Blueprint Generation")
+    if (piBaseline && mission) {
+      // Modern Product Interview Flow
+      systemPrompt = PRODUCT_INTERVIEW_COMMON_BLUEPRINT_SYSTEM;
+      const contextVars = buildProductInterviewAgentContext({
+        mission,
+        task,
+        project: project ? {
+          id: project.id,
+          targetPlatform: project.targetPlatforms?.[0],
+        } : undefined,
+        baseline: piBaseline,
+        promptId,
+        promptVersion,
+      });
+      userPrompt = assembleProductInterviewUserPrompt(contextVars);
+      validateResolvedPrompt(userPrompt, "product_interview");
+    } else {
+      // Legacy Flow fallback
+      const promptTpl = await this.repos.prompts.getActivePrompt(task.agentId);
+      systemPrompt = promptTpl?.systemPrompt || `You are agent ${task.agentId}. Analyze and produce structured output for: ${task.description}${baselineContext}`;
+      userPrompt = promptTpl ? promptTpl.userPromptTemplate
+        .replace(/{{MISSION_NAME}}/g, mission?.name || "Blueprint Generation")
         .replace(/{{AGENT_ID}}/g, task.agentId)
         .replace(/{{AGENT_ROLE}}/g, task.name)
         .replace(/{{LANGUAGE}}/g, promptTpl.language)
-        .replace(/{{TARGET_PLATFORM}}/g, "WEB_NEXTJS") // We should ideally get this from the project
+        .replace(/{{TARGET_PLATFORM}}/g, "WEB_NEXTJS")
         .replace(/{{DESIGN_BASELINE_JSON}}/g, baselineContext || "N/A")
         .replace(/{{SPECIALIZED_MISSION_PROMPT}}/g, task.description)
-        .replace(/{{[A-Z_]+}}/g, "N/A"); // replace remaining
+        .replace(/{{[A-Z_]+}}/g, "N/A")
+        : `Execute task: ${task.name}\nDescription: ${task.description}\nAgent: ${task.agentId}`;
 
-      promptId = promptTpl.promptId;
-      promptVersion = promptTpl.version;
+      promptId = promptTpl?.promptId || "hardcoded";
+      promptVersion = promptTpl?.version || 0;
+      validateResolvedPrompt(userPrompt, "legacy");
     }
 
     const request: ModelRequest = {
@@ -582,6 +597,6 @@ function createEvent(
 function formatSectionTitle(section: AgentArtifactSection): string {
   return section
     .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .map((w: string) => w.charAt(0) + w.slice(1).toLowerCase())
     .join(" ");
 }
