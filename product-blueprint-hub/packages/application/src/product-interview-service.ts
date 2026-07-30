@@ -164,11 +164,19 @@ export class ProductInterviewService {
     const now = new Date().toISOString();
 
     const createdAssertionIds: EntityId[] = [];
+    const isInitialTurn = messages.length === 0 || userInput === "__START_INTERVIEW__";
+
+    // Garde serveur : si la session n'est pas le tour initial et qu'aucune question n'est active, refuser la saisie utilisateur
+    if (userInput && userInput !== "__START_INTERVIEW__" && !session.activeQuestionId && !isInitialTurn) {
+      throw new Error("Impossible d'envoyer une réponse : Aucune question active en attente.");
+    }
+
+    const effectiveUserInput = userInput === "__START_INTERVIEW__" ? undefined : userInput;
 
     // Classification déterministe de la réponse utilisateur (SÉCURISATION)
-    const category = classifyAnswer(userInput);
+    const category = classifyAnswer(effectiveUserInput);
 
-    if (category === "EMPTY" && userInput !== undefined) {
+    if (category === "EMPTY" && effectiveUserInput !== undefined && !isInitialTurn) {
       // Pas d'information réelle fournie, ne pas appeler l'IA
       const activeQ = session.activeQuestionTarget;
       return {
@@ -191,7 +199,7 @@ export class ProductInterviewService {
     }
 
     // Seules les réponses SUBSTANTIVE et CONFIRMATION créent une assertion CONFIRMED automatique
-    if (userInput && (category === "SUBSTANTIVE" || category === "CONFIRMATION")) {
+    if (effectiveUserInput && (category === "SUBSTANTIVE" || category === "CONFIRMATION") && !isInitialTurn) {
       const targetAxis: OrbiteAxis = session.activeQuestionTarget?.axis || "REAL_PROBLEM";
       const targetSection: BlueprintSectionId = AXIS_TO_SECTION[targetAxis] || "REAL_PROBLEM";
 
@@ -202,7 +210,7 @@ export class ProductInterviewService {
         sessionId: session.id,
         sectionId: targetSection,
         axis: targetAxis,
-        statement: userInput.trim(),
+        statement: effectiveUserInput.trim(),
         status: "CONFIRMED",
         source: "USER_RESPONSE",
         confidence: 100,
@@ -220,7 +228,7 @@ export class ProductInterviewService {
         sessionId: session.id,
         projectId,
         role: "USER",
-        content: userInput.trim(),
+        content: effectiveUserInput.trim(),
         type: "ANSWER",
         inResponseToQuestionId: session.activeQuestionId,
         createdAssertionIds: [userAssertionId],
@@ -231,14 +239,14 @@ export class ProductInterviewService {
       };
       await this.repos.productInterviewMessages.save(userMsg);
       assertions = await this.repos.knowledgeAssertions.getBySessionId(session.id);
-    } else if (userInput) {
+    } else if (effectiveUserInput && !isInitialTurn) {
       // Enregistrer le message utilisateur sans confirmer l'axe (INCERTAIN, AMBIGUOUS, DEFER, etc.)
       const userMsg: ProductInterviewMessage = {
         id: `pi_msg_user_${Date.now()}` as EntityId,
         sessionId: session.id,
         projectId,
         role: "USER",
-        content: userInput.trim(),
+        content: effectiveUserInput.trim(),
         type: "ANSWER",
         inResponseToQuestionId: session.activeQuestionId,
         createdAssertionIds: [],
@@ -300,7 +308,7 @@ Catégorie de la réponse utilisateur : ${category}.
 Budget adaptatif : ${adaptiveBudget.shouldTransitionToReview ? "Proposer une synthèse ou la relecture finale." : `Questions restantes cibles: ${adaptiveBudget.remainingQuestions}`}
 
 [DERNIER MESSAGE UTILISATEUR]
-${userInput || "(Initialisation du premier tour de l'entretien)"}`;
+${effectiveUserInput || "(Initialisation du premier tour de l'entretien)"}`;
 
     if (!this.provider) {
       throw new Error("Aucun provider IA configuré pour le ProductInterviewService.");
@@ -328,7 +336,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
       throw new Error(`Réponse IA invalide (échec de parsing JSON) : ${e.message}`);
     }
 
-    const val = validateProductArchitectResponse(parsed);
+    const val = validateProductArchitectResponse(parsed, { isInitialTurn });
     if (!val.valid) {
       throw new Error(`Contrat IA violé : ${val.reason}`);
     }

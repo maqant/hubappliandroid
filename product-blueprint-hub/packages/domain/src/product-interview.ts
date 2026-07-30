@@ -538,7 +538,10 @@ export type ProductArchitectResponseV2 = ProductArchitectResponse;
 /**
  * Valide le contrat de réponse IA.
  */
-export function validateProductArchitectResponse(response: ProductArchitectResponse): {
+export function validateProductArchitectResponse(
+  response: ProductArchitectResponse,
+  options?: { isInitialTurn?: boolean }
+): {
   valid: boolean;
   reason?: string;
 } {
@@ -551,7 +554,23 @@ export function validateProductArchitectResponse(response: ProductArchitectRespo
   
   if (response.question) {
     if (!response.question.id || !response.question.text || !response.question.responseType) {
-      return { valid: false, reason: "La question structurée est incomplète." };
+      return {
+        valid: false,
+        reason: options?.isInitialTurn
+          ? "La première question du tour initial est incomplète."
+          : "La question structurée est incomplète.",
+      };
+    }
+  } else if (options?.isInitialTurn) {
+    return { valid: false, reason: "Au tour initial, l'Architecte Produit doit poser une première question." };
+  } else {
+    // Hors tour initial, question === null est autorisé pour synthèse/transition/finalisation
+    const canBeNull =
+      response.readiness?.canFinalize ||
+      response.nextState === "READY_FOR_REVIEW" ||
+      response.nextState === "FINALIZED";
+    if (!canBeNull) {
+      return { valid: false, reason: "La question structurée ne peut être absente sans statut de synthèse ou de finalisation." };
     }
   }
   return { valid: true };

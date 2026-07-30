@@ -301,7 +301,8 @@ export function ProjectDetailPageContent() {
     setIsProcessingTurn(true);
     setShowJeNeSaisPasOptions(false);
     try {
-      const res = await svc.productInterview.processTurn(projectId as EntityId, input);
+      const turnInput = (piMessages.length === 0 && !activeQuestion) ? "__START_INTERVIEW__" : input;
+      const res = await svc.productInterview.processTurn(projectId as EntityId, turnInput);
       setPiSession(res.session);
       setPiBlueprint(res.blueprint);
       setActiveQuestion(res.activeQuestion);
@@ -1405,21 +1406,23 @@ export function ProjectDetailPageContent() {
                     <span>🎯 <strong>{piConsequences.filter((c) => c.status === "PROPOSED").length}</strong> conséquences à arbitrer</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-outline btn-primary btn-sm"
-                      onClick={async () => {
-                        if (!piSession) return;
-                        try {
-                          await svc.productInterview.requestEarlyReview(piSession.id);
-                          showToast("info", "Relecture anticipée demandée ! L'Architecte adaptera son prochain tour vers la synthèse.");
-                          load();
-                        } catch (e: any) {
-                          showToast("error", e.message || String(e));
-                        }
-                      }}
-                    >
-                      🎯 Préparer la relecture maintenant
-                    </button>
+                    {piMessages.length > 0 && (
+                      <button
+                        className="btn btn-outline btn-primary btn-sm"
+                        onClick={async () => {
+                          if (!piSession) return;
+                          try {
+                            await svc.productInterview.requestEarlyReview(piSession.id);
+                            showToast("info", "Relecture anticipée demandée ! L'Architecte adaptera son prochain tour vers la synthèse.");
+                            load();
+                          } catch (e: any) {
+                            showToast("error", e.message || String(e));
+                          }
+                        }}
+                      >
+                        🎯 Préparer la relecture maintenant
+                      </button>
+                    )}
                     <button
                       className="btn btn-secondary btn-sm"
                       onClick={handleStartInterview}
@@ -1473,8 +1476,17 @@ export function ProjectDetailPageContent() {
                     {/* Main Chat Interface */}
                     <div className="card p-4 space-y-4 max-h-[500px] overflow-y-auto flex flex-col border border-border">
                       {piMessages.length === 0 ? (
-                        <div className="text-center text-sm text-muted py-8">
-                          Aucun message. Cliquez sur Commencer pour lancer le premier tour.
+                        <div className="text-center py-10 space-y-4">
+                          <p className="text-sm text-muted">
+                            Aucun message. Cliquez sur Commencer pour lancer le premier tour de l&apos;entretien.
+                          </p>
+                          <button
+                            className="btn btn-primary btn-md font-bold px-6 shadow-md"
+                            disabled={isProcessingTurn}
+                            onClick={() => handleProcessTurn("__START_INTERVIEW__")}
+                          >
+                            🚀 Commencer l&apos;entretien
+                          </button>
                         </div>
                       ) : (
                         piMessages.map((msg) => (
@@ -1616,7 +1628,7 @@ export function ProjectDetailPageContent() {
                           </div>
                         </div>
                       </div>
-                    ) : (
+                    ) : piMessages.length > 0 ? (
                       <div className="p-3 bg-muted rounded-lg text-xs text-muted text-center">
                         Entretien cadré ou aucune question en attente. Vous pouvez saisir une remarque libre ci-dessous.
                         <div className="flex gap-2 mt-2">
@@ -1637,7 +1649,7 @@ export function ProjectDetailPageContent() {
                           </button>
                         </div>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
 
