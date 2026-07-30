@@ -11,6 +11,7 @@ import type {
 import { createId } from "@pbh/domain";
 import type { IModelProvider, ModelRequest } from "@pbh/model-gateway";
 import type { RepositoryRegistry } from "@pbh/repositories";
+import { isLegacyWorkshopAgent } from "./planner";
 
 // ============================================
 // Mission Executor — runs task graph
@@ -309,6 +310,10 @@ export class MissionExecutor {
 
   private async executeTask(missionId: EntityId, task: TaskDefinition, baselineContext: string = ""): Promise<Run> {
     const now = new Date().toISOString();
+
+    if (isLegacyWorkshopAgent(task.agentId)) {
+      throw new Error(`Agent '${task.agentId}' appartient au Workshop historique (déprécié en v0.37.0). Les agents Workshop ne peuvent pas être utilisés dans une mission fondée sur une Product Interview Baseline.`);
+    }
 
     const promptTpl = await this.repos.prompts.getActivePrompt(task.agentId);
 

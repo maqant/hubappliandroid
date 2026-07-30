@@ -241,7 +241,7 @@ export function planMission(params: {
 
   const totalBudget = params.budgetTokens ?? 100000;
 
-  return {
+  const manifest: MissionManifest = {
     id: missionId,
     projectId: params.projectId,
     name: params.name,
@@ -285,6 +285,33 @@ export function planMission(params: {
     createdAt: now,
     updatedAt: now,
   };
+
+  const val = validateMissionManifest(manifest);
+  if (!val.valid) {
+    throw new Error(val.error);
+  }
+
+  return manifest;
+}
+
+export const LEGACY_WORKSHOP_PREFIX = "WORKSHOP-";
+
+export function isLegacyWorkshopAgent(agentId: string): boolean {
+  return agentId.startsWith(LEGACY_WORKSHOP_PREFIX);
+}
+
+export function validateMissionManifest(manifest: MissionManifest): { valid: boolean; error?: string } {
+  const workshopAgent = manifest.agents.find((a) => isLegacyWorkshopAgent(a.agentId));
+  const workshopTask = manifest.tasks.find((t) => isLegacyWorkshopAgent(t.agentId));
+
+  if (workshopAgent || workshopTask) {
+    const invalidId = workshopAgent?.agentId || workshopTask?.agentId;
+    return {
+      valid: false,
+      error: `Agent '${invalidId}' appartient au Workshop historique (déprécié en v0.37.0). Les agents Workshop ne peuvent pas être utilisés dans une mission fondée sur une Product Interview Baseline.`,
+    };
+  }
+  return { valid: true };
 }
 
 function createTasksFromAgents(

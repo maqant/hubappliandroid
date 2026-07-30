@@ -370,7 +370,8 @@ Préfère :
 Une intention ne doit pas être le titre futur d’une FEATURE ou d’un SCREEN.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-hypothesis",
@@ -439,7 +440,8 @@ Exemples de forme correcte :
 - « Nous supposons que l’utilisateur souhaite comprendre la raison d’une recommandation avant de l’accepter. »`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-capability",
@@ -510,7 +512,8 @@ Pour chaque capacité :
 - critères permettant de vérifier que la capacité existe.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-feature",
@@ -615,7 +618,8 @@ Demande-toi :
 Si non, la proposition est trop vague.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-journey",
@@ -722,7 +726,8 @@ Pour chaque JOURNEY :
 Chaque parcours doit comporter au moins deux actions utilisateur distinctes, sauf justification explicite d’un parcours automatisé.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-screen",
@@ -818,7 +823,8 @@ Pour chaque SCREEN :
 - possibilité de mutualisation.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-ideator",
@@ -854,7 +860,8 @@ Retourne entre 3 et 7 résultats utiles selon la complexité.
 Si aucun résultat valide ne peut être produit, retourne un diagnostic structuré expliquant précisément pourquoi, et non un tableau silencieusement vide.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-alternatives",
@@ -892,7 +899,8 @@ Si la proposition source est trop vague pour produire des alternatives :
 - ne pas retourner silencieusement zéro résultat.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-dependencies",
@@ -931,7 +939,8 @@ Signale :
 - nœuds potentiellement mutualisables.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-critic",
@@ -977,7 +986,8 @@ Porter une attention particulière au collapse sémantique entre couches :
 - SCREEN formulé comme domaine fonctionnel.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
     createPromptTemplate({
       promptId: "workshop-synthesizer",
@@ -1049,7 +1059,8 @@ Si aucune proposition finale ne reste :
 - ne jamais retourner seulement zéro résultat sans explication.`,
       userPromptTemplate: COMMON_WORKSHOP_USER,
       language: "fr",
-      enabled: true,
+      enabled: false,
+      changelog: "LEGACY_WORKSHOP",
     }),
 
     // --- BLUEPRINT AGENTS ---
