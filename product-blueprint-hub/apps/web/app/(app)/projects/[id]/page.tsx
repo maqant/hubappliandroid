@@ -21,6 +21,7 @@ import {
   type PlatformConsistencyReport,
   computePlatformConsistency,
 } from "@/services";
+import { STATUS_LABELS_FR, SOURCE_LABELS_FR } from "@pbh/domain";
 import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 
@@ -107,6 +108,9 @@ export function ProjectDetailPageContent() {
   const [piAssertions, setPiAssertions] = useState<import("@pbh/domain").KnowledgeAssertion[]>([]);
   const [piMessages, setPiMessages] = useState<import("@pbh/domain").ProductInterviewMessage[]>([]);
   const [piContradictions, setPiContradictions] = useState<import("@pbh/domain").ProductInterviewContradiction[]>([]);
+  const [piConsequences, setPiConsequences] = useState<import("@pbh/domain").ProposedConsequence[]>([]);
+  const [viewMode, setViewMode] = useState<"conversation" | "blueprint">("conversation");
+  const [showJeNeSaisPasOptions, setShowJeNeSaisPasOptions] = useState(false);
   const [isInitializingInterview, setIsInitializingInterview] = useState(false);
 
   const load = useCallback(async () => {
@@ -136,16 +140,18 @@ export function ProjectDetailPageContent() {
       setPiSession(piSess);
 
       if (piSess) {
-        const [bp, ass, msg, ctr] = await Promise.all([
+        const [bp, ass, msg, ctr, cons] = await Promise.all([
           svc.productInterview.getBlueprint(projectId as EntityId),
           svc.productInterview.getAssertions(piSess.id),
           svc.productInterview.getMessages(piSess.id),
           svc.productInterview.getContradictions(piSess.id),
+          svc.productInterview.getProposedConsequences(piSess.id),
         ]);
         setPiBlueprint(bp);
         setPiAssertions(ass);
         setPiMessages(msg);
         setPiContradictions(ctr);
+        setPiConsequences(cons);
       }
 
       if (mis.length > 0) {
@@ -344,14 +350,16 @@ export function ProjectDetailPageContent() {
         setQuestionTarget(session.activeQuestionTarget);
       }
 
-      const [ass, msg, ctr] = await Promise.all([
+      const [ass, msg, ctr, cons] = await Promise.all([
         svc.productInterview.getAssertions(session.id),
         svc.productInterview.getMessages(session.id),
         svc.productInterview.getContradictions(session.id),
+        svc.productInterview.getProposedConsequences(session.id),
       ]);
       setPiAssertions(ass);
       setPiMessages(msg);
       setPiContradictions(ctr);
+      setPiConsequences(cons);
       showToast("success", "Entretien Produit démarré avec succès !");
     } catch (e: any) {
       showToast("error", e.message || String(e));
@@ -360,8 +368,24 @@ export function ProjectDetailPageContent() {
     }
   };
 
+  const refreshInterviewData = async (sessionId: EntityId) => {
+    const [sess, bp, ass, ctr, cons] = await Promise.all([
+      svc.productInterview.getSession(projectId as EntityId),
+      svc.productInterview.getBlueprint(projectId as EntityId),
+      svc.productInterview.getAssertions(sessionId),
+      svc.productInterview.getContradictions(sessionId),
+      svc.productInterview.getProposedConsequences(sessionId),
+    ]);
+    if (sess) setPiSession(sess);
+    if (bp) setPiBlueprint(bp);
+    setPiAssertions(ass);
+    setPiContradictions(ctr);
+    setPiConsequences(cons);
+  };
+
   const handleProcessTurn = async (input?: string) => {
     setIsProcessingTurn(true);
+    setShowJeNeSaisPasOptions(false);
     try {
       const res = await svc.productInterview.processTurn(projectId as EntityId, input);
       setPiSession(res.session);
@@ -371,20 +395,129 @@ export function ProjectDetailPageContent() {
       if (res.response.turnImpact) {
         setTurnImpactSummary(res.response.turnImpact);
       }
-      const [ass, msg, ctr] = await Promise.all([
+      const [ass, msg, ctr, cons] = await Promise.all([
         svc.productInterview.getAssertions(res.session.id),
         svc.productInterview.getMessages(res.session.id),
         svc.productInterview.getContradictions(res.session.id),
+        svc.productInterview.getProposedConsequences(res.session.id),
       ]);
       setPiAssertions(ass);
       setPiMessages(msg);
       setPiContradictions(ctr);
+      setPiConsequences(cons);
       setUserAnswerInput("");
       showToast("success", "Réponse traitée par l'Architecte Produit !");
     } catch (e: any) {
       showToast("error", e.message || String(e));
     } finally {
       setIsProcessingTurn(false);
+    }
+  };
+
+  // ─── Local Pure Arbitrage Handlers (100% Synchronous/Local without AI) ───
+  const handleAcceptConsequence = async (consequenceId: EntityId) => {
+    try {
+      await svc.productInterview.acceptConsequence(consequenceId);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Conséquence acceptée et intégrée au Blueprint !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleRejectConsequence = async (consequenceId: EntityId) => {
+    try {
+      await svc.productInterview.rejectConsequence(consequenceId);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Conséquence refusée.");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleDeferConsequence = async (consequenceId: EntityId) => {
+    try {
+      await svc.productInterview.deferConsequence(consequenceId);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Conséquence reportée à la Roadmap.");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleCorrectConsequence = async (consequenceId: EntityId) => {
+    const text = window.prompt("Saisissez votre correction pour cette conséquence :");
+    if (!text || !text.trim()) return;
+    try {
+      await svc.productInterview.correctConsequence(consequenceId, text);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Conséquence corrigée et intégrée au Blueprint !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleConfirmAssertion = async (assertionId: EntityId) => {
+    try {
+      await svc.productInterview.confirmAssertion(assertionId);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Information confirmée !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleExcludeAssertion = async (assertionId: EntityId) => {
+    try {
+      await svc.productInterview.excludeAssertion(assertionId);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Information exclue du périmètre.");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleDeferAssertion = async (assertionId: EntityId) => {
+    try {
+      await svc.productInterview.deferAssertion(assertionId);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Information reportée.");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleMarkNotApplicable = async (assertionId: EntityId) => {
+    try {
+      await svc.productInterview.markNotApplicable(assertionId);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Marqué comme non applicable.");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleCorrectAssertion = async (assertionId: EntityId) => {
+    const text = window.prompt("Saisissez votre correction :");
+    if (!text || !text.trim()) return;
+    try {
+      await svc.productInterview.correctAssertion(assertionId, text);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Information corrigée et confirmée !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleResolveContradiction = async (contradictionId: EntityId) => {
+    const text = window.prompt("Formulez la décision d'arbitrage pour résoudre cette contradiction :");
+    if (!text || !text.trim()) return;
+    try {
+      await svc.productInterview.resolveContradiction(contradictionId, text);
+      if (piSession) await refreshInterviewData(piSession.id);
+      showToast("success", "Contradiction résolue !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
     }
   };
 
@@ -1055,20 +1188,44 @@ export function ProjectDetailPageContent() {
 
         {activeTab === "interview" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div>
-                <h2>🧭 Entretien Produit</h2>
+                <h2>🧭 Entretien Produit — Blueprint Vivant</h2>
                 <p className="text-sm text-muted">
                   Transformez une idée brute en une vision produit claire, explicite et traçable (basé sur <em>L’Architecture de la Pensée Produit</em>).
                 </p>
               </div>
+              
               {piSession && (
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() => showToast("info", "Les fondations de l'entretien sont prêtes. Le dialogue intelligent sera activé au prochain chantier.")}
-                >
-                  ▶️ Reprendre l&apos;entretien
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="bg-surface border border-border p-1 rounded-lg flex items-center gap-1 text-xs">
+                    <button
+                      className={`px-3 py-1.5 rounded-md font-medium transition-all ${
+                        viewMode === "conversation"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted hover:text-foreground"
+                      }`}
+                      onClick={() => setViewMode("conversation")}
+                    >
+                      💬 Conversation
+                    </button>
+                    <button
+                      className={`px-3 py-1.5 rounded-md font-medium transition-all flex items-center gap-1.5 ${
+                        viewMode === "blueprint"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted hover:text-foreground"
+                      }`}
+                      onClick={() => setViewMode("blueprint")}
+                    >
+                      <span>📘 Blueprint Vivant</span>
+                      {piConsequences.filter((c) => c.status === "PROPOSED").length > 0 && (
+                        <span className="badge badge-warning text-[10px] px-1.5 py-0.5">
+                          {piConsequences.filter((c) => c.status === "PROPOSED").length}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -1103,7 +1260,7 @@ export function ProjectDetailPageContent() {
                     <span>💡 <strong>{piAssertions.filter((a) => a.status === "INFERRED").length}</strong> hypothèses</span>
                     <span>❓ <strong>{piSession.blockingUnknownsCount}</strong> inconnues bloquantes</span>
                     <span>⚡ <strong>{piContradictions.filter((c) => c.status === "OPEN").length}</strong> contradictions</span>
-                    <span>📘 <strong>{piBlueprint ? Object.values(piBlueprint.sections).filter((s) => s.status !== "EMPTY").length : 0} / 14</strong> sections alimentées</span>
+                    <span>🎯 <strong>{piConsequences.filter((c) => c.status === "PROPOSED").length}</strong> conséquences à arbitrer</span>
                   </div>
                   <button
                     className="btn btn-secondary btn-sm"
@@ -1113,6 +1270,26 @@ export function ProjectDetailPageContent() {
                     🔄 Réinitialiser
                   </button>
                 </div>
+
+                {/* Pending Decisions Alert Banner */}
+                {(piConsequences.filter((c) => c.status === "PROPOSED").length > 0 || piContradictions.filter((c) => c.status === "OPEN").length > 0) && (
+                  <div className="p-3 bg-amber-50/30 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg text-xs flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">⚡</span>
+                      <div>
+                        <strong>Arbitrages en attente :</strong>{" "}
+                        {piConsequences.filter((c) => c.status === "PROPOSED").length} conséquence(s) proposée(s) et{" "}
+                        {piContradictions.filter((c) => c.status === "OPEN").length} contradiction(s) nécessitent votre validation.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-warning btn-sm"
+                      onClick={() => setViewMode("blueprint")}
+                    >
+                      Examiner dans le Blueprint Vivant ➔
+                    </button>
+                  </div>
+                )}
 
                 {/* Turn Impact Summary Banner */}
                 {turnImpactSummary && (
@@ -1131,174 +1308,469 @@ export function ProjectDetailPageContent() {
                   </div>
                 )}
 
-                {/* Main Chat Interface */}
-                <div className="card p-4 space-y-4 max-h-[500px] overflow-y-auto flex flex-col border border-border">
-                  {piMessages.length === 0 ? (
-                    <div className="text-center text-sm text-muted py-8">
-                      Aucun message. Cliquez sur Commencer pour lancer le premier tour.
-                    </div>
-                  ) : (
-                    piMessages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`flex flex-col ${msg.role === "USER" ? "items-end" : "items-start"}`}
-                      >
-                        <div className="text-xs text-muted mb-1 flex items-center gap-1">
-                          {msg.role === "USER" ? "👤 Vous" : "🏛️ Architecte Produit"}
-                          <span className="opacity-60">• {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                {/* VIEW 1: CONVERSATION VIEW */}
+                {viewMode === "conversation" && (
+                  <div className="space-y-4">
+                    {/* Main Chat Interface */}
+                    <div className="card p-4 space-y-4 max-h-[500px] overflow-y-auto flex flex-col border border-border">
+                      {piMessages.length === 0 ? (
+                        <div className="text-center text-sm text-muted py-8">
+                          Aucun message. Cliquez sur Commencer pour lancer le premier tour.
                         </div>
-                        <div
-                          className={`p-3 rounded-lg max-w-[85%] text-sm whitespace-pre-wrap ${
-                            msg.role === "USER"
-                              ? "bg-primary text-primary-foreground rounded-br-none"
-                              : "bg-surface border border-border rounded-bl-none shadow-sm"
-                          }`}
-                        >
-                          {msg.content}
-                        </div>
-                      </div>
-                    ))
-                  )}
-
-                  {isProcessingTurn && (
-                    <div className="flex items-center gap-2 text-sm text-muted italic p-2">
-                      <span className="animate-spin">⏳</span> L&apos;Architecte Produit formule sa réponse...
-                    </div>
-                  )}
-                </div>
-
-                {/* Active Question Widget */}
-                {activeQuestion ? (
-                  <div className="card p-4 space-y-3 bg-indigo-50/20 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-                        ❓ Question Active ({activeQuestion.responseType})
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {questionTarget?.axis && (
-                          <span className="badge badge-primary text-[10px]">Axe : {questionTarget.axis}</span>
-                        )}
-                        {activeQuestion.targetSubject && (
-                          <span className="badge badge-secondary text-[10px]">{activeQuestion.targetSubject}</span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <p className="font-semibold text-sm">{activeQuestion.text}</p>
-                    
-                    {/* Pourquoi maintenant ? */}
-                    <div className="p-2.5 bg-background/50 rounded border border-border/50 text-xs space-y-1">
-                      <div className="font-semibold text-primary flex items-center gap-1">
-                        <span>🎯 Pourquoi cette question maintenant ?</span>
-                      </div>
-                      <p className="text-muted italic">
-                        {questionTarget?.reason || activeQuestion.rationale || "Cette question vise à lever l'incertitude prioritaire du projet."}
-                      </p>
-                    </div>
-
-                    {/* Widgets per Question Type */}
-                    <div className="pt-2 space-y-2">
-                      {activeQuestion.options && activeQuestion.options.length > 0 && (
-                        <div className="grid grid-cols-1 gap-2">
-                          {activeQuestion.options.map((opt: string, idx: number) => (
-                            <button
-                              key={idx}
-                              className="btn btn-secondary btn-sm text-left justify-start hover:border-primary"
-                              disabled={isProcessingTurn}
-                              onClick={() => handleProcessTurn(opt)}
+                      ) : (
+                        piMessages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`flex flex-col ${msg.role === "USER" ? "items-end" : "items-start"}`}
+                          >
+                            <div className="text-xs text-muted mb-1 flex items-center gap-1">
+                              {msg.role === "USER" ? "👤 Vous" : "🏛️ Architecte Produit"}
+                              <span className="opacity-60">• {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <div
+                              className={`p-3 rounded-lg max-w-[85%] text-sm whitespace-pre-wrap ${
+                                msg.role === "USER"
+                                  ? "bg-primary text-primary-foreground rounded-br-none"
+                                  : "bg-surface border border-border rounded-bl-none shadow-sm"
+                              }`}
                             >
-                              👉 {opt}
-                            </button>
-                          ))}
-                        </div>
+                              {msg.content}
+                            </div>
+                          </div>
+                        ))
                       )}
 
-                      {/* Text response field */}
-                      <div className="flex gap-2 pt-1">
-                        <input
-                          type="text"
-                          className="input flex-1 text-sm"
-                          placeholder="Saisissez votre réponse ou précision..."
-                          value={userAnswerInput}
-                          onChange={(e) => setUserAnswerInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && userAnswerInput.trim() && !isProcessingTurn) {
-                              handleProcessTurn(userAnswerInput);
-                            }
-                          }}
-                          disabled={isProcessingTurn}
-                        />
-                        <button
-                          className="btn btn-primary btn-sm"
-                          disabled={!userAnswerInput.trim() || isProcessingTurn}
-                          onClick={() => handleProcessTurn(userAnswerInput)}
-                        >
-                          Envoyer 🚀
-                        </button>
-                      </div>
+                      {isProcessingTurn && (
+                        <div className="flex items-center gap-2 text-sm text-muted italic p-2">
+                          <span className="animate-spin">⏳</span> L&apos;Architecte Produit formule sa réponse...
+                        </div>
+                      )}
                     </div>
+
+                    {/* Active Question Widget */}
+                    {activeQuestion ? (
+                      <div className="card p-4 space-y-3 bg-indigo-50/20 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                            ❓ Question Active ({activeQuestion.responseType})
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {questionTarget?.axis && (
+                              <span className="badge badge-primary text-[10px]">Axe : {questionTarget.axis}</span>
+                            )}
+                            {activeQuestion.targetSubject && (
+                              <span className="badge badge-secondary text-[10px]">{activeQuestion.targetSubject}</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <p className="font-semibold text-sm">{activeQuestion.text}</p>
+                        
+                        {/* Pourquoi maintenant ? */}
+                        <div className="p-2.5 bg-background/50 rounded border border-border/50 text-xs space-y-1">
+                          <div className="font-semibold text-primary flex items-center gap-1">
+                            <span>🎯 Pourquoi cette question maintenant ?</span>
+                          </div>
+                          <p className="text-muted italic">
+                            {questionTarget?.reason || activeQuestion.rationale || "Cette question vise à lever l'incertitude prioritaire du projet."}
+                          </p>
+                        </div>
+
+                        {/* Options button / Je ne sais pas encore */}
+                        {showJeNeSaisPasOptions && (
+                          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs space-y-2">
+                            <span className="font-semibold text-amber-600 dark:text-amber-400">
+                              🤷‍♂️ Comment souhaitez-vous procéder ?
+                            </span>
+                            <div className="flex gap-2 flex-wrap">
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleProcessTurn("à voir plus tard")}
+                                disabled={isProcessingTurn}
+                              >
+                                ⏳ Décider plus tard (Reporter cette question)
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleProcessTurn("propose-moi des options")}
+                                disabled={isProcessingTurn}
+                              >
+                                💡 Proposer 3 options (Demander des suggestions)
+                              </button>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setShowJeNeSaisPasOptions(false)}
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Widgets per Question Type */}
+                        <div className="pt-2 space-y-2">
+                          {activeQuestion.options && activeQuestion.options.length > 0 && (
+                            <div className="grid grid-cols-1 gap-2">
+                              {activeQuestion.options.map((opt: string, idx: number) => (
+                                <button
+                                  key={idx}
+                                  className="btn btn-secondary btn-sm text-left justify-start hover:border-primary"
+                                  disabled={isProcessingTurn}
+                                  onClick={() => handleProcessTurn(opt)}
+                                >
+                                  👉 {opt}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Text response field */}
+                          <div className="flex gap-2 pt-1">
+                            <input
+                              type="text"
+                              className="input flex-1 text-sm"
+                              placeholder="Saisissez votre réponse ou précision..."
+                              value={userAnswerInput}
+                              onChange={(e) => setUserAnswerInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && userAnswerInput.trim() && !isProcessingTurn) {
+                                  handleProcessTurn(userAnswerInput);
+                                }
+                              }}
+                              disabled={isProcessingTurn}
+                            />
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              disabled={isProcessingTurn}
+                              onClick={() => setShowJeNeSaisPasOptions(!showJeNeSaisPasOptions)}
+                              title="Indiquez que vous ne savez pas encore pour recevoir des options ou reporter."
+                            >
+                              Je ne sais pas 🤷‍♂️
+                            </button>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              disabled={!userAnswerInput.trim() || isProcessingTurn}
+                              onClick={() => handleProcessTurn(userAnswerInput)}
+                            >
+                              Envoyer 🚀
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-muted rounded-lg text-xs text-muted text-center">
+                        Entretien cadré ou aucune question en attente. Vous pouvez saisir une remarque libre ci-dessous.
+                        <div className="flex gap-2 mt-2">
+                          <input
+                            type="text"
+                            className="input flex-1 text-sm"
+                            placeholder="Remarque ou précision libre..."
+                            value={userAnswerInput}
+                            onChange={(e) => setUserAnswerInput(e.target.value)}
+                            disabled={isProcessingTurn}
+                          />
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={!userAnswerInput.trim() || isProcessingTurn}
+                            onClick={() => handleProcessTurn(userAnswerInput)}
+                          >
+                            Envoyer 🚀
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="p-3 bg-muted rounded-lg text-xs text-muted text-center">
-                    Entretien cadré ou aucune question en attente. Vous pouvez saisir une remarque libre ci-dessous.
-                    <div className="flex gap-2 mt-2">
-                      <input
-                        type="text"
-                        className="input flex-1 text-sm"
-                        placeholder="Remarque ou précision libre..."
-                        value={userAnswerInput}
-                        onChange={(e) => setUserAnswerInput(e.target.value)}
-                        disabled={isProcessingTurn}
-                      />
-                      <button
-                        className="btn btn-primary btn-sm"
-                        disabled={!userAnswerInput.trim() || isProcessingTurn}
-                        onClick={() => handleProcessTurn(userAnswerInput)}
-                      >
-                        Envoyer 🚀
-                      </button>
+                )}
+
+                {/* VIEW 2: BLUEPRINT VIVANT VIEW */}
+                {viewMode === "blueprint" && (
+                  <div className="space-y-6">
+                    {/* Conséquences Proposées en Attente */}
+                    {piConsequences.filter((c) => c.status === "PROPOSED").length > 0 && (
+                      <div className="card p-4 space-y-3 bg-amber-50/20 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800">
+                        <h3 className="font-bold text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                          <span>🎯 Conséquences Proposées à Arbitrer</span>
+                          <span className="badge badge-warning text-xs">
+                            {piConsequences.filter((c) => c.status === "PROPOSED").length} en attente
+                          </span>
+                        </h3>
+                        <p className="text-xs text-muted">
+                          L&apos;Architecte a déduit ces conséquences suite à vos réponses. Acceptez, corrigez ou refusez chaque élément pour mettre à jour le Blueprint.
+                        </p>
+
+                        <div className="space-y-2">
+                          {piConsequences
+                            .filter((c) => c.status === "PROPOSED")
+                            .map((cons) => (
+                              <div
+                                key={cons.id}
+                                className="p-3 bg-background border border-border rounded-lg text-xs space-y-2 shadow-sm"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-sm">{cons.statement}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="badge badge-secondary text-[10px]">Impact: {cons.impact}</span>
+                                    <span className="badge badge-info text-[10px]">Section: {cons.targetSectionId}</span>
+                                  </div>
+                                </div>
+                                <p className="text-muted italic">{cons.rationale}</p>
+
+                                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                                  <button
+                                    className="btn btn-success btn-sm text-[11px]"
+                                    onClick={() => handleAcceptConsequence(cons.id)}
+                                  >
+                                    Accepter ✅
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary btn-sm text-[11px]"
+                                    onClick={() => handleCorrectConsequence(cons.id)}
+                                  >
+                                    Corriger ✏️
+                                  </button>
+                                  <button
+                                    className="btn btn-warning btn-sm text-[11px]"
+                                    onClick={() => handleDeferConsequence(cons.id)}
+                                  >
+                                    Reporter ⏳
+                                  </button>
+                                  <button
+                                    className="btn btn-danger btn-sm text-[11px]"
+                                    onClick={() => handleRejectConsequence(cons.id)}
+                                  >
+                                    Refuser ❌
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Open Contradictions */}
+                    {piContradictions.filter((c) => c.status === "OPEN").length > 0 && (
+                      <div className="card p-4 space-y-3 bg-rose-50/20 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-800">
+                        <h3 className="font-bold text-sm text-rose-700 dark:text-rose-400 flex items-center gap-2">
+                          <span>⚡ Contradictions à Résoudre</span>
+                          <span className="badge badge-danger text-xs">
+                            {piContradictions.filter((c) => c.status === "OPEN").length} ouvertes
+                          </span>
+                        </h3>
+
+                        <div className="space-y-2">
+                          {piContradictions
+                            .filter((c) => c.status === "OPEN")
+                            .map((ctr) => (
+                              <div
+                                key={ctr.id}
+                                className="p-3 bg-background border border-border rounded-lg text-xs space-y-2 shadow-sm"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-sm">{ctr.subject}</span>
+                                  <span className="badge badge-danger text-[10px]">
+                                    {ctr.isBlocking ? "Bloquante" : "Important"}
+                                  </span>
+                                </div>
+                                <p className="text-muted">{ctr.explanation}</p>
+                                <div className="pt-1">
+                                  <button
+                                    className="btn btn-primary btn-sm text-[11px]"
+                                    onClick={() => handleResolveContradiction(ctr.id)}
+                                  >
+                                    Résoudre la contradiction ✏️
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 14 Sections Détaillées du Blueprint Vivant */}
+                    <div className="space-y-4">
+                      <h3 className="text-md font-bold flex items-center justify-between">
+                        <span>📘 Les 14 Sections du Blueprint Vivant</span>
+                        <span className="text-xs text-muted font-normal">
+                          {piBlueprint ? Object.values(piBlueprint.sections).filter((s) => s.status !== "EMPTY").length : 0} / 14 Alimentées
+                        </span>
+                      </h3>
+
+                      {piBlueprint ? (
+                        <div className="space-y-3">
+                          {Object.values(piBlueprint.sections).map((sec) => {
+                            const secAssertions = piAssertions.filter(
+                              (a) => a.sectionId === sec.id || (a.axis && AXIS_TO_SECTION[a.axis] === sec.id)
+                            );
+                            const secConsequences = piConsequences.filter((c) => c.targetSectionId === sec.id);
+
+                            return (
+                              <details
+                                key={sec.id}
+                                className="card p-4 border border-border group text-xs space-y-3"
+                                open={sec.status !== "EMPTY"}
+                              >
+                                <summary className="cursor-pointer font-bold text-sm flex items-center justify-between list-none">
+                                  <div className="flex items-center gap-2">
+                                    <span>{sec.title}</span>
+                                    <span
+                                      className={`badge text-[10px] ${
+                                        sec.status === "CONFIRMED"
+                                          ? "badge-success"
+                                          : sec.status === "INFERRED" || sec.status === "TO_CONFIRM"
+                                          ? "badge-warning"
+                                          : sec.status === "CONTRADICTORY"
+                                          ? "badge-danger"
+                                          : "badge-secondary"
+                                      }`}
+                                    >
+                                      {STATUS_LABELS_FR[sec.status] || sec.status}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-muted text-[11px] font-normal">
+                                    <span>✅ {secAssertions.filter((a) => a.status === "CONFIRMED").length} confirmés</span>
+                                    <span>💡 {secAssertions.filter((a) => a.status === "INFERRED").length} hypothèses</span>
+                                    <span>🎯 {secConsequences.filter((c) => c.status === "PROPOSED").length} conséquences</span>
+                                    <span className="text-xs group-open:rotate-180 transition-transform">▼</span>
+                                  </div>
+                                </summary>
+
+                                <div className="pt-3 border-t border-border/50 space-y-3">
+                                  {/* Résumé de section */}
+                                  <div className="p-3 bg-muted/30 rounded border border-border/40">
+                                    <span className="font-semibold text-muted text-[11px] block mb-1">Résumé de la section :</span>
+                                    <p className="whitespace-pre-line text-sm">{sec.summary || "Aucun contenu enregistré pour cette section."}</p>
+                                  </div>
+
+                                  {/* Assertions Confirmées */}
+                                  {secAssertions.filter((a) => a.status === "CONFIRMED").length > 0 && (
+                                    <div className="space-y-1.5">
+                                      <span className="font-semibold text-emerald-600 dark:text-emerald-400 block text-[11px]">
+                                        ✅ Faits Confirmés :
+                                      </span>
+                                      {secAssertions
+                                        .filter((a) => a.status === "CONFIRMED")
+                                        .map((a) => (
+                                          <div
+                                            key={a.id}
+                                            className="p-2 bg-emerald-50/20 dark:bg-emerald-950/20 rounded border border-emerald-200 dark:border-emerald-800 flex items-center justify-between flex-wrap gap-2"
+                                          >
+                                            <div>
+                                              <span>{a.statement}</span>
+                                              <span className="text-[10px] text-muted block italic">
+                                                Source : {SOURCE_LABELS_FR[a.source] || a.source}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                className="btn btn-ghost btn-xs text-[10px]"
+                                                onClick={() => handleCorrectAssertion(a.id)}
+                                              >
+                                                ✏️ Corriger
+                                              </button>
+                                              <button
+                                                className="btn btn-ghost btn-xs text-[10px] text-rose-500"
+                                                onClick={() => handleExcludeAssertion(a.id)}
+                                              >
+                                                ❌ Exclure
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  )}
+
+                                  {/* Assertions Hypothèses */}
+                                  {secAssertions.filter((a) => a.status === "INFERRED").length > 0 && (
+                                    <div className="space-y-1.5">
+                                      <span className="font-semibold text-amber-600 dark:text-amber-400 block text-[11px]">
+                                        💡 Hypothèses à Confirmer :
+                                      </span>
+                                      {secAssertions
+                                        .filter((a) => a.status === "INFERRED")
+                                        .map((a) => (
+                                          <div
+                                            key={a.id}
+                                            className="p-2 bg-amber-50/20 dark:bg-amber-950/20 rounded border border-amber-200 dark:border-amber-800 flex items-center justify-between flex-wrap gap-2"
+                                          >
+                                            <div>
+                                              <span>{a.statement}</span>
+                                              <span className="text-[10px] text-muted block italic">
+                                                Source : {SOURCE_LABELS_FR[a.source] || a.source}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                className="btn btn-success btn-xs text-[10px]"
+                                                onClick={() => handleConfirmAssertion(a.id)}
+                                              >
+                                                Confirmer ✅
+                                              </button>
+                                              <button
+                                                className="btn btn-ghost btn-xs text-[10px]"
+                                                onClick={() => handleDeferAssertion(a.id)}
+                                              >
+                                                Reporter ⏳
+                                              </button>
+                                              <button
+                                                className="btn btn-ghost btn-xs text-[10px] text-rose-500"
+                                                onClick={() => handleExcludeAssertion(a.id)}
+                                              >
+                                                Exclure ❌
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  )}
+
+                                  {/* Conséquences rattachées à la section */}
+                                  {secConsequences.length > 0 && (
+                                    <div className="space-y-1.5">
+                                      <span className="font-semibold text-indigo-600 dark:text-indigo-400 block text-[11px]">
+                                        🎯 Conséquences déduites :
+                                      </span>
+                                      {secConsequences.map((cons) => (
+                                        <div
+                                          key={cons.id}
+                                          className="p-2 bg-indigo-50/20 dark:bg-indigo-950/20 rounded border border-indigo-200 dark:border-indigo-800 flex items-center justify-between flex-wrap gap-2"
+                                        >
+                                          <div>
+                                            <span className="font-medium">{cons.statement}</span>
+                                            <span className="badge badge-secondary text-[9px] ml-2">{cons.status}</span>
+                                          </div>
+                                          {cons.status === "PROPOSED" && (
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                className="btn btn-success btn-xs text-[10px]"
+                                                onClick={() => handleAcceptConsequence(cons.id)}
+                                              >
+                                                Accepter
+                                              </button>
+                                              <button
+                                                className="btn btn-ghost btn-xs text-[10px]"
+                                                onClick={() => handleRejectConsequence(cons.id)}
+                                              >
+                                                Refuser
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </details>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted">Chargement du blueprint...</div>
+                      )}
                     </div>
                   </div>
                 )}
 
-                {/* 14 Blueprint Sections Summary */}
-                <div>
-                  <h3 className="text-md font-bold mb-3 flex items-center justify-between">
-                    <span>📘 Blueprint Fonctionnel (14 Sections)</span>
-                    <span className="text-xs text-muted font-normal">
-                      {piBlueprint ? Object.values(piBlueprint.sections).filter((s) => s.status !== "EMPTY").length : 0} / 14 Remplies
-                    </span>
-                  </h3>
-                  {piBlueprint ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {Object.values(piBlueprint.sections).map((sec) => (
-                        <div key={sec.id} className="card p-3 space-y-1 border border-border text-xs">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-semibold">{sec.title}</h4>
-                            <span
-                              className={`badge text-[10px] ${
-                                sec.status === "CONFIRMED"
-                                  ? "badge-success"
-                                  : sec.status === "TO_CONFIRM" || sec.status === "INFERRED"
-                                  ? "badge-warning"
-                                  : "badge-secondary"
-                              }`}
-                            >
-                              {sec.status}
-                            </span>
-                          </div>
-                          <p className="text-muted whitespace-pre-line">
-                            {sec.summary || "Section encore non renseignée."}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-muted">Chargement du blueprint...</div>
-                  )}
-                </div>
-
-                {/* Collapsible Diagnostic Panel (Closed by default) */}
+                {/* Collapsible Diagnostic Panel */}
                 <div className="card p-3 border border-border/60 text-xs space-y-2">
                   <button
                     className="flex items-center justify-between w-full font-semibold text-muted hover:text-foreground"

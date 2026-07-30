@@ -172,6 +172,10 @@ export interface IProductInterviewContradictionRepository extends IRepository<im
   getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProductInterviewContradiction[]>;
 }
 
+export interface IProposedConsequenceRepository extends IRepository<import("@pbh/domain").ProposedConsequence> {
+  getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProposedConsequence[]>;
+}
+
 // ============================================
 // Registry — single access point for all repos
 // ============================================
@@ -204,4 +208,5 @@ export interface RepositoryRegistry {
   productInterviewMessages: IProductInterviewMessageRepository;
   functionalBlueprints: IFunctionalBlueprintRepository;
   productInterviewContradictions: IProductInterviewContradictionRepository;
+  proposedConsequences: IProposedConsequenceRepository;
 }

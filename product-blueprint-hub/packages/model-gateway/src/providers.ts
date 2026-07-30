@@ -573,6 +573,14 @@ export class FakeModelProvider implements IModelProvider {
             status: "INFERRED"
           }
         ],
+        proposedConsequences: [
+          {
+            targetSectionId: "USAGE_MOMENT",
+            impact: "MEDIUM",
+            statement: "Le premier usage doit pouvoir s'effectuer sans authentification préalable.",
+            rationale: "Permet de maximiser la promesse d'immédiateté dès la première ouverture."
+          }
+        ],
         contradictions: [],
         assumptions: ["Usage matinal prioritaire", "L'utilisateur possède déjà ses données de base"],
         nextState: "WAITING_FOR_USER",

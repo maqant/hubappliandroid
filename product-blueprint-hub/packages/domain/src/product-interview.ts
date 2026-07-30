@@ -76,6 +76,28 @@ export type SectionStatus =
   | "DEFERRED"
   | "NOT_APPLICABLE";
 
+export const STATUS_LABELS_FR: Record<SectionStatus | KnowledgeStatus, string> = {
+  EMPTY: "À explorer",
+  INFERRED: "Hypothèse",
+  TO_CONFIRM: "À confirmer",
+  CONFIRMED: "Confirmé",
+  CONTRADICTORY: "Contradiction",
+  DEFERRED: "Reporté",
+  NOT_APPLICABLE: "Non applicable",
+  EXCLUDED: "Exclu",
+  UNKNOWN: "Inconnu",
+};
+
+export const SOURCE_LABELS_FR: Record<KnowledgeSource, string> = {
+  PROJECT_IDEA: "Idée initiale du projet",
+  SOURCE: "Source externe",
+  BRIEF_ITEM: "Élément du brief",
+  USER_RESPONSE: "Réponse pendant l'entretien",
+  AI_INFERENCE: "Hypothèse proposée par l'Architecte",
+  USER_DECISION: "Décision confirmée",
+  ORBITE_REVIEW: "Relecture ORBITE",
+};
+
 export type MessageType =
   | "CONVERSATIONAL"
   | "QUESTION"
@@ -137,7 +159,7 @@ export interface OrbiteAxisState {
   readonly lastTouchedTurn: number | null;
 }
 
-// Map statique pure : OrbiteAxis -> BlueprintSectionId (dérivation garantie sans désynchronisation)
+// Map statique pure : OrbiteAxis -> BlueprintSectionId
 export const AXIS_TO_SECTION: Record<OrbiteAxis, BlueprintSectionId> = {
   IDENTITY_AND_USER: "USAGE_MOMENT",
   USAGE_MOMENT: "USAGE_MOMENT",
@@ -167,6 +189,108 @@ export const AXIS_TO_SECTION: Record<OrbiteAxis, BlueprintSectionId> = {
   ACCEPTANCE_CRITERIA: "TRANSMISSION",
   OPEN_RISKS: "TRANSMISSION",
   OPEN_DECISIONS: "TRANSMISSION",
+};
+
+// ─── Categories de Classification de Réponse Utilisateur ─────────
+export type AnswerCategory =
+  | "SUBSTANTIVE"
+  | "UNCERTAIN"
+  | "DEFER_REQUEST"
+  | "REQUEST_OPTIONS"
+  | "OFF_TOPIC"
+  | "EMPTY"
+  | "AMBIGUOUS"
+  | "CONTRADICTORY"
+  | "CONFIRMATION"
+  | "CORRECTION"
+  | "EXCLUSION";
+
+/**
+ * Classificateur déterministe synchrone de la réponse utilisateur.
+ */
+export function classifyAnswer(input?: string): AnswerCategory {
+  if (!input || input.trim().length === 0) return "EMPTY";
+
+  const lower = input.trim().toLowerCase();
+
+  // Defer request
+  if (lower.includes("plus tard") || lower.includes("à voir") || lower.includes("décider plus tard")) {
+    return "DEFER_REQUEST";
+  }
+
+  // Request options
+  if (lower.includes("propose-moi") || lower.includes("proposer des options") || lower.includes("donne-moi des options")) {
+    return "REQUEST_OPTIONS";
+  }
+
+  // Uncertainty (pure)
+  if (
+    (lower.startsWith("je ne sais pas") ||
+      lower.startsWith("je sais pas") ||
+      lower.startsWith("aucune idée") ||
+      lower.startsWith("pas sûr") ||
+      lower.startsWith("je ne suis pas sûr")) &&
+    lower.length < 40
+  ) {
+    return "UNCERTAIN";
+  }
+
+  // Explicit exclusion
+  if (lower.startsWith("non, pas besoin") || lower.startsWith("exclure") || lower.includes("hors du mvp") || lower.includes("hors de question")) {
+    return "EXCLUSION";
+  }
+
+  // Explicit correction
+  if (lower.startsWith("non en fait") || lower.startsWith("correction") || lower.startsWith("plutôt")) {
+    return "CORRECTION";
+  }
+
+  // Explicit confirmation
+  if (lower === "oui" || lower === "tout à fait" || lower === "exactement" || lower === "d'accord" || lower === "je confirme") {
+    return "CONFIRMATION";
+  }
+
+  // Ambiguous
+  if ((lower.startsWith("peut-être") || lower.startsWith("ça dépend")) && lower.length < 35) {
+    return "AMBIGUOUS";
+  }
+
+  return "SUBSTANTIVE";
+}
+
+// ─── Conséquences Proposées & Statuts ─────────────────────────────
+export type ConsequenceStatus =
+  | "PROPOSED"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "CORRECTED"
+  | "DEFERRED"
+  | "SUPERSEDED";
+
+export type ImpactLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+
+export interface ProposedConsequence extends BaseEntity {
+  readonly projectId: EntityId;
+  readonly sessionId: EntityId;
+  readonly sourceAssertionIds: EntityId[];
+  readonly targetSectionId: BlueprintSectionId;
+  readonly status: ConsequenceStatus;
+  readonly impact: ImpactLevel;
+  readonly statement: string;
+  readonly rationale: string;
+  readonly correctedStatement?: string;
+  readonly createdAtTurn: number;
+  readonly resolvedAt?: string | null;
+  readonly version: number;
+}
+
+export const VALID_CONSEQUENCE_TRANSITIONS: Record<ConsequenceStatus, ConsequenceStatus[]> = {
+  PROPOSED: ["ACCEPTED", "REJECTED", "CORRECTED", "DEFERRED", "SUPERSEDED"],
+  DEFERRED: ["ACCEPTED", "REJECTED", "CORRECTED", "SUPERSEDED"],
+  CORRECTED: ["SUPERSEDED"],
+  ACCEPTED: ["SUPERSEDED"],
+  REJECTED: [],
+  SUPERSEDED: [],
 };
 
 export interface QuestionCandidate {
@@ -290,7 +414,9 @@ export interface TurnImpactSummary {
 export interface ProductArchitectResponse {
   readonly assistantMessage: string;
   readonly question?: SingleQuestion | null;
+  readonly answerClassification?: { category: AnswerCategory; explanation?: string };
   readonly knowledgeUpdates?: Partial<KnowledgeAssertion>[];
+  readonly proposedConsequences?: Partial<ProposedConsequence>[];
   readonly blueprintUpdates?: Partial<BlueprintSection>[];
   readonly contradictions?: Partial<ProductInterviewContradiction>[];
   readonly assumptions?: string[];
@@ -301,7 +427,7 @@ export interface ProductArchitectResponse {
 }
 
 /**
- * Valide le contrat de réponse IA : garantit notamment l'absence de questions multiples.
+ * Valide le contrat de réponse IA.
  */
 export function validateProductArchitectResponse(response: ProductArchitectResponse): {
   valid: boolean;
@@ -339,6 +465,8 @@ export function evaluateAxes(assertions: KnowledgeAssertion[]): Record<OrbiteAxi
   ) as Record<OrbiteAxis, OrbiteAxisState>;
 
   for (const assertion of assertions) {
+    if (assertion.status === "EXCLUDED" || assertion.status === "NOT_APPLICABLE") continue;
+
     const targetAxis = assertion.axis || (Object.keys(AXIS_TO_SECTION).find((a) => AXIS_TO_SECTION[a as OrbiteAxis] === assertion.sectionId) as OrbiteAxis) || "REAL_PROBLEM";
     const s = states[targetAxis];
     if (!s) continue;
@@ -357,9 +485,6 @@ export function evaluateAxes(assertions: KnowledgeAssertion[]): Record<OrbiteAxi
   return states;
 }
 
-/**
- * Axes prioritaires par étape de maturité
- */
 const PHASE_AXES: Record<MaturityStep, OrbiteAxis[]> = {
   EXPLORATION: ["IDENTITY_AND_USER", "USAGE_MOMENT", "CURRENT_BEHAVIOR", "REAL_PROBLEM"],
   CADRAGE: ["DECISION_TO_SIMPLIFY", "MINIMAL_PROMISE", "VALUE_LOOP_ENTRY", "VALUE_LOOP_ACTION", "VALUE_LOOP_RESULT", "VALUE_LOOP_RETURN"],
@@ -368,9 +493,6 @@ const PHASE_AXES: Record<MaturityStep, OrbiteAxis[]> = {
   READY: ["ROADMAP", "MONETIZATION"],
 };
 
-/**
- * Calcule la maturité et les compteurs d'une session à partir des assertions et contradictions.
- */
 export function computeMaturityFromAxes(
   states: Record<OrbiteAxis, OrbiteAxisState>,
   contradictions: ProductInterviewContradiction[]
@@ -421,9 +543,6 @@ export function computeMaturityFromAxes(
   };
 }
 
-/**
- * Rétro-compatibilité : wrapper computeMaturity original
- */
 export function computeMaturity(
   assertions: KnowledgeAssertion[],
   _sections: Record<BlueprintSectionId, BlueprintSection>,
@@ -433,9 +552,6 @@ export function computeMaturity(
   return computeMaturityFromAxes(states, contradictions);
 }
 
-/**
- * Moteur Déterministe ORBITE : sélectionne la cible de question prioritaire (#1).
- */
 export function selectNextQuestionTarget(
   states: Record<OrbiteAxis, OrbiteAxisState>,
   lastTargetAxis: OrbiteAxis | null = null,

@@ -29,6 +29,7 @@ import type {
   IProductInterviewMessageRepository,
   IFunctionalBlueprintRepository,
   IProductInterviewContradictionRepository,
+  IProposedConsequenceRepository,
   RepositoryRegistry,
 } from "./interfaces";
 import type {
@@ -513,6 +514,18 @@ class LocalProductInterviewContradictionRepository
   }
 }
 
+class LocalProposedConsequenceRepository
+  extends LocalRepo<import("@pbh/domain").ProposedConsequence>
+  implements IProposedConsequenceRepository
+{
+  constructor() {
+    super("pi_consequences");
+  }
+  async getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProposedConsequence[]> {
+    return this.filter((c) => c.sessionId === sessionId);
+  }
+}
+
 // ============================================
 // Registry factory
 // ============================================
@@ -546,6 +559,7 @@ export function createLocalRepositoryRegistry(): RepositoryRegistry {
     productInterviewMessages: new LocalProductInterviewMessageRepository(),
     functionalBlueprints: new LocalFunctionalBlueprintRepository(),
     productInterviewContradictions: new LocalProductInterviewContradictionRepository(),
+    proposedConsequences: new LocalProposedConsequenceRepository(),
   };
 }
 
