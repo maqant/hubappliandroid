@@ -1398,3 +1398,79 @@ export function buildDecisionRegisterEntries(input: {
   });
 }
 
+// ─── Chantier 12 — Contrat de Consolidation Directeur v2 ────────
+
+export type DirectorConsolidationStatus =
+  | 'READY'
+  | 'READY_WITH_WARNINGS'
+  | 'ARBITRATION_REQUIRED'
+  | 'INCOMPLETE'
+  | 'BLOCKED';
+
+export interface DirectorConsolidationResult {
+  readonly schemaVersion: 'v2';
+  readonly consolidationStatus: DirectorConsolidationStatus;
+  readonly baselineReference: {
+    readonly baselineId: EntityId | string;
+    readonly version: number;
+    readonly checksum?: string;
+  };
+  readonly canonicalGlossary: Array<{
+    readonly term: string;
+    readonly definition: string;
+    readonly aliases?: string[];
+    readonly references?: string[];
+  }>;
+  readonly productContractReference?: Record<string, unknown>;
+  readonly productArcs: ProductArc[];
+  readonly mvpScope: {
+    readonly boundaryDescription: string;
+    readonly requiredCapabilities: string[];
+    readonly exitCriteria: string[];
+  };
+  readonly userJourneys: Array<Record<string, unknown>>;
+  readonly features: Array<Record<string, unknown>>;
+  readonly screens: Array<Record<string, unknown>>;
+  readonly businessRules: Array<Record<string, unknown>>;
+  readonly weakStates: Array<Record<string, unknown>>;
+  readonly dataModel: Array<Record<string, unknown>>;
+  readonly technicalArchitecture: Record<string, unknown>;
+  readonly servicesAndApis?: Array<Record<string, unknown>>;
+  readonly aiArchitecture?: Record<string, unknown>;
+  readonly security: Record<string, unknown>;
+  readonly privacy: Record<string, unknown>;
+  readonly compliance: Record<string, unknown>;
+  readonly accessibility: Record<string, unknown>;
+  readonly acceptanceCriteria: Array<Record<string, unknown>>;
+  readonly implementationPlan: Array<Record<string, unknown>>;
+  readonly deferredRoadmap: RoadmapItem[];
+  readonly decisionRegisterReference: Record<string, unknown>;
+  readonly traceabilityMatrix: Record<string, unknown>;
+  readonly coverageChecks: Array<{
+    readonly checkName: string;
+    readonly status: 'PASS' | 'WARNING' | 'FAIL';
+    readonly details: string;
+  }>;
+  readonly unresolvedConflicts: Array<Record<string, unknown>>;
+  readonly decisionsRequired: Array<Record<string, unknown>>;
+  readonly packageInputs?: Record<string, unknown>;
+  readonly provenanceIndex?: Record<string, unknown>;
+  readonly consolidationMetrics: {
+    readonly arcCount: number;
+    readonly journeyCount: number;
+    readonly featureCount: number;
+    readonly screenCount: number;
+    readonly ruleCount: number;
+    readonly dataObjectCount: number;
+    readonly weakStateCount: number;
+    readonly criteriaCount: number;
+    readonly lotCount: number;
+    readonly deferredCount: number;
+    readonly conflictCount: number;
+    readonly unhandledHandoffCount: number;
+    readonly mergedDuplicatesCount: number;
+    readonly coverageRate?: number;
+    readonly untracedObjectsCount: number;
+  };
+}
+
