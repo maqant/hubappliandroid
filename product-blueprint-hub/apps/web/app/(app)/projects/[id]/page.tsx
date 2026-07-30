@@ -17,7 +17,6 @@ import {
   type ExecutionPackage,
   type RunEvent,
   type EntityId,
-  type DesignBaselineSummary,
   type PlatformConsistencyReport,
   computePlatformConsistency,
 } from "@/services";
@@ -111,8 +110,6 @@ export function ProjectDetailPageContent() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const [baselineSummary, setBaselineSummary] = useState<DesignBaselineSummary | null>(null);
-
   // Product Interview states
   const [piSession, setPiSession] = useState<import("@pbh/domain").ProductInterviewSession | null>(null);
   const [piBlueprint, setPiBlueprint] = useState<import("@pbh/domain").FunctionalBlueprint | null>(null);
@@ -147,13 +144,12 @@ export function ProjectDetailPageContent() {
         return;
       }
       setProject(p);
-      const [src, brief, dec, conf, mis, bSummary, piSess, bsl, auth, dReg] = await Promise.all([
+      const [src, brief, dec, conf, mis, piSess, bsl, auth, dReg] = await Promise.all([
         svc.sources.getSources(projectId as EntityId),
         svc.brief.getBriefItems(projectId as EntityId),
         svc.decisions.getDecisions(projectId as EntityId),
         svc.conflicts.getConflicts(projectId as EntityId),
         svc.missions.getMissions(projectId as EntityId),
-        svc.designWorkshop.getDesignBaselineSummary(projectId as EntityId),
         svc.productInterview.getSession(projectId as EntityId),
         svc.productInterview.getLatestBaseline(projectId as EntityId),
         svc.productInterview.resolveAuthority(projectId as EntityId),
@@ -164,7 +160,6 @@ export function ProjectDetailPageContent() {
       setDecisions(dec);
       setConflicts(conf);
       setMissions(mis);
-      setBaselineSummary(bSummary);
       setPiSession(piSess);
       setPiBaseline(bsl);
       setProjectAuthority(auth);
@@ -534,19 +529,7 @@ export function ProjectDetailPageContent() {
     }
   };
 
-  const handleFreezeDesignBaseline = async () => {
-    if (!window.confirm("Geler la baseline de conception ? Les propositions acceptées seront scellées comme référence pour la mission.")) return;
-    setIsFreezing(true);
-    try {
-      await svc.designWorkshop.freezeBaseline(projectId as EntityId, "v1", "User");
-      showToast("success", "Conception validée avec succès ! La mission peut maintenant être lancée dans l'onglet Organisation.");
-      await load();
-    } catch (e: any) {
-      showToast("error", e.message || String(e));
-    } finally {
-      setIsFreezing(false);
-    }
-  };
+
 
   const runMission = async () => {
     console.log("runMission: Start clicked, missions length:", missions.length);
@@ -1971,244 +1954,296 @@ export function ProjectDetailPageContent() {
 
         {activeTab === "organization" && (
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2>{t("org.title")}</h2>
-              {missions.length > 0 && missions[0]!.status === "PLANNED" && (
-                <div className="flex items-center gap-4">
-                  {project?.designStatus !== "VALIDATED" && (
-                    <div className="text-sm text-warning flex items-center gap-2">
-                      <span>⚠️</span>
-                      La conception doit être validée avant de lancer la mission.
-                    </div>
-                  )}
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={runMission} 
-                    disabled={isRunning || project?.designStatus !== "VALIDATED"}
-                  >
-                    {isRunning ? (
-                      <>
-                        <div
-                          className="loading-spinner"
-                          style={{ width: 14, height: 14, borderWidth: 2 }}
-                        />{" "}
-                        {t("action.loading")}
-                      </>
-                    ) : (
-                      `▶️ ${t("org.startBtn")}`
+            {(() => {
+              const canLaunch =
+                projectAuthority?.status === "PRODUCT_INTERVIEW_BASELINE" ||
+                projectAuthority?.status === "LEGACY_BRIEF";
+
+              return (
+                <>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2>{t("org.title")}</h2>
+                    {missions.length > 0 && missions[0]!.status === "PLANNED" && (
+                      <div className="flex items-center gap-4">
+                        {!canLaunch && (
+                          <div className="text-sm text-warning flex items-center gap-2">
+                            <span>⚠️</span>
+                            {projectAuthority?.status === "PRODUCT_INTERVIEW_WORKING_STATE"
+                              ? "L'Entretien Produit doit être finalisé et une Baseline validée avant de lancer la mission."
+                              : "Aucune Product Interview Baseline validée n'est disponible."}
+                          </div>
+                        )}
+                        <button
+                          className="btn btn-primary"
+                          onClick={runMission}
+                          disabled={isRunning || !canLaunch}
+                        >
+                          {isRunning ? (
+                            <>
+                              <div
+                                className="loading-spinner"
+                                style={{ width: 14, height: 14, borderWidth: 2 }}
+                              />{" "}
+                              {t("action.loading")}
+                            </>
+                          ) : (
+                            `▶️ ${t("org.startBtn")}`
+                          )}
+                        </button>
+                      </div>
                     )}
-                  </button>
-                </div>
-              )}
-            </div>
+                  </div>
 
-            <p className="text-sm text-muted mb-6">{t("org.desc")}</p>
-
-            {/* Brief Statistics Card */}
-            <div
-              className="card mb-6"
-              style={{
-                background: "rgba(255,255,255,0.02)",
-                border: "1px solid rgba(255,255,255,0.05)",
-              }}
-            >
-              <h3 className="mb-3" style={{ fontSize: "var(--font-size-md)" }}>
-                📊 {t("org.stats.title")}
-              </h3>
-              <div className="grid grid-5 text-center gap-2">
-                <div
-                  style={{
-                    padding: "var(--space-2)",
-                    background: "rgba(255,255,255,0.01)",
-                    borderRadius: "var(--radius-sm)",
-                  }}
-                >
-                  <span className="text-xs text-muted block">{t("org.stats.total")}</span>
-                  <strong className="text-lg block mt-1">{briefItems.length}</strong>
-                </div>
-                <div
-                  style={{
-                    padding: "var(--space-2)",
-                    background: "rgba(34,197,94,0.05)",
-                    borderRadius: "var(--radius-sm)",
-                  }}
-                >
-                  <span className="text-xs text-muted block" style={{ color: "rgb(34,197,94)" }}>
-                    {t("org.stats.accepted")}
-                  </span>
-                  <strong className="text-lg block mt-1" style={{ color: "rgb(34,197,94)" }}>
-                    {briefItems.filter((b) => b.status === "ACCEPTED").length}
-                  </strong>
-                </div>
-                <div
-                  style={{
-                    padding: "var(--space-2)",
-                    background: "rgba(59,130,246,0.05)",
-                    borderRadius: "var(--radius-sm)",
-                  }}
-                >
-                  <span className="text-xs text-muted block" style={{ color: "rgb(59,130,246)" }}>
-                    {t("org.stats.locked")}
-                  </span>
-                  <strong className="text-lg block mt-1" style={{ color: "rgb(59,130,246)" }}>
-                    {briefItems.filter((b) => b.status === "LOCKED").length}
-                  </strong>
-                </div>
-                <div
-                  style={{
-                    padding: "var(--space-2)",
-                    background: "rgba(239,68,68,0.05)",
-                    borderRadius: "var(--radius-sm)",
-                  }}
-                >
-                  <span className="text-xs text-muted block" style={{ color: "rgb(239,68,68)" }}>
-                    {t("org.stats.rejected")}
-                  </span>
-                  <strong className="text-lg block mt-1" style={{ color: "rgb(239,68,68)" }}>
-                    {briefItems.filter((b) => b.status === "REJECTED").length}
-                  </strong>
-                </div>
-                <div
-                  style={{
-                    padding: "var(--space-2)",
-                    background: "rgba(234,179,8,0.05)",
-                    borderRadius: "var(--radius-sm)",
-                  }}
-                >
-                  <span className="text-xs text-muted block" style={{ color: "rgb(234,179,8)" }}>
-                    {t("org.stats.remaining")}
-                  </span>
-                  <strong className="text-lg block mt-1" style={{ color: "rgb(234,179,8)" }}>
-                    {
-                      briefItems.filter((b) => b.status === "PROPOSED" || b.status === "CORRECTED")
-                        .length
-                    }
-                  </strong>
-                </div>
-              </div>
-            </div>
-
-            {/* Design Baseline & Swarm Summary Card */}
-            <div
-              className="card mb-6"
-              style={{
-                background: "rgba(59,130,246,0.03)",
-                border: "1px solid rgba(59,130,246,0.15)",
-              }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="m-0 flex items-center gap-2" style={{ fontSize: "var(--font-size-md)", color: "var(--color-primary)" }}>
-                  🧠 Statistiques &amp; Résumé de la Conception (Essaims)
-                </h3>
-                {baselineSummary?.baselineId ? (
-                  <span className={`badge ${baselineSummary.isStale ? "badge-warning" : "badge-success"}`}>
-                    {baselineSummary.isStale 
-                      ? `⚠️ Baseline gelée périmée (${baselineSummary.staleCount} nouvelles idées acceptées)`
-                      : `📌 Baseline active : ${baselineSummary.versionLabel || 'v1'}`}
-                  </span>
-                ) : (
-                  <span className="badge badge-info">
-                    ℹ️ Aucune baseline gelée (toutes les propositions acceptées seront transmises)
-                  </span>
-                )}
-              </div>
-
-              {baselineSummary ? (
-                <div>
-                  <p className="text-sm mb-4" style={{ background: "rgba(255,255,255,0.03)", padding: "12px 16px", borderRadius: "6px", borderLeft: "3px solid var(--color-primary)" }}>
-                    <strong>Grand Résumé de la Conception transmis aux agents :</strong><br />
-                    {baselineSummary.executiveSummary}
+                  <p className="text-sm text-muted mb-6">
+                    {projectAuthority?.status === "PRODUCT_INTERVIEW_BASELINE"
+                      ? "Cette étape prépare les spécialistes, les tâches et les contrôles nécessaires pour transformer votre cadrage fonctionnel validé en blueprint technique. Les spécialistes s'appuieront sur la Product Interview Baseline validée pour détailler les fonctionnalités, les parcours, les écrans, l'architecture et les critères de réalisation."
+                      : projectAuthority?.status === "LEGACY_BRIEF"
+                      ? "Cette étape prépare les spécialistes, les tâches et les contrôles nécessaires. Les spécialistes s'appuieront sur le cadrage historique conservé pour ce projet."
+                      : "Cette étape prépare les spécialistes, les tâches et les contrôles nécessaires pour transformer votre cadrage fonctionnel en blueprint technique."}
                   </p>
 
-                  <div className="grid grid-6 text-center gap-2 mb-4">
-                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
-                      <span className="text-xs text-muted block">🎯 Intentions</span>
-                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.INTENTION}</strong>
-                    </div>
-                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
-                      <span className="text-xs text-muted block">🔬 Hypothèses</span>
-                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.HYPOTHESIS}</strong>
-                    </div>
-                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
-                      <span className="text-xs text-muted block">⚙️ Capacités</span>
-                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.CAPABILITY}</strong>
-                    </div>
-                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
-                      <span className="text-xs text-muted block">🧩 Fonctions</span>
-                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.FEATURE}</strong>
-                    </div>
-                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
-                      <span className="text-xs text-muted block">🗺️ Parcours</span>
-                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.JOURNEY}</strong>
-                    </div>
-                    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
-                      <span className="text-xs text-muted block">🖥️ Écrans</span>
-                      <strong className="text-md block mt-1">{baselineSummary.acceptedByLayer.SCREEN}</strong>
-                    </div>
-                  </div>
+                  {/* ─── NOUVEAU PANNEAU COMPACT : SOURCE DE LA MISSION ─── */}
+                  <div
+                    className="card mb-6"
+                    style={{
+                      background: "rgba(59, 130, 246, 0.03)",
+                      border: "1px solid rgba(59, 130, 246, 0.15)",
+                    }}
+                  >
+                    {/* Cas 1 : Product Interview Baseline Validée */}
+                    {projectAuthority?.status === "PRODUCT_INTERVIEW_BASELINE" && (
+                      <div>
+                        {piBaseline ? (
+                          <div>
+                            <div className="flex items-center justify-between mb-3 pb-3 border-b border-border flex-wrap gap-2">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <h3 className="m-0 text-base font-semibold text-primary flex items-center gap-2">
+                                  📋 Source de la mission : Product Interview Baseline
+                                </h3>
+                                <span className="badge badge-success">Validée v{piBaseline.version}</span>
+                                <span className="badge badge-info">
+                                  📱 Plateforme : {project?.targetPlatforms?.join(", ") || "ANDROID_EXPO"}
+                                </span>
+                              </div>
+                              <div className="text-xs text-muted flex items-center gap-3">
+                                {piBaseline.validatedAt && (
+                                  <span>Validée le {new Date(piBaseline.validatedAt).toLocaleDateString("fr-FR")}</span>
+                                )}
+                                <span className="font-mono opacity-60">ID: {piBaseline.id}</span>
+                              </div>
+                            </div>
 
-                  <div className="flex justify-between items-center text-xs text-muted pt-2 border-t border-border">
-                    <span>Total propositions d&apos;essaims : <strong>{baselineSummary.totals.proposals}</strong> (<strong>{baselineSummary.totals.accepted}</strong> retenues/validées, {baselineSummary.totals.rejected} refusées)</span>
-                    <button className="btn btn-secondary btn-sm" onClick={handleFreezeDesignBaseline}>
-                      📌 Re-geler la baseline de conception
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted">Chargement du résumé de conception...</div>
-              )}
-            </div>
+                            <p className="text-xs text-muted mb-4 italic">
+                              « Cette baseline validée constitue le contrat fonctionnel transmis aux spécialistes. »
+                            </p>
 
-            {missions.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-icon">🏗️</div>
-                <h3>{lang === "fr" ? "Aucune mission planifiée" : "No mission planned"}</h3>
-                <p>{t("empty.organization")}</p>
-                {briefItems.length > 0 && (
-                  <button className="btn btn-primary mt-4" onClick={() => handleTabChange("interview")}>
-                    👈 {lang === "fr" ? "Aller à l'Entretien Produit" : "Go to Product Interview"}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div>
-                <h3 className="mb-4">
-                  {t("org.agentsList")} ({missions[0]!.agents.length})
-                </h3>
-                <div className="grid grid-3">
-                  {missions[0]!.agents.map((a) => {
-                    const transName = t(`agent.name.${a.agentId}` as any);
-                    const transPurpose = t(`agent.purpose.${a.agentId}` as any);
-                    const agentName = transName.startsWith("agent.name.") ? a.name : transName;
-                    const agentPurpose = transPurpose.startsWith("agent.purpose.")
-                      ? a.purpose
-                      : transPurpose;
+                            {/* Statut de préparation & Métriques d'arbitrage */}
+                            <div className="grid grid-4 gap-3 mb-4 text-center">
+                              <div className="p-2 rounded bg-surface border border-border">
+                                <span className="text-xs text-muted block">Statut préparation</span>
+                                <strong className="text-sm block mt-1 text-emerald-400 font-semibold">
+                                  {missions.length > 0
+                                    ? missions[0]!.status === "COMPLETED"
+                                      ? "MISSION TERMINÉE"
+                                      : missions[0]!.status === "RUNNING"
+                                      ? "MISSION EN COURS"
+                                      : "MISSION DÉJÀ PLANIFIÉE"
+                                    : "PRÊTE POUR LES SPÉCIALISTES"}
+                                </strong>
+                              </div>
+                              <div className="p-2 rounded bg-surface border border-border">
+                                <span className="text-xs text-muted block">Décisions actives</span>
+                                <strong className="text-sm block mt-1">
+                                  {decisionRegister.filter((d) => d.status === "ACTIVE").length}
+                                </strong>
+                              </div>
+                              <div className="p-2 rounded bg-surface border border-border">
+                                <span className="text-xs text-muted block">Éléments reportés</span>
+                                <strong className="text-sm block mt-1">
+                                  {decisionRegister.filter((d) => d.status === "DEFERRED").length}
+                                </strong>
+                              </div>
+                              <div className="p-2 rounded bg-surface border border-border">
+                                <span className="text-xs text-muted block">Risques assimilés</span>
+                                <strong className="text-sm block mt-1">
+                                  {decisionRegister.filter((d) => d.status === "ASSUMED_RISK").length}
+                                </strong>
+                              </div>
+                            </div>
 
-                    return (
-                      <div key={a.id} className="card">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span
-                            className={`badge ${a.type === "FIXED" ? "badge-locked" : "badge-info"}`}
-                          >
-                            {a.type === "FIXED" ? (lang === "fr" ? "Fixe" : "Fixed") : "Dynamic"}
-                          </span>
-                          <h4 style={{ fontSize: "var(--font-size-sm)" }}>{agentName}</h4>
-                        </div>
-                        <p className="text-xs text-muted">{agentPurpose}</p>
-                        {!a.removable && (
-                          <p
-                            className="text-xs"
-                            style={{ color: "var(--status-locked)", marginTop: "var(--space-1)" }}
-                          >
-                            🔒 {lang === "fr" ? "Requis" : "Required"}
-                          </p>
+                            {/* Synthèse compacte du contenu transmis */}
+                            <div className="p-3 rounded bg-surface-subtle border border-border text-xs space-y-2">
+                              <div className="font-semibold text-primary mb-1">
+                                🔍 Synthèse compacte du contenu transmis aux spécialistes :
+                              </div>
+                              <div className="grid grid-2 gap-2">
+                                <div>
+                                  <strong>• Problème &amp; Promesse :</strong>{" "}
+                                  {piBaseline.blueprintSnapshot?.sections?.REAL_PROBLEM?.summary || "Défini dans le cadrage"}
+                                </div>
+                                <div>
+                                  <strong>• Périmètre MVP :</strong>{" "}
+                                  {piBaseline.blueprintSnapshot?.sections?.MVP_SCOPE?.summary || "Défini dans le cadrage"}
+                                </div>
+                                <div>
+                                  <strong>• Données &amp; États faibles :</strong>{" "}
+                                  {piBaseline.blueprintSnapshot?.sections?.DATA_MATRIX?.summary || "Défini dans le cadrage"}
+                                </div>
+                                <div>
+                                  <strong>• Critères d&apos;acceptation :</strong>{" "}
+                                  {piBaseline.blueprintSnapshot?.sections?.TRANSMISSION?.summary || "Règles métier établies"}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-4 text-center">
+                            <div className="text-warning text-base font-semibold mb-2">
+                              ⚠️ Erreur de chargement de la Product Interview Baseline
+                            </div>
+                            <p className="text-xs text-muted mb-4">
+                              La baseline validée du projet n&apos;a pas pu être récupérée.
+                            </p>
+                            <button className="btn btn-sm btn-primary" onClick={() => handleTabChange("interview")}>
+                              👈 Revenir à l&apos;Entretien Produit
+                            </button>
+                          </div>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                    )}
+
+                    {/* Cas 2 : Brief Historique (Fallback) */}
+                    {projectAuthority?.status === "LEGACY_BRIEF" && (
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-3 pb-3 border-b border-border flex-wrap gap-2">
+                          <div className="flex items-center gap-3">
+                            <h3 className="m-0 text-base font-semibold text-primary flex items-center gap-2">
+                              📊 Source de la mission : Brief historique
+                            </h3>
+                            <span className="badge badge-warning">Brief historique (Fallback)</span>
+                            <span className="badge badge-info">
+                              📱 Plateforme : {project?.targetPlatforms?.join(", ") || "ANDROID_EXPO"}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted mb-4 italic">
+                          « Ce projet utilise le cadrage historique, car aucune Product Interview Baseline validée n&apos;existe. »
+                        </p>
+                        <div className="grid grid-4 gap-2 text-center">
+                          <div className="p-2 rounded bg-surface border border-border">
+                            <span className="text-xs text-muted block">Éléments actifs</span>
+                            <strong className="text-sm block mt-1">{briefItems.length}</strong>
+                          </div>
+                          <div className="p-2 rounded bg-surface border border-border">
+                            <span className="text-xs text-muted block">Acceptés / Verrouillés</span>
+                            <strong className="text-sm block mt-1">
+                              {briefItems.filter((b) => b.status === "ACCEPTED" || b.status === "LOCKED").length}
+                            </strong>
+                          </div>
+                          <div className="p-2 rounded bg-surface border border-border">
+                            <span className="text-xs text-muted block">Décisions historiques</span>
+                            <strong className="text-sm block mt-1">{decisions.length}</strong>
+                          </div>
+                          <div className="p-2 rounded bg-surface border border-border">
+                            <span className="text-xs text-muted block">Statut préparation</span>
+                            <strong className="text-sm block mt-1 text-emerald-400 font-semibold">
+                              {missions.length > 0 ? "MISSION PLANIFIÉE" : "PRÊTE POUR SPÉCIALISTES"}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cas 3 : Entretien Produit en cours (Working State) */}
+                    {projectAuthority?.status === "PRODUCT_INTERVIEW_WORKING_STATE" && (
+                      <div className="p-4 text-center">
+                        <div className="text-primary text-base font-semibold mb-2">
+                          💬 Entretien Produit en cours de cadrage
+                        </div>
+                        <p className="text-xs text-muted mb-4">
+                          Étape actuelle : <strong>{piSession?.maturityStep || "EXPLORATION"}</strong>. La Product Interview Baseline doit être validée avant de mobiliser les spécialistes.
+                        </p>
+                        <button className="btn btn-sm btn-primary" onClick={() => handleTabChange("interview")}>
+                          👈 Revenir à l&apos;Entretien Produit
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Cas 4 : Aucun cadrage (NONE) */}
+                    {projectAuthority?.status === "NONE" && (
+                      <div className="p-4 text-center">
+                        <div className="text-muted text-base font-semibold mb-2">
+                          ℹ️ Aucun cadrage fonctionnel disponible
+                        </div>
+                        <p className="text-xs text-muted mb-4">
+                          Aucun Entretien Produit n&apos;a encore été démarré pour ce projet.
+                        </p>
+                        <button className="btn btn-sm btn-primary" onClick={() => handleTabChange("interview")}>
+                          🚀 Démarrer l&apos;Entretien Produit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section Spécialistes mobilisés */}
+                  {missions.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">🏗️</div>
+                      <h3>{lang === "fr" ? "Aucune mission planifiée" : "No mission planned"}</h3>
+                      <p>{t("empty.organization")}</p>
+                      {briefItems.length > 0 && (
+                        <button className="btn btn-primary mt-4" onClick={() => handleTabChange("interview")}>
+                          👈 {lang === "fr" ? "Aller à l'Entretien Produit" : "Go to Product Interview"}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="m-0">
+                          {lang === "fr" ? "Spécialistes mobilisés" : "Mobilized Specialists"} ({missions[0]!.agents.length})
+                        </h3>
+                      </div>
+                      <p className="text-xs text-muted mb-4">
+                        18 spécialistes fixes seront mobilisés. Leur niveau de contribution sera adapté à la baseline et au projet.
+                      </p>
+                      <div className="grid grid-3">
+                        {missions[0]!.agents.map((a) => {
+                          const transName = t(`agent.name.${a.agentId}` as any);
+                          const transPurpose = t(`agent.purpose.${a.agentId}` as any);
+                          const agentName = transName.startsWith("agent.name.") ? a.name : transName;
+                          const agentPurpose = transPurpose.startsWith("agent.purpose.")
+                            ? a.purpose
+                            : transPurpose;
+
+                          return (
+                            <div key={a.id} className="card">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span
+                                  className={`badge ${a.type === "FIXED" ? "badge-locked" : "badge-info"}`}
+                                >
+                                  {a.type === "FIXED" ? (lang === "fr" ? "Fixe" : "Fixed") : "Dynamic"}
+                                </span>
+                                <h4 style={{ fontSize: "var(--font-size-sm)" }}>{agentName}</h4>
+                              </div>
+                              <p className="text-xs text-muted">{agentPurpose}</p>
+                              {!a.removable && (
+                                <p
+                                  className="text-xs"
+                                  style={{ color: "var(--status-locked)", marginTop: "var(--space-1)" }}
+                                >
+                                  🔒 {lang === "fr" ? "Requis" : "Required"}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 
