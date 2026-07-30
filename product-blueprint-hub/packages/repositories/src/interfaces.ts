@@ -176,6 +176,11 @@ export interface IProposedConsequenceRepository extends IRepository<import("@pbh
   getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProposedConsequence[]>;
 }
 
+export interface IProductInterviewBaselineRepository extends IRepository<import("@pbh/domain").ProductInterviewBaseline> {
+  getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewBaseline[]>;
+  getLatestByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewBaseline | null>;
+}
+
 // ============================================
 // Registry — single access point for all repos
 // ============================================
@@ -209,4 +214,5 @@ export interface RepositoryRegistry {
   functionalBlueprints: IFunctionalBlueprintRepository;
   productInterviewContradictions: IProductInterviewContradictionRepository;
   proposedConsequences: IProposedConsequenceRepository;
+  productInterviewBaselines: IProductInterviewBaselineRepository;
 }

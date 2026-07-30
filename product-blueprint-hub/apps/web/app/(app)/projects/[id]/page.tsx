@@ -109,6 +109,11 @@ export function ProjectDetailPageContent() {
   const [piMessages, setPiMessages] = useState<import("@pbh/domain").ProductInterviewMessage[]>([]);
   const [piContradictions, setPiContradictions] = useState<import("@pbh/domain").ProductInterviewContradiction[]>([]);
   const [piConsequences, setPiConsequences] = useState<import("@pbh/domain").ProposedConsequence[]>([]);
+  const [piBaseline, setPiBaseline] = useState<import("@pbh/domain").ProductInterviewBaseline | null>(null);
+  const [preReviewReadiness, setPreReviewReadiness] = useState<import("@pbh/domain").PreReviewReadiness | null>(null);
+  const [orbiteReviewResult, setOrbiteReviewResult] = useState<import("@pbh/domain").OrbiteReviewResult | null>(null);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [isValidatingBaseline, setIsValidatingBaseline] = useState(false);
   const [viewMode, setViewMode] = useState<"conversation" | "blueprint">("conversation");
   const [showJeNeSaisPasOptions, setShowJeNeSaisPasOptions] = useState(false);
   const [isInitializingInterview, setIsInitializingInterview] = useState(false);
@@ -122,7 +127,7 @@ export function ProjectDetailPageContent() {
         return;
       }
       setProject(p);
-      const [src, brief, dec, conf, mis, bSummary, piSess] = await Promise.all([
+      const [src, brief, dec, conf, mis, bSummary, piSess, bsl] = await Promise.all([
         svc.sources.getSources(projectId as EntityId),
         svc.brief.getBriefItems(projectId as EntityId),
         svc.decisions.getDecisions(projectId as EntityId),
@@ -130,6 +135,7 @@ export function ProjectDetailPageContent() {
         svc.missions.getMissions(projectId as EntityId),
         svc.designWorkshop.getDesignBaselineSummary(projectId as EntityId),
         svc.productInterview.getSession(projectId as EntityId),
+        svc.productInterview.getLatestBaseline(projectId as EntityId),
       ]);
       setSources(src);
       setBriefItems(brief);
@@ -138,6 +144,7 @@ export function ProjectDetailPageContent() {
       setMissions(mis);
       setBaselineSummary(bSummary);
       setPiSession(piSess);
+      setPiBaseline(bsl);
 
       if (piSess) {
         const [bp, ass, msg, ctr, cons] = await Promise.all([
@@ -518,6 +525,63 @@ export function ProjectDetailPageContent() {
       showToast("success", "Contradiction résolue !");
     } catch (e: any) {
       showToast("error", e.message || String(e));
+    }
+  };
+
+  // ─── Chantier 5 — Relecture ORBITE & Baseline Handlers ───
+
+  const handleRequestFinalReview = async () => {
+    if (!piSession) return;
+    setIsReviewing(true);
+    try {
+      const readiness = await svc.productInterview.checkPreReviewReadiness(piSession.id);
+      setPreReviewReadiness(readiness);
+
+      if (!readiness.ready) {
+        showToast("error", `Relecture impossible : ${readiness.blockers.map((b) => b.detail).join(" • ")}`);
+        return;
+      }
+
+      const res = await svc.productInterview.requestFinalReview(piSession.id);
+      setOrbiteReviewResult(res);
+      showToast("success", "Relecture finale effectuée par le Relecteur ORBITE !");
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsReviewing(false);
+    }
+  };
+
+  const handleRecordFindingDecision = async (
+    finding: import("@pbh/domain").ReviewFinding,
+    decision: import("@pbh/domain").FindingDecision
+  ) => {
+    if (!piSession || !orbiteReviewResult) return;
+    try {
+      const updated = await svc.productInterview.recordFindingDecision(finding, decision);
+      setOrbiteReviewResult({
+        ...orbiteReviewResult,
+        findings: orbiteReviewResult.findings.map((f) => (f.id === updated.id ? updated : f)),
+      });
+      showToast("success", `Observation arbitrée (${decision}).`);
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    }
+  };
+
+  const handleValidateBaseline = async () => {
+    if (!piSession) return;
+    if (!window.confirm("Valider le Blueprint Fonctionnel et créer la Product Interview Baseline immuable ?")) return;
+    setIsValidatingBaseline(true);
+    try {
+      const bsl = await svc.productInterview.validateAndCreateBaseline(piSession.id);
+      setPiBaseline(bsl);
+      showToast("success", `Product Interview Baseline v${bsl.version} créée avec succès !`);
+      load();
+    } catch (e: any) {
+      showToast("error", e.message || String(e));
+    } finally {
+      setIsValidatingBaseline(false);
     }
   };
 
@@ -1225,9 +1289,67 @@ export function ProjectDetailPageContent() {
                       )}
                     </button>
                   </div>
+
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleRequestFinalReview}
+                    disabled={isReviewing}
+                  >
+                    {isReviewing ? "⏳ Relecture..." : "🔍 Demander la relecture finale"}
+                  </button>
                 </div>
               )}
             </div>
+
+            {/* Validated Product Interview Baseline Card */}
+            {piBaseline && (
+              <div className="card p-5 bg-emerald-500/10 border-2 border-emerald-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🏆</span>
+                    <div>
+                      <h3 className="font-bold text-md text-emerald-700 dark:text-emerald-300">
+                        Product Interview Baseline v{piBaseline.version} Validée
+                      </h3>
+                      <p className="text-xs text-muted">
+                        Photographie fonctionnelle immuable créée le {new Date(piBaseline.validatedAt).toLocaleString("fr-FR")} • Hash : <code className="font-mono">{piBaseline.contentHash.slice(0, 16)}...</code>
+                      </p>
+                    </div>
+                  </div>
+                  <span className="badge badge-success font-semibold px-3 py-1">VALIDATED</span>
+                </div>
+
+                <div className="p-3 bg-background/60 rounded-lg text-xs space-y-2 border border-emerald-500/20">
+                  <p className="font-medium text-foreground">{piBaseline.narrativeSummary}</p>
+                  <div className="flex items-center gap-4 text-muted text-[11px] flex-wrap">
+                    <span>📦 <strong>{piBaseline.canonicalInventories.FEATURES.length}</strong> fonctionnalités canoniques</span>
+                    <span>📱 <strong>{piBaseline.canonicalInventories.SCREENS.length}</strong> écrans canoniques</span>
+                    <span>🗺️ <strong>{piBaseline.canonicalInventories.USER_JOURNEYS.length}</strong> parcours canoniques</span>
+                    <span>🔗 Matrice de traçabilité 100% reliée</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => {
+                      if (window.confirm("Lancer la mission avec les 18 spécialistes sur la base de cette Product Interview Baseline ?")) {
+                        svc.missions.planMission(projectId as EntityId, `Mission Baseline v${piBaseline.version}`);
+                        showToast("success", "Mission planifiée avec l'autorité canonique de la Baseline !");
+                      }
+                    }}
+                  >
+                    🚀 Lancer les 18 spécialistes avec cette Baseline
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setViewMode("blueprint")}
+                  >
+                    📘 Consulter la Baseline
+                  </button>
+                </div>
+              </div>
+            )}
 
             {!piSession ? (
               <div className="card p-6 text-center space-y-4">
@@ -1248,6 +1370,127 @@ export function ProjectDetailPageContent() {
               </div>
             ) : (
               <div className="space-y-6">
+                {/* Pre-Review Blockers Warning Card */}
+                {preReviewReadiness && !preReviewReadiness.ready && (
+                  <div className="p-4 bg-rose-50/30 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 rounded-lg text-xs space-y-2">
+                    <h4 className="font-bold text-rose-700 dark:text-rose-400 flex items-center gap-2">
+                      <span>⚠️ Relecture Finale Indisponible ({preReviewReadiness.blockers.length} obstacle(s))</span>
+                    </h4>
+                    <ul className="list-disc pl-4 space-y-1 text-muted">
+                      {preReviewReadiness.blockers.map((b, idx) => (
+                        <li key={idx}>
+                          <strong>{b.code} :</strong> {b.detail}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* ORBITE Review Result Panel */}
+                {orbiteReviewResult && (
+                  <div className="card p-5 bg-indigo-50/20 dark:bg-indigo-950/20 border-2 border-indigo-300 dark:border-indigo-800 rounded-xl space-y-4 shadow-sm">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">🔍</span>
+                        <h3 className="font-bold text-md text-indigo-700 dark:text-indigo-300">
+                          Rapport du Relecteur ORBITE Silencieux
+                        </h3>
+                      </div>
+                      <span className="badge badge-info text-xs">Statut: {orbiteReviewResult.status}</span>
+                    </div>
+
+                    <p className="text-xs text-muted">{orbiteReviewResult.reviewSummary}</p>
+
+                    {/* Strengths */}
+                    {orbiteReviewResult.strengths.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="font-semibold text-xs text-emerald-600 dark:text-emerald-400">
+                          💪 Points Solides du Blueprint :
+                        </span>
+                        <ul className="list-disc pl-4 text-xs text-muted space-y-0.5">
+                          {orbiteReviewResult.strengths.map((str, i) => (
+                            <li key={i}>{str}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Findings list */}
+                    {orbiteReviewResult.findings.length > 0 && (
+                      <div className="space-y-3 pt-2">
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                          Observations & Arbitrages Recommandés ({orbiteReviewResult.findings.length})
+                        </h4>
+                        {orbiteReviewResult.findings.map((fnd) => (
+                          <div
+                            key={fnd.id}
+                            className="p-3 bg-background border border-border rounded-lg text-xs space-y-2 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-sm">{fnd.title}</span>
+                              <div className="flex items-center gap-2">
+                                <span className={`badge text-[10px] ${fnd.level === 'BLOCKING' ? 'badge-danger' : 'badge-warning'}`}>
+                                  {fnd.level}
+                                </span>
+                                <span className="badge badge-secondary text-[10px]">{fnd.category}</span>
+                              </div>
+                            </div>
+                            <p className="text-muted">{fnd.observation}</p>
+                            <div className="p-2 bg-muted/40 rounded italic text-primary">
+                              💡 <strong>Résolution suggérée :</strong> {fnd.suggestedResolution}
+                            </div>
+
+                            {/* Decision controls */}
+                            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  className="btn btn-success btn-xs"
+                                  onClick={() => handleRecordFindingDecision(fnd, "ACCEPTED")}
+                                >
+                                  Accepter ✅
+                                </button>
+                                <button
+                                  className="btn btn-secondary btn-xs"
+                                  onClick={() => handleRecordFindingDecision(fnd, "MAINTAINED")}
+                                >
+                                  Maintenir la décision 🛡️
+                                </button>
+                                <button
+                                  className="btn btn-warning btn-xs"
+                                  onClick={() => handleRecordFindingDecision(fnd, "DEFERRED")}
+                                >
+                                  Reporter ⏳
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-xs text-rose-500"
+                                  onClick={() => handleRecordFindingDecision(fnd, "DISMISSED")}
+                                >
+                                  Écarter ❌
+                                </button>
+                              </div>
+                              {fnd.decision && (
+                                <span className="badge badge-success text-[10px]">
+                                  Décision : {fnd.decision}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Validate Baseline Action */}
+                    <div className="pt-3 border-t border-border/60 flex justify-end">
+                      <button
+                        className="btn btn-primary btn-md font-bold"
+                        onClick={handleValidateBaseline}
+                        disabled={isValidatingBaseline}
+                      >
+                        {isValidatingBaseline ? "⏳ Validation..." : "🚀 Valider le Blueprint Fonctionnel & Créer la Baseline"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {/* Stat Counters & Maturity Banner */}
                 <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-3">

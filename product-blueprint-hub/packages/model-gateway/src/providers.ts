@@ -187,6 +187,11 @@ export class FakeModelProvider implements IModelProvider {
       return this.generateProductInterviewResponse(request.prompt);
     }
 
+    // Product Interview ORBITE Reviewer
+    if (sys.includes("orbite-reviewer") || sys.includes("relecteur orbite")) {
+      return this.generateOrbiteReviewerResponse();
+    }
+
     // Brief analysis
     if (sys.includes("analyze") || sys.includes("brief")) {
       return this.generateBriefAnalysis(request.prompt);
@@ -226,6 +231,38 @@ export class FakeModelProvider implements IModelProvider {
         "Validate technical feasibility of proposed architecture.",
       ],
       confidence: 0.85,
+    });
+  }
+
+  private generateOrbiteReviewerResponse(): string {
+    return JSON.stringify({
+      reviewSummary: "Le Blueprint Vivant présente une base solide avec une promesse claire et des arbitrages explicites.",
+      recommendedNextAction: "VALIDATE",
+      strengths: [
+        "Problème réel et cible d'utilisateurs bien documentés",
+        "Périmètre MVP strictement délimité sans sur-ingénierie",
+        "Conséquences et exclusions explicitement arbitrées par l'utilisateur",
+      ],
+      remainingAssumptions: [
+        "L'utilisation en mobilité dépend de la qualité du réseau mobile",
+      ],
+      findings: [
+        {
+          id: "fnd_001",
+          category: "COHERENCE",
+          level: "IMPORTANT",
+          title: "Précision requise sur le mode hors-ligne",
+          observation: "La section WEAK_STATES ne précise pas si la synchronisation est bloquante.",
+          rationale: "Un comportement mal défini lors de la perte de réseau peut impacter l'expérience.",
+          sectionIds: ["WEAK_STATES", "DATA_MATRIX"],
+          suggestedResolution: "Ajouter une règle d'enregistrement local temporaire avec synchro différée.",
+          options: [
+            "Enregistrement local temporaire",
+            "Notification immédiate de réseau indisponible",
+          ],
+          isBlocking: false,
+        },
+      ],
     });
   }
 

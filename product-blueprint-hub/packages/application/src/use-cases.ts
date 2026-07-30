@@ -322,14 +322,23 @@ export class MissionUseCases {
   ) {}
 
   async planMission(projectId: EntityId, name: string) {
+    const baseline = await this.repos.productInterviewBaselines.getLatestByProjectId(projectId);
     const briefItems = await this.repos.briefItems.getByProjectId(projectId);
-    const mission = planMission({ projectId, name, briefItems });
-    await this.repos.missions.save(mission);
+    const mission = planMission({
+      projectId,
+      name,
+      briefItems,
+      ...(baseline ? { baselineId: baseline.id, baselineVersion: baseline.version } : {}),
+    });
+    const missionToSave = baseline
+      ? { ...mission, baselineId: baseline.id, baselineVersion: baseline.version }
+      : mission;
+    await this.repos.missions.save(missionToSave);
     // Save tasks individually
-    for (const task of mission.tasks) {
+    for (const task of missionToSave.tasks) {
       await this.repos.tasks.save(task);
     }
-    return mission;
+    return missionToSave;
   }
 
   async getMission(id: EntityId) {

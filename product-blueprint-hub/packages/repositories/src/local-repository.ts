@@ -526,6 +526,24 @@ class LocalProposedConsequenceRepository
   }
 }
 
+export class LocalProductInterviewBaselineRepository
+  extends LocalRepository<import("@pbh/domain").ProductInterviewBaseline>
+  implements IProductInterviewBaselineRepository
+{
+  constructor() {
+    super("pi_baselines");
+  }
+  async getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewBaseline[]> {
+    return this.filter((b) => b.projectId === projectId);
+  }
+  async getLatestByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewBaseline | null> {
+    const list = await this.getByProjectId(projectId);
+    const validated = list.filter((b) => b.status === "VALIDATED");
+    if (validated.length === 0) return null;
+    return validated.reduce((latest, current) => (current.version > latest.version ? current : latest), validated[0]!);
+  }
+}
+
 // ============================================
 // Registry factory
 // ============================================
@@ -560,6 +578,7 @@ export function createLocalRepositoryRegistry(): RepositoryRegistry {
     functionalBlueprints: new LocalFunctionalBlueprintRepository(),
     productInterviewContradictions: new LocalProductInterviewContradictionRepository(),
     proposedConsequences: new LocalProposedConsequenceRepository(),
+    productInterviewBaselines: new LocalProductInterviewBaselineRepository(),
   };
 }
 

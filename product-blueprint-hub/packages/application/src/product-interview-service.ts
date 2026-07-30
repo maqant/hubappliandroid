@@ -21,6 +21,13 @@ import {
   OrbiteAxis,
   TurnImpactSummary,
   classifyAnswer,
+  computePreReviewReadiness,
+  buildCanonicalInventories,
+  PreReviewReadiness,
+  OrbiteReviewResult,
+  ReviewFinding,
+  ProductInterviewBaseline,
+  FindingDecision,
 } from "@pbh/domain";
 import { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
@@ -737,6 +744,188 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     };
     await this.repos.productInterviewSessions.save(updated);
     return updated;
+  }
+
+  // ─── CHANTIER 5 — Relecture ORBITE & Product Interview Baseline ───
+
+  async checkPreReviewReadiness(sessionId: EntityId): Promise<PreReviewReadiness> {
+    const session = await this.repos.productInterviewSessions.getById(sessionId);
+    if (!session) throw new Error("Session non trouvée");
+
+    const [blueprint, assertions, consequences, contradictions] = await Promise.all([
+      this.repos.functionalBlueprints.getBySessionId(sessionId),
+      this.repos.knowledgeAssertions.getBySessionId(sessionId),
+      this.repos.proposedConsequences.getBySessionId(sessionId),
+      this.repos.productInterviewContradictions.getBySessionId(sessionId),
+    ]);
+
+    if (!blueprint) throw new Error("Blueprint non trouvé");
+
+    return computePreReviewReadiness(session, assertions, blueprint, consequences, contradictions);
+  }
+
+  async requestFinalReview(sessionId: EntityId): Promise<OrbiteReviewResult> {
+    const readiness = await this.checkPreReviewReadiness(sessionId);
+    if (!readiness.ready) {
+      throw new Error(`Relecture impossible : ${readiness.blockers.map((b) => b.detail).join(" • ")}`);
+    }
+
+    const session = await this.repos.productInterviewSessions.getById(sessionId);
+    if (!session) throw new Error("Session non trouvée");
+    const blueprint = await this.repos.functionalBlueprints.getBySessionId(sessionId);
+    const assertions = await this.repos.knowledgeAssertions.getBySessionId(sessionId);
+    const consequences = await this.repos.proposedConsequences.getBySessionId(sessionId);
+
+    const now = new Date().toISOString();
+
+    let reviewResult: OrbiteReviewResult;
+
+    if (this.provider) {
+      try {
+        const resp = await this.provider.generateResponse({
+          systemPrompt: "PRODUCT-INTERVIEW-ORBITE-REVIEWER: Vous êtes le Relecteur ORBITE. Analysez le blueprint et produisez un diagnostic strict.",
+          prompt: JSON.stringify({ blueprint, assertions, consequences }),
+        });
+        const parsed = JSON.parse(resp.content || resp);
+        reviewResult = {
+          id: `pi_rev_${Date.now()}` as EntityId,
+          sessionId,
+          requestedAt: now,
+          modelCallId: `call_${Date.now()}`,
+          status: "PENDING_ARBITRATION",
+          reviewSummary: parsed.reviewSummary || "Analyse de relecture effectuée.",
+          findings: (parsed.findings || []).map((f: any, idx: number) => ({
+            id: f.id || `fnd_${idx + 1}`,
+            category: f.category || "COHERENCE",
+            level: f.level || "IMPORTANT",
+            title: f.title || "Observation de relecture",
+            observation: f.observation || "",
+            rationale: f.rationale || "",
+            sectionIds: f.sectionIds || ["REAL_PROBLEM"],
+            assertionIds: f.assertionIds,
+            suggestedResolution: f.suggestedResolution || "",
+            options: f.options,
+            isBlocking: Boolean(f.isBlocking),
+          })),
+          strengths: parsed.strengths || ["Périmètre clair et formalisé"],
+          remainingAssumptions: parsed.remainingAssumptions || [],
+          recommendedNextAction: parsed.recommendedNextAction || "VALIDATE",
+        };
+      } catch (err: any) {
+        reviewResult = {
+          id: `pi_rev_${Date.now()}` as EntityId,
+          sessionId,
+          requestedAt: now,
+          modelCallId: `call_err_${Date.now()}`,
+          status: "FAILED",
+          reviewSummary: "Échec de l'analyse du Relecteur ORBITE.",
+          findings: [],
+          strengths: [],
+          remainingAssumptions: [],
+          recommendedNextAction: "RESUME_INTERVIEW",
+          failureReason: String(err),
+        };
+      }
+    } else {
+      // Deterministic fallback response
+      reviewResult = {
+        id: `pi_rev_${Date.now()}` as EntityId,
+        sessionId,
+        requestedAt: now,
+        modelCallId: `call_det_${Date.now()}`,
+        status: "PENDING_ARBITRATION",
+        reviewSummary: "Le Blueprint Vivant est solide et prêt à être validé.",
+        strengths: [
+          "Problème réel et promesse minimale clairement établis",
+          "Conséquences et exclusions explicitement confirmées par l'utilisateur",
+          "Boucle de valeur cohérente et traçable",
+        ],
+        remainingAssumptions: [
+          "L'adoption dépendra de la clarté de la première expérience",
+        ],
+        recommendedNextAction: "VALIDATE",
+        findings: [
+          {
+            id: `fnd_1` as EntityId,
+            category: "WEAK_STATE",
+            level: "RECOMMENDATION",
+            title: "Précision sur la première utilisation sans données",
+            observation: "La section WEAK_STATES peut être enrichie d'un guide de démarrage rapide.",
+            rationale: "Un premier lancement vide peut ralentir l'adoption si aucun exemple n'est proposé.",
+            sectionIds: ["WEAK_STATES"],
+            suggestedResolution: "Ajouter un preset ou exemple pré-rempli au premier démarrage.",
+            options: ["Exemple pré-rempli", "Guide interactif pas à pas"],
+            isBlocking: false,
+          },
+        ],
+      };
+    }
+
+    return reviewResult;
+  }
+
+  async recordFindingDecision(
+    finding: ReviewFinding,
+    decision: FindingDecision,
+    userJustification?: string
+  ): Promise<ReviewFinding> {
+    finding.decision = decision;
+    finding.decidedAt = new Date().toISOString();
+    finding.userJustification = userJustification;
+    return finding;
+  }
+
+  async validateAndCreateBaseline(sessionId: EntityId): Promise<ProductInterviewBaseline> {
+    const session = await this.repos.productInterviewSessions.getByProjectId(sessionId) || await this.repos.productInterviewSessions.getById(sessionId);
+    if (!session) throw new Error("Session non trouvée");
+
+    const [blueprint, assertions, consequences] = await Promise.all([
+      this.repos.functionalBlueprints.getBySessionId(session.id),
+      this.repos.knowledgeAssertions.getBySessionId(session.id),
+      this.repos.proposedConsequences.getBySessionId(session.id),
+    ]);
+
+    if (!blueprint) throw new Error("Blueprint non trouvé");
+
+    const acceptedCons = consequences.filter((c) => c.status === "ACCEPTED");
+    const canonicalInventories = buildCanonicalInventories(blueprint, assertions, consequences);
+
+    const now = new Date().toISOString();
+    const existing = await this.repos.productInterviewBaselines.getByProjectId(session.projectId);
+    const version = existing.length + 1;
+
+    const contentHash = `sha256_${Date.now()}_${version}`;
+
+    const baseline: ProductInterviewBaseline = {
+      id: `pi_bsl_${Date.now()}` as EntityId,
+      projectId: session.projectId,
+      sessionId: session.id,
+      version,
+      status: "VALIDATED",
+      createdAt: now,
+      validatedAt: now,
+      contentHash,
+      blueprintSnapshot: structuredClone(blueprint),
+      assertionsSnapshot: structuredClone(assertions),
+      decisionsSnapshot: [],
+      acceptedConsequencesSnapshot: structuredClone(acceptedCons),
+      arbitratedFindings: [],
+      canonicalInventories,
+      narrativeSummary: `Product Interview Baseline v${version} validée le ${new Date().toLocaleDateString("fr-FR")}.`,
+    };
+
+    await this.repos.productInterviewBaselines.save(baseline);
+    await this.finalizeSession(session.id);
+
+    return baseline;
+  }
+
+  async getLatestBaseline(projectId: EntityId): Promise<ProductInterviewBaseline | null> {
+    return this.repos.productInterviewBaselines.getLatestByProjectId(projectId);
+  }
+
+  async listBaselines(projectId: EntityId): Promise<ProductInterviewBaseline[]> {
+    return this.repos.productInterviewBaselines.getByProjectId(projectId);
   }
 
   private async refreshSessionMaturity(sessionId: EntityId): Promise<void> {

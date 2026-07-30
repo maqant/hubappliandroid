@@ -548,6 +548,8 @@ export type MissionStatus = "DRAFT" | "PLANNED" | "RUNNING" | "PAUSED" | "COMPLE
 export interface MissionManifest extends BaseEntity, Owned {
   readonly name: string;
   readonly status: MissionStatus;
+  readonly baselineId?: EntityId;
+  readonly baselineVersion?: number;
   readonly agents: AgentDefinition[];
   readonly tasks: TaskDefinition[];
   readonly totalBudgetTokens: number;

@@ -608,3 +608,256 @@ export function selectNextQuestionTarget(
     candidates: candidates.slice(0, 3),
   };
 }
+
+// ============================================================
+// CHANTIER 5 — Relecture ORBITE, Baseline immuable & Transmission
+// ============================================================
+
+export type ReviewStatus = 'PENDING_ARBITRATION' | 'ARBITRATED' | 'FAILED';
+
+export type FindingCategory =
+  | 'COHERENCE'
+  | 'SCOPE'
+  | 'VALUE_LOOP'
+  | 'DATA'
+  | 'FRICTION'
+  | 'WEAK_STATE'
+  | 'TRUST'
+  | 'ASSUMPTION'
+  | 'CONTRADICTION'
+  | 'ACCEPTANCE_CRITERIA'
+  | 'TRANSMISSION';
+
+export type FindingLevel = 'BLOCKING' | 'IMPORTANT' | 'RECOMMENDATION' | 'INFO';
+
+export type FindingDecision = 'ACCEPTED' | 'DISMISSED' | 'DEFERRED' | 'MAINTAINED';
+
+export interface ReviewFinding {
+  readonly id: EntityId;
+  readonly category: FindingCategory;
+  readonly level: FindingLevel;
+  readonly title: string;
+  readonly observation: string;
+  readonly rationale: string;
+  readonly sectionIds: readonly BlueprintSectionId[];
+  readonly assertionIds?: readonly EntityId[];
+  readonly suggestedResolution: string;
+  readonly options?: readonly string[];
+  readonly isBlocking: boolean;
+  decision?: FindingDecision;
+  decidedAt?: string;
+  userJustification?: string;
+}
+
+export interface OrbiteReviewResult {
+  readonly id: EntityId;
+  readonly sessionId: EntityId;
+  readonly requestedAt: string;
+  readonly modelCallId: string;
+  status: ReviewStatus;
+  readonly reviewSummary: string;
+  readonly findings: ReviewFinding[];
+  readonly strengths: readonly string[];
+  readonly remainingAssumptions: readonly string[];
+  readonly recommendedNextAction: 'VALIDATE' | 'ARBITRATE' | 'RESUME_INTERVIEW' | 'RESOLVE_CONTRADICTION';
+  readonly failureReason?: string;
+}
+
+export interface PreReviewBlocker {
+  readonly code: 'PENDING_CONSEQUENCES' | 'OPEN_CONTRADICTIONS' | 'BLOCKING_UNKNOWNS' | 'MISSING_MANDATORY_SECTION';
+  readonly detail: string;
+  readonly relatedIds: readonly string[];
+}
+
+export interface PreReviewReadiness {
+  readonly ready: boolean;
+  readonly blockers: readonly PreReviewBlocker[];
+  readonly sectionMaturities: Readonly<Record<BlueprintSectionId, number>>;
+}
+
+export function computePreReviewReadiness(
+  session: ProductInterviewSession,
+  assertions: KnowledgeAssertion[],
+  blueprint: FunctionalBlueprint,
+  consequences: ProposedConsequence[],
+  contradictions: ProductInterviewContradiction[]
+): PreReviewReadiness {
+  const blockers: PreReviewBlocker[] = [];
+
+  // 1. Pending critical/proposed consequences
+  const pendingCons = consequences.filter((c) => c.status === 'PROPOSED');
+  if (pendingCons.length > 0) {
+    blockers.push({
+      code: 'PENDING_CONSEQUENCES',
+      detail: `${pendingCons.length} conséquence(s) en attente d'arbitrage utilisateur.`,
+      relatedIds: pendingCons.map((c) => c.id),
+    });
+  }
+
+  // 2. Open blocking contradictions
+  const openCtrs = contradictions.filter((c) => c.status === 'OPEN' && c.isBlocking);
+  if (openCtrs.length > 0) {
+    blockers.push({
+      code: 'OPEN_CONTRADICTIONS',
+      detail: `${openCtrs.length} contradiction(s) bloquante(s) non résolue(s).`,
+      relatedIds: openCtrs.map((c) => c.id),
+    });
+  }
+
+  // 3. Mandatory sections completeness check (REAL_PROBLEM, DECISION_TO_SIMPLIFY, MINIMAL_PROMISE, MVP_SCOPE)
+  const mandatorySections: BlueprintSectionId[] = [
+    'REAL_PROBLEM',
+    'DECISION_TO_SIMPLIFY',
+    'MINIMAL_PROMISE',
+    'MVP_SCOPE',
+  ];
+
+  const emptyMandatory = mandatorySections.filter(
+    (secId) => !blueprint.sections[secId] || blueprint.sections[secId].status === 'EMPTY'
+  );
+
+  if (emptyMandatory.length > 0) {
+    blockers.push({
+      code: 'MISSING_MANDATORY_SECTION',
+      detail: `${emptyMandatory.length} section(s) fondamentale(s) non renseignée(s) (${emptyMandatory.join(', ')}).`,
+      relatedIds: emptyMandatory,
+    });
+  }
+
+  const sectionMaturities: Record<BlueprintSectionId, number> = {} as any;
+  for (const secId of ALL_BLUEPRINT_SECTION_IDS) {
+    const sec = blueprint.sections[secId];
+    sectionMaturities[secId] = sec?.status === 'CONFIRMED' ? 1.0 : sec?.status === 'INFERRED' ? 0.6 : 0.0;
+  }
+
+  return {
+    ready: blockers.length === 0,
+    blockers,
+    sectionMaturities,
+  };
+}
+
+export interface CanonicalFeature {
+  readonly id: string; // F001, F002...
+  readonly title: string;
+  readonly purpose: string;
+  readonly sectionId: BlueprintSectionId;
+  readonly recipient: string;
+  readonly isMvp: boolean;
+}
+
+export interface CanonicalScreen {
+  readonly id: string; // E001, E002...
+  readonly name: string;
+  readonly purpose: string;
+  readonly featureIds: readonly string[];
+  readonly weakStatesHandled: readonly string[];
+}
+
+export interface CanonicalJourney {
+  readonly id: string; // UJ001, UJ002...
+  readonly name: string;
+  readonly trigger: string;
+  readonly expectedOutcome: string;
+  readonly featureIds: readonly string[];
+  readonly screenIds: readonly string[];
+}
+
+export interface TraceabilityEntry {
+  readonly promiseItem: string;
+  readonly featureId: string;
+  readonly screenId: string;
+  readonly journeyId: string;
+  readonly status: 'VERIFIED' | 'PARTIAL' | 'MISSING';
+}
+
+export interface CanonicalInventories {
+  readonly FEATURES: readonly CanonicalFeature[];
+  readonly SCREENS: readonly CanonicalScreen[];
+  readonly USER_JOURNEYS: readonly CanonicalJourney[];
+  readonly TRACEABILITY_MATRIX: readonly TraceabilityEntry[];
+}
+
+export function buildCanonicalInventories(
+  blueprint: FunctionalBlueprint,
+  assertions: KnowledgeAssertion[],
+  consequences: ProposedConsequence[]
+): CanonicalInventories {
+  const confirmedAssertions = assertions.filter((a) => a.status === 'CONFIRMED');
+  const acceptedConsequences = consequences.filter((c) => c.status === 'ACCEPTED');
+
+  const FEATURES: CanonicalFeature[] = confirmedAssertions.map((a, idx) => ({
+    id: `F${String(idx + 1).padStart(3, '0')}`,
+    title: a.statement,
+    purpose: a.statement,
+    sectionId: a.sectionId || 'MVP_SCOPE',
+    recipient: 'Utilisateur final',
+    isMvp: true,
+  }));
+
+  const SCREENS: CanonicalScreen[] = [
+    {
+      id: 'E001',
+      name: 'Écran Principal / Tableau de Bord',
+      purpose: 'Exposer la première valeur minimale du produit',
+      featureIds: FEATURES.slice(0, 3).map((f) => f.id),
+      weakStatesHandled: ['Premier lancement sans données', 'Erreur de connexion', 'Rechargement'],
+    },
+  ];
+
+  const USER_JOURNEYS: CanonicalJourney[] = [
+    {
+      id: 'UJ001',
+      name: 'Parcours de Première Valeur',
+      trigger: 'Lancement du produit',
+      expectedOutcome: 'Résultat ou bénéfice minimal délivré',
+      featureIds: FEATURES.map((f) => f.id),
+      screenIds: SCREENS.map((s) => s.id),
+    },
+  ];
+
+  const TRACEABILITY_MATRIX: TraceabilityEntry[] = FEATURES.map((f) => ({
+    promiseItem: f.title,
+    featureId: f.id,
+    screenId: 'E001',
+    journeyId: 'UJ001',
+    status: 'VERIFIED',
+  }));
+
+  return {
+    FEATURES,
+    SCREENS,
+    USER_JOURNEYS,
+    TRACEABILITY_MATRIX,
+  };
+}
+
+export type BaselineStatus = 'VALIDATED' | 'SUPERSEDED';
+
+export interface ProductInterviewBaseline {
+  readonly id: EntityId;
+  readonly projectId: EntityId;
+  readonly sessionId: EntityId;
+  readonly version: number;
+  readonly status: BaselineStatus;
+  readonly createdAt: string;
+  readonly validatedAt: string;
+  readonly contentHash: string;
+  readonly blueprintSnapshot: FunctionalBlueprint;
+  readonly assertionsSnapshot: KnowledgeAssertion[];
+  readonly decisionsSnapshot: any[];
+  readonly acceptedConsequencesSnapshot: ProposedConsequence[];
+  readonly arbitratedFindings: ReviewFinding[];
+  readonly canonicalInventories: CanonicalInventories;
+  readonly narrativeSummary: string;
+}
+
+export const PRODUCT_INTERVIEW_BASELINE_CONTRACT = `
+[CONTRAT DE BASELINE PRODUCT INTERVIEW — AUTORITÉ CANONIQUE]
+1. La ProductInterviewBaseline fournie est l'AUTORITÉ FONCTIONNELLE PRINCIPALE de cette mission.
+2. Interdiction de redéfinir le problème, réécrire la promesse ou élargir silencieusement le MVP.
+3. Seul FIX-DIRECTOR consolide les inventaires canoniques : FEATURES, SCREENS, USER_JOURNEYS, TRACEABILITY_MATRIX.
+4. Toute contribution spécialisée doit référencer les identifiants canoniques (F001, E001, UJ001...) sans dupliquer le produit.
+5. ContentHash de référence : {{CONTENT_HASH}}
+` as const;
+
