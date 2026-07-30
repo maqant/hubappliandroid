@@ -861,3 +861,77 @@ export const PRODUCT_INTERVIEW_BASELINE_CONTRACT = `
 5. ContentHash de référence : {{CONTENT_HASH}}
 ` as const;
 
+// ─── Chantier 7 — Service Déterministe d'Autorité Produit ───
+
+export type ProductAuthorityStatus =
+  | 'PRODUCT_INTERVIEW_BASELINE'
+  | 'PRODUCT_INTERVIEW_WORKING_STATE'
+  | 'LEGACY_BRIEF'
+  | 'NONE';
+
+export interface ProjectProductAuthority {
+  readonly status: ProductAuthorityStatus;
+  readonly baselineId: EntityId | null;
+  readonly hasHistoricalBrief: boolean;
+  readonly historicalDivergenceRisk: boolean;
+  readonly reason: string;
+}
+
+export interface ProductAuthorityFacts {
+  readonly latestValidatedBaselineId: EntityId | null;
+  readonly hasActiveWorkingState: boolean;
+  readonly hasLockedBriefItems: boolean;
+}
+
+/**
+ * Fonction PURE et déterministe résolvant l'autorité produit principale d'un projet.
+ * Priorité stricte :
+ * 1. Product Interview Baseline validée
+ * 2. Product Interview session / working state en cours
+ * 3. Brief historique (BriefItems)
+ * 4. Aucun cadrage (NONE)
+ */
+export function resolveProjectProductAuthority(
+  facts: ProductAuthorityFacts
+): ProjectProductAuthority {
+  const hasHistoricalBrief = facts.hasLockedBriefItems;
+
+  if (facts.latestValidatedBaselineId !== null) {
+    return {
+      status: 'PRODUCT_INTERVIEW_BASELINE',
+      baselineId: facts.latestValidatedBaselineId,
+      hasHistoricalBrief,
+      historicalDivergenceRisk: hasHistoricalBrief,
+      reason: 'Une Product Interview Baseline validée existe et constitue l\'autorité fonctionnelle principale.',
+    };
+  }
+
+  if (facts.hasActiveWorkingState) {
+    return {
+      status: 'PRODUCT_INTERVIEW_WORKING_STATE',
+      baselineId: null,
+      hasHistoricalBrief,
+      historicalDivergenceRisk: false,
+      reason: 'Un Entretien Produit est en cours de cadrage.',
+    };
+  }
+
+  if (hasHistoricalBrief) {
+    return {
+      status: 'LEGACY_BRIEF',
+      baselineId: null,
+      hasHistoricalBrief: true,
+      historicalDivergenceRisk: false,
+      reason: 'Le projet utilise le brief historique (mode de compatibilité).',
+    };
+  }
+
+  return {
+    status: 'NONE',
+    baselineId: null,
+    hasHistoricalBrief: false,
+    historicalDivergenceRisk: false,
+    reason: 'Aucun cadrage produit n\'a encore été démarré pour ce projet.',
+  };
+}
+

@@ -26,7 +26,6 @@ import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 
 type TabId =
-  | "brief"
   | "decisions"
   | "interview"
   | "organization"
@@ -37,8 +36,6 @@ type TabId =
   | "baseline"
   | "package"
   | "settings";
-
-
 
 export function ProjectDetailPageContent() {
   const params = useParams();
@@ -52,13 +49,16 @@ export function ProjectDetailPageContent() {
   const [project, setProject] = useState<Project | null>(null);
   
   const rawTab = searchParams.get("tab") as TabId | null;
-  const validTabs: TabId[] = ["brief", "decisions", "interview", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
+  const validTabs: TabId[] = ["decisions", "interview", "organization", "control", "conflicts", "blueprint", "audits", "baseline", "package", "settings"];
   const activeTab: TabId = rawTab && validTabs.includes(rawTab) ? rawTab : "interview";
 
-  // Redirection transparente pour l'ancienne URL ?tab=sources
+  // Redirections transparentes pour les anciennes URL (sources, brief, understanding, comprehension)
   useEffect(() => {
-    if (searchParams.get("tab") === "sources") {
+    const currentTab = searchParams.get("tab");
+    if (currentTab === "sources") {
       router.replace(`${pathname}?tab=interview&context=open`, { scroll: false });
+    } else if (currentTab === "brief" || currentTab === "understanding" || currentTab === "comprehension") {
+      router.replace(`${pathname}?tab=interview&view=blueprint`, { scroll: false });
     }
   }, [searchParams, pathname, router]);
 
@@ -116,6 +116,7 @@ export function ProjectDetailPageContent() {
   const [piContradictions, setPiContradictions] = useState<import("@pbh/domain").ProductInterviewContradiction[]>([]);
   const [piConsequences, setPiConsequences] = useState<import("@pbh/domain").ProposedConsequence[]>([]);
   const [piBaseline, setPiBaseline] = useState<import("@pbh/domain").ProductInterviewBaseline | null>(null);
+  const [projectAuthority, setProjectAuthority] = useState<import("@pbh/domain").ProjectProductAuthority | null>(null);
   const [preReviewReadiness, setPreReviewReadiness] = useState<import("@pbh/domain").PreReviewReadiness | null>(null);
   const [orbiteReviewResult, setOrbiteReviewResult] = useState<import("@pbh/domain").OrbiteReviewResult | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
@@ -137,7 +138,7 @@ export function ProjectDetailPageContent() {
         return;
       }
       setProject(p);
-      const [src, brief, dec, conf, mis, bSummary, piSess, bsl] = await Promise.all([
+      const [src, brief, dec, conf, mis, bSummary, piSess, bsl, auth] = await Promise.all([
         svc.sources.getSources(projectId as EntityId),
         svc.brief.getBriefItems(projectId as EntityId),
         svc.decisions.getDecisions(projectId as EntityId),
@@ -146,6 +147,7 @@ export function ProjectDetailPageContent() {
         svc.designWorkshop.getDesignBaselineSummary(projectId as EntityId),
         svc.productInterview.getSession(projectId as EntityId),
         svc.productInterview.getLatestBaseline(projectId as EntityId),
+        svc.productInterview.resolveAuthority(projectId as EntityId),
       ]);
       setSources(src);
       setBriefItems(brief);
@@ -155,6 +157,7 @@ export function ProjectDetailPageContent() {
       setBaselineSummary(bSummary);
       setPiSession(piSess);
       setPiBaseline(bsl);
+      setProjectAuthority(auth);
 
       if (piSess) {
         const [bp, ass, msg, ctr, cons] = await Promise.all([
@@ -852,7 +855,6 @@ export function ProjectDetailPageContent() {
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: "interview", label: "🧭 Entretien Produit", count: piSession ? piSession.questionCount : 0 },
-    { id: "brief", label: `💡 ${t("tab.brief")}`, count: briefItems.length },
     { id: "decisions", label: `⚖️ ${t("tab.decisions")}`, count: decisions.length },
     {
       id: "organization",
@@ -972,192 +974,7 @@ export function ProjectDetailPageContent() {
 
         {/* Tab content */}
 
-        {activeTab === "brief" && (
-          <div>
-            {(() => {
-              const proposedCount = briefItems.filter((b) => b.status === "PROPOSED").length;
-              return (
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <h2>
-                    {lang === "fr" ? "Compréhension du Brief" : "Brief — What the Hub Understood"}
-                  </h2>
-                  <div className="flex items-center gap-3">
-                    {briefItems.length > 0 && (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={handleAcceptAllBriefItems}
-                        disabled={proposedCount === 0 || isAcceptingAll}
-                        title={
-                          lang === "fr"
-                            ? "Accepte d'un seul clic tous les éléments proposés"
-                            : "Accept all proposed items with a single click"
-                        }
-                      >
-                        {isAcceptingAll ? "⏳..." : `⚡ ${lang === "fr" ? "Tout Accepter" : "Accept All"}${proposedCount > 0 ? ` (${proposedCount})` : ""}`}
-                      </button>
-                    )}
-                    <span className="badge badge-demo">AI Demo</span>
-                  </div>
-                </div>
-              );
-            })()}
-            {briefItems.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-icon">💡</div>
-                <h3>{lang === "fr" ? "Aucun élément de brief" : "No brief items yet"}</h3>
-                <p>
-                  {lang === "fr"
-                    ? 'Allez dans l\'onglet Sources et cliquez sur "Analyser mon idée" pour générer le brief.'
-                    : 'Go to the Sources tab and click "Analyze my idea" to generate the brief.'}
-                </p>
-              </div>
-            ) : (
-              <div>
-                {(() => {
-                  const activeCounts = briefItems.reduce((acc, b) => {
-                    if (b.status !== "REJECTED") {
-                      const key = b.statement.trim().toLowerCase();
-                      acc[key] = (acc[key] || 0) + 1;
-                    }
-                    return acc;
-                  }, {} as Record<string, number>);
 
-                  return briefItems.map((item) => {
-                    const isDuplicate =
-                      (activeCounts[item.statement.trim().toLowerCase()] || 0) > 1;
-                    return (
-                      <div key={item.id} className="card mb-4">
-                        <div className="flex items-center gap-3 mb-2 flex-wrap">
-                          <span className={`badge badge-${item.status.toLowerCase()}`}>
-                            {item.status}
-                          </span>
-                          <span className="badge badge-info">{item.type}</span>
-                          <span className="text-xs text-muted">
-                            {lang === "fr" ? "Confiance : " : "Confidence: "}
-                            {Math.round(item.confidence * 100)}%
-                          </span>
-                          {item.status === "CORRECTED" && (
-                            <span className="badge badge-success text-xs">
-                              ✨{" "}
-                              {lang === "fr"
-                                ? "Version active transmise à l'IA"
-                                : "Active version sent to AI"}
-                            </span>
-                          )}
-                          {isDuplicate && (
-                            <span
-                              className="badge badge-warning text-xs"
-                              title={
-                                lang === "fr"
-                                  ? "Élément en doublon. Cliquez sur Refuser (❌) sur l'un des deux."
-                                  : "Duplicate item. Click Reject (❌) on one of them."
-                              }
-                            >
-                              ⚠️ {lang === "fr" ? "Doublon potentiel" : "Potential duplicate"}
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-semibold mb-2">{item.statement}</p>
-                        {item.excerpt && (
-                          <p className="text-xs text-muted mb-3">
-                            Source: &quot;{item.excerpt.slice(0, 100)}...&quot;
-                          </p>
-                        )}
-
-                        <div className="flex gap-2 flex-wrap">
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => handleBriefAction(item.id, "accept")}
-                            disabled={item.status === "ACCEPTED" || item.status === "LOCKED"}
-                          >
-                            ✅ {t("action.accept")}
-                          </button>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => handleBriefAction(item.id, "reject")}
-                          >
-                            ❌ {t("action.reject")}
-                          </button>
-                        </div>
-
-                        {/* Correction */}
-                        <div className="flex gap-2 mt-3">
-                          <input
-                            className="input"
-                            style={{ flex: 1 }}
-                            placeholder={
-                              lang === "fr" ? "Saisir une correction..." : "Enter correction..."
-                            }
-                            value={correctionText[item.id] ?? ""}
-                            onChange={(e) =>
-                              setCorrectionText((p) => ({ ...p, [item.id]: e.target.value }))
-                            }
-                          />
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => handleBriefAction(item.id, "correct")}
-                            disabled={!correctionText[item.id]?.trim()}
-                          >
-                            ✏️ {t("action.correct")}
-                          </button>
-                        </div>
-
-                        {/* Version history */}
-                        {item.previousVersions.length > 0 && (
-                          <details className="mt-3">
-                            <summary className="text-xs text-muted" style={{ cursor: "pointer" }}>
-                              {lang === "fr"
-                                ? `Historique des versions (${item.previousVersions.length})`
-                                : `Version history (${item.previousVersions.length})`}
-                            </summary>
-                            <p className="text-xs text-muted mt-1 italic">
-                              {lang === "fr"
-                                ? "💡 Seule la version active ci-dessus est prise en compte par l'IA. Les anciennes versions ci-dessous sont conservées comme archive."
-                                : "💡 Only the active version above is used by AI. Older versions below are archived."}
-                            </p>
-                            {item.previousVersions.map((v, i) => (
-                              <div
-                                key={i}
-                                className="text-xs text-muted mt-1"
-                                style={{ paddingLeft: 16 }}
-                              >
-                                v{v.version}: [{v.status}] {v.statement}
-                              </div>
-                            ))}
-                          </details>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            )}
-
-            {briefItems.length > 0 && (
-              <div className="mt-6">
-                <button
-                  className="btn btn-primary btn-lg"
-                  onClick={planMission}
-                  disabled={isPlanning || missions.length > 0}
-                >
-                  {isPlanning ? (
-                    <>
-                      <div
-                        className="loading-spinner"
-                        style={{ width: 14, height: 14, borderWidth: 2 }}
-                      />{" "}
-                      {t("action.loading")}
-                    </>
-                  ) : missions.length > 0 ? (
-                    `✅ ${lang === "fr" ? "Mission déjà planifiée" : "Mission Already Planned"}`
-                  ) : (
-                    `🏗️ ${t("org.planBtn")}`
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
 
         {activeTab === "decisions" && (
           <div>
@@ -1207,8 +1024,29 @@ export function ProjectDetailPageContent() {
           <div className="space-y-6">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div>
-                <h2>🧭 Entretien Produit — Blueprint Vivant</h2>
-                <p className="text-sm text-muted">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h2 className="m-0">🧭 Entretien Produit — Blueprint Vivant</h2>
+                  {projectAuthority && (
+                    <span
+                      className={`badge font-semibold text-xs px-2.5 py-1 ${
+                        projectAuthority.status === "PRODUCT_INTERVIEW_BASELINE"
+                          ? "badge-success"
+                          : projectAuthority.status === "PRODUCT_INTERVIEW_WORKING_STATE"
+                            ? "badge-info"
+                            : projectAuthority.status === "LEGACY_BRIEF"
+                              ? "badge-warning"
+                              : "badge-secondary"
+                      }`}
+                      title={projectAuthority.reason}
+                    >
+                      {projectAuthority.status === "PRODUCT_INTERVIEW_BASELINE" && "🏆 Authority: Baseline Validée"}
+                      {projectAuthority.status === "PRODUCT_INTERVIEW_WORKING_STATE" && "🧭 Authority: Entretien Actif"}
+                      {projectAuthority.status === "LEGACY_BRIEF" && "💡 Authority: Brief Historique"}
+                      {projectAuthority.status === "NONE" && "⚪ Nouveaux Projets"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted mt-1">
                   Transformez une idée brute en une vision produit claire, explicite et traçable (basé sur <em>L’Architecture de la Pensée Produit</em>).
                 </p>
               </div>

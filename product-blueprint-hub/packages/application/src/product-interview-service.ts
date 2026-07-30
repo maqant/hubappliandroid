@@ -946,6 +946,20 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     return this.repos.sources.updateContextStatus(sourceId, status);
   }
 
+  async resolveAuthority(projectId: EntityId): Promise<import("@pbh/domain").ProjectProductAuthority> {
+    const [baseline, session, briefItems] = await Promise.all([
+      this.getLatestBaseline(projectId),
+      this.getSession(projectId),
+      this.repos.briefItems.getByProjectId(projectId),
+    ]);
+
+    return import("@pbh/domain").resolveProjectProductAuthority({
+      latestValidatedBaselineId: baseline ? baseline.id : null,
+      hasActiveWorkingState: session !== null,
+      hasLockedBriefItems: briefItems.length > 0,
+    });
+  }
+
   private async refreshSessionMaturity(sessionId: EntityId): Promise<void> {
     const session = await this.repos.productInterviewSessions.getById(sessionId);
     if (!session) return;
