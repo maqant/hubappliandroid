@@ -11,7 +11,6 @@ import {
   ProductArchitectResponse,
   ProductInterviewContradiction,
   ProposedConsequence,
-  ConsequenceStatus,
   VALID_CONSEQUENCE_TRANSITIONS,
   evaluateAxes,
   computeMaturityFromAxes,
@@ -25,9 +24,10 @@ import {
   buildCanonicalInventories,
   PreReviewReadiness,
   OrbiteReviewResult,
-  ReviewFinding,
   ProductInterviewBaseline,
   FindingDecision,
+  resolveProjectProductAuthority,
+  buildDecisionRegisterEntries,
 } from "@pbh/domain";
 import { RepositoryRegistry } from "@pbh/repositories";
 import type { IModelProvider } from "@pbh/model-gateway";
@@ -185,7 +185,7 @@ export class ProductInterviewService {
           },
         },
         activeQuestion: null,
-        questionTarget: activeQ || selectNextQuestionTarget(evaluateAxes(assertions), null, contradictions),
+        questionTarget: activeQ || selectNextQuestionTarget(evaluateAxes(assertions), session.maturityStep, contradictions),
       };
     }
 
@@ -251,8 +251,7 @@ export class ProductInterviewService {
 
     // 1. Evaluate Axis States & Select Target
     const currentAxisStates = evaluateAxes(assertions);
-    const lastAxis = session.activeQuestionTarget?.axis || null;
-    const questionTarget = selectNextQuestionTarget(currentAxisStates, lastAxis, contradictions);
+    const questionTarget = selectNextQuestionTarget(currentAxisStates, session.maturityStep, contradictions);
 
     // 2. Active Sources for LLM Context (Filter out INACTIVE sources)
     const allSources = await this.repos.sources.getByProjectId(projectId);
@@ -793,11 +792,11 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
 
     if (this.provider) {
       try {
-        const resp = await this.provider.generateResponse({
-          systemPrompt: "PRODUCT-INTERVIEW-ORBITE-REVIEWER: Vous êtes le Relecteur ORBITE. Analysez le blueprint et produisez un diagnostic strict.",
+        const resp = await this.provider.complete({
           prompt: JSON.stringify({ blueprint, assertions, consequences }),
-        });
-        const parsed = JSON.parse(resp.content || resp);
+          systemPrompt: "PRODUCT-INTERVIEW-ORBITE-REVIEWER: Vous êtes le Relecteur ORBITE. Analysez le blueprint et produisez un diagnostic strict.",
+        } as any);
+        const parsed = JSON.parse(resp.content || (resp as any));
         reviewResult = {
           id: `pi_rev_${Date.now()}` as EntityId,
           sessionId,
@@ -810,15 +809,13 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
             category: f.category || "COHERENCE",
             level: f.level || "IMPORTANT",
             title: f.title || "Observation de relecture",
-            observation: f.observation || "",
+            observation: f.observation || f.title || "",
             rationale: f.rationale || "",
             sectionIds: f.sectionIds || ["REAL_PROBLEM"],
-            assertionIds: f.assertionIds,
             suggestedResolution: f.suggestedResolution || "",
-            options: f.options,
-            isBlocking: Boolean(f.isBlocking),
+            isBlocking: f.isBlocking || false,
           })),
-          strengths: parsed.strengths || ["Périmètre clair et formalisé"],
+          strengths: parsed.strengths || ["Alignement global du produit"],
           remainingAssumptions: parsed.remainingAssumptions || [],
           recommendedNextAction: parsed.recommendedNextAction || "VALIDATE",
         };
@@ -827,107 +824,115 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
           id: `pi_rev_${Date.now()}` as EntityId,
           sessionId,
           requestedAt: now,
-          modelCallId: `call_err_${Date.now()}`,
+          modelCallId: `call_${Date.now()}`,
           status: "FAILED",
-          reviewSummary: "Échec de l'analyse du Relecteur ORBITE.",
+          reviewSummary: "Erreur lors de l'exécution du Relecteur ORBITE.",
           findings: [],
           strengths: [],
           remainingAssumptions: [],
           recommendedNextAction: "RESUME_INTERVIEW",
-          failureReason: String(err),
+          failureReason: err?.message || "Erreur inconnue du provider IA.",
         };
       }
     } else {
-      // Deterministic fallback response
+      // Deterministic Local Fallback if no LLM provider is attached
       reviewResult = {
         id: `pi_rev_${Date.now()}` as EntityId,
         sessionId,
         requestedAt: now,
-        modelCallId: `call_det_${Date.now()}`,
+        modelCallId: "local_fallback",
         status: "PENDING_ARBITRATION",
-        reviewSummary: "Le Blueprint Vivant est solide et prêt à être validé.",
-        strengths: [
-          "Problème réel et promesse minimale clairement établis",
-          "Conséquences et exclusions explicitement confirmées par l'utilisateur",
-          "Boucle de valeur cohérente et traçable",
-        ],
-        remainingAssumptions: [
-          "L'adoption dépendra de la clarté de la première expérience",
-        ],
-        recommendedNextAction: "VALIDATE",
+        reviewSummary: "Relecture déterministe locale effectuée (mode hors-ligne/fake).",
         findings: [
           {
-            id: `fnd_1` as EntityId,
-            category: "WEAK_STATE",
+            id: "fnd_001" as EntityId,
+            category: "COHERENCE",
             level: "RECOMMENDATION",
-            title: "Précision sur la première utilisation sans données",
-            observation: "La section WEAK_STATES peut être enrichie d'un guide de démarrage rapide.",
-            rationale: "Un premier lancement vide peut ralentir l'adoption si aucun exemple n'est proposé.",
-            sectionIds: ["WEAK_STATES"],
-            suggestedResolution: "Ajouter un preset ou exemple pré-rempli au premier démarrage.",
-            options: ["Exemple pré-rempli", "Guide interactif pas à pas"],
+            title: "Validation de la promesse minimale",
+            observation: "La promesse minimale est bien articulée avec la décision à simplifier.",
+            rationale: "Vérifier lors du premier test utilisateur l'acceptation de cette promesse.",
+            sectionIds: ["MINIMAL_PROMISE"],
+            suggestedResolution: "Valider la promesse minimale sans modification.",
             isBlocking: false,
           },
         ],
+        strengths: ["Cadrage fonctionnel complet et traçable"],
+        remainingAssumptions: [],
+        recommendedNextAction: "VALIDATE",
       };
     }
 
+    await this.repos.orbiteReviews.save(reviewResult);
     return reviewResult;
   }
 
-  async recordFindingDecision(
-    finding: ReviewFinding,
+  async arbitrateFinding(
+    _sessionId: EntityId,
+    reviewResultId: EntityId,
+    findingId: EntityId,
     decision: FindingDecision,
     userJustification?: string
-  ): Promise<ReviewFinding> {
+  ): Promise<OrbiteReviewResult> {
+    const review = await this.repos.orbiteReviews.getById(reviewResultId);
+    if (!review) throw new Error("Relecture non trouvée.");
+
+    const finding = review.findings.find((f: any) => f.id === findingId);
+    if (!finding) throw new Error("Constat d'audit non trouvé.");
+
     finding.decision = decision;
     finding.decidedAt = new Date().toISOString();
     finding.userJustification = userJustification;
-    return finding;
+
+    const allArbitrated = review.findings.every((f: any) => f.decision !== undefined);
+    if (allArbitrated) {
+      review.status = "ARBITRATED";
+    }
+
+    await this.repos.orbiteReviews.save(review);
+    return review;
   }
 
-  async validateAndCreateBaseline(sessionId: EntityId): Promise<ProductInterviewBaseline> {
-    const session = await this.repos.productInterviewSessions.getByProjectId(sessionId) || await this.repos.productInterviewSessions.getById(sessionId);
-    if (!session) throw new Error("Session non trouvée");
+  async createBaseline(sessionId: EntityId, narrativeSummary: string): Promise<ProductInterviewBaseline> {
+    const session = await this.getSession(sessionId);
+    if (!session) throw new Error("Session non trouvée.");
 
-    const [blueprint, assertions, consequences] = await Promise.all([
-      this.repos.functionalBlueprints.getBySessionId(session.id),
-      this.repos.knowledgeAssertions.getBySessionId(session.id),
-      this.repos.proposedConsequences.getBySessionId(session.id),
+    const [blueprint, assertions, consequences, orbiteReviews] = await Promise.all([
+      this.getBlueprint(sessionId),
+      this.getAssertions(sessionId),
+      this.repos.proposedConsequences.getBySessionId(sessionId),
+      this.repos.orbiteReviews.getBySessionId(sessionId),
     ]);
 
-    if (!blueprint) throw new Error("Blueprint non trouvé");
+    if (!blueprint) throw new Error("Blueprint non trouvé.");
 
-    const acceptedCons = consequences.filter((c) => c.status === "ACCEPTED");
+    const latestReview = orbiteReviews.length > 0 ? orbiteReviews[orbiteReviews.length - 1] : null;
+    const arbitratedFindings = latestReview ? latestReview.findings : [];
+
     const canonicalInventories = buildCanonicalInventories(blueprint, assertions, consequences);
 
+    const latestBaseline = await this.getLatestBaseline(session.projectId);
+    const version = latestBaseline ? latestBaseline.version + 1 : 1;
+
     const now = new Date().toISOString();
-    const existing = await this.repos.productInterviewBaselines.getByProjectId(session.projectId);
-    const version = existing.length + 1;
-
-    const contentHash = `sha256_${Date.now()}_${version}`;
-
     const baseline: ProductInterviewBaseline = {
       id: `pi_bsl_${Date.now()}` as EntityId,
       projectId: session.projectId,
-      sessionId: session.id,
+      sessionId,
       version,
       status: "VALIDATED",
       createdAt: now,
       validatedAt: now,
-      contentHash,
-      blueprintSnapshot: structuredClone(blueprint),
-      assertionsSnapshot: structuredClone(assertions),
+      contentHash: `hash_${Date.now()}`,
+      blueprintSnapshot: blueprint,
+      assertionsSnapshot: assertions,
       decisionsSnapshot: [],
-      acceptedConsequencesSnapshot: structuredClone(acceptedCons),
-      arbitratedFindings: [],
+      acceptedConsequencesSnapshot: consequences.filter((c: ProposedConsequence) => c.status === "ACCEPTED"),
+      arbitratedFindings,
       canonicalInventories,
-      narrativeSummary: `Product Interview Baseline v${version} validée le ${new Date().toLocaleDateString("fr-FR")}.`,
+      narrativeSummary: narrativeSummary || "Baseline de cadrage validée par l'utilisateur.",
     };
 
     await this.repos.productInterviewBaselines.save(baseline);
-    await this.finalizeSession(session.id);
-
     return baseline;
   }
 
@@ -935,11 +940,20 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
     return this.repos.productInterviewBaselines.getLatestByProjectId(projectId);
   }
 
-  async listBaselines(projectId: EntityId): Promise<ProductInterviewBaseline[]> {
-    return this.repos.productInterviewBaselines.getByProjectId(projectId);
+  async getSources(projectId: EntityId): Promise<import("@pbh/domain").Source[]> {
+    return this.repos.sources.getByProjectId(projectId);
   }
 
-  async toggleSourceContextStatus(
+  async addSource(
+    projectId: EntityId,
+    label: string,
+    content: string,
+    type: import("@pbh/domain").SourceType
+  ): Promise<import("@pbh/domain").Source> {
+    return this.repos.sources.addSource(projectId, label, content, type);
+  }
+
+  async updateSourceContextStatus(
     sourceId: EntityId,
     status: import("@pbh/domain").SourceContextStatus
   ): Promise<import("@pbh/domain").Source> {
@@ -953,7 +967,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
       this.repos.briefItems.getByProjectId(projectId),
     ]);
 
-    return import("@pbh/domain").resolveProjectProductAuthority({
+    return resolveProjectProductAuthority({
       latestValidatedBaselineId: baseline ? baseline.id : null,
       hasActiveWorkingState: session !== null,
       hasLockedBriefItems: briefItems.length > 0,
@@ -968,7 +982,7 @@ ${userInput || "(Initialisation du premier tour de l'entretien)"}`;
       session ? this.repos.proposedConsequences.getBySessionId(session.id) : Promise.resolve([]),
     ]);
 
-    return import("@pbh/domain").buildDecisionRegisterEntries({
+    return buildDecisionRegisterEntries({
       decisions,
       contradictions,
       consequences,

@@ -21,7 +21,7 @@ import {
   type PlatformConsistencyReport,
   computePlatformConsistency,
 } from "@/services";
-import { STATUS_LABELS_FR, SOURCE_LABELS_FR } from "@pbh/domain";
+import { STATUS_LABELS_FR, SOURCE_LABELS_FR, AXIS_TO_SECTION } from "@pbh/domain";
 import { useTranslation } from "@/i18n";
 import { ExportAnalysisModal } from "@/components/ExportAnalysisModal";
 
@@ -79,7 +79,6 @@ export function ProjectDetailPageContent() {
   };
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAcceptingAll, setIsAcceptingAll] = useState(false);
 
   // Data states
   const [sources, setSources] = useState<Source[]>([]);
@@ -97,16 +96,10 @@ export function ProjectDetailPageContent() {
 
   
   // UI states
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isPlanning, setIsPlanning] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
   const [isFreezing, setIsFreezing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [newSourceText, setNewSourceText] = useState("");
-  const [newSourceLabel, setNewSourceLabel] = useState("");
-  const [correctionText, setCorrectionText] = useState<Record<string, string>>({});
-  const [resolveRationale, setResolveRationale] = useState("");
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isPlatformModalOpen, setIsPlatformModalOpen] = useState(false);
@@ -142,6 +135,8 @@ export function ProjectDetailPageContent() {
   const [newContextType, setNewContextType] = useState<import("@pbh/domain").SourceType>("TEXT");
   const [showJeNeSaisPasOptions, setShowJeNeSaisPasOptions] = useState(false);
   const [isInitializingInterview, setIsInitializingInterview] = useState(false);
+  const [resolveRationale, setResolveRationale] = useState("");
+  const [conflictRationale, setConflictRationale] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -225,121 +220,9 @@ export function ProjectDetailPageContent() {
 
   // ---- Actions ----
 
-  const addSource = async () => {
-    if (!newSourceText.trim()) return;
-    await svc.sources.addSource(
-      projectId as EntityId,
-      "TEXT",
-      newSourceLabel || "Additional source",
-      newSourceText,
-    );
-    setNewSourceText("");
-    setNewSourceLabel("");
-    showToast("success", lang === "fr" ? "Source ajoutée avec succès" : "Source added");
-    load();
-  };
 
-  const analyze = async () => {
-    setIsAnalyzing(true);
-    try {
-      await svc.brief.analyzeBrief(projectId as EntityId);
-      showToast(
-        "success",
-        lang === "fr"
-          ? "Analyse terminée — examinez les éléments du brief ci-dessous"
-          : "Analysis complete — review the brief items below",
-      );
-      handleTabChange("brief");
-      load();
-    } catch (err) {
-      showToast("error", String(err));
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
-  const handleAcceptAllBriefItems = async () => {
-    if (isAcceptingAll) return;
-    setIsAcceptingAll(true);
-    try {
-      await svc.brief.acceptAllProposed(projectId as EntityId);
-      showToast(
-        "success",
-        lang === "fr"
-          ? "Tous les éléments du brief ont été acceptés !"
-          : "All brief items accepted!",
-      );
-      load();
-    } catch (err) {
-      showToast("error", String(err));
-    } finally {
-      setIsAcceptingAll(false);
-    }
-  };
 
-  const handleBriefAction = async (
-    itemId: string,
-    action: "accept" | "correct" | "reject",
-  ) => {
-    try {
-      if (action === "accept") await svc.brief.acceptItem(itemId as EntityId);
-      else if (action === "reject") await svc.brief.rejectItem(itemId as EntityId);
-      else if (action === "correct") {
-        const text = correctionText[itemId];
-        if (!text?.trim()) {
-          showToast(
-            "error",
-            lang === "fr" ? "Veuillez entrer le texte de correction" : "Enter the corrected text",
-          );
-          return;
-        }
-        await svc.brief.correctItem(itemId as EntityId, text);
-        setCorrectionText((p) => {
-          const n = { ...p };
-          delete n[itemId];
-          return n;
-        });
-      }
-
-      let msg = `Item ${action}ed`;
-      if (lang === "fr") {
-        if (action === "accept") msg = t("accept.success");
-        else if (action === "reject") msg = t("reject.success");
-        else if (action === "correct") msg = t("correct.success");
-      }
-      showToast("success", msg);
-      load();
-    } catch (err: any) {
-      const errMsg = String(err.message || err);
-      if (
-        errMsg.includes("Aucune modification à enregistrer") ||
-        errMsg.includes("No modifications to save")
-      ) {
-        showToast("info", t("idempotent.noChange"));
-      } else {
-        showToast("error", errMsg);
-      }
-    }
-  };
-
-  const planMission = async () => {
-    setIsPlanning(true);
-    try {
-      await svc.missions.planMission(projectId as EntityId, `Mission pour ${project?.name}`);
-      showToast(
-        "success",
-        lang === "fr"
-          ? "Mission planifiée — examinez l'organisation"
-          : "Mission planned — review the agents and tasks",
-      );
-      handleTabChange("organization");
-      load();
-    } catch (err) {
-      showToast("error", String(err));
-    } finally {
-      setIsPlanning(false);
-    }
-  };
 
   const handleApproveArtifact = async (artifactId: string) => {
     try {
@@ -523,15 +406,7 @@ export function ProjectDetailPageContent() {
     }
   };
 
-  const handleMarkNotApplicable = async (assertionId: EntityId) => {
-    try {
-      await svc.productInterview.markNotApplicable(assertionId);
-      if (piSession) await refreshInterviewData(piSession.id);
-      showToast("success", "Marqué comme non applicable.");
-    } catch (e: any) {
-      showToast("error", e.message || String(e));
-    }
-  };
+
 
   const handleCorrectAssertion = async (assertionId: EntityId) => {
     const text = window.prompt("Saisissez votre correction :");
@@ -587,11 +462,13 @@ export function ProjectDetailPageContent() {
   ) => {
     if (!piSession || !orbiteReviewResult) return;
     try {
-      const updated = await svc.productInterview.recordFindingDecision(finding, decision);
-      setOrbiteReviewResult({
-        ...orbiteReviewResult,
-        findings: orbiteReviewResult.findings.map((f) => (f.id === updated.id ? updated : f)),
-      });
+      const updatedReview = await svc.productInterview.arbitrateFinding(
+        piSession.id,
+        orbiteReviewResult.id,
+        finding.id,
+        decision
+      );
+      setOrbiteReviewResult(updatedReview);
       showToast("success", `Observation arbitrée (${decision}).`);
     } catch (e: any) {
       showToast("error", e.message || String(e));
@@ -603,7 +480,10 @@ export function ProjectDetailPageContent() {
     if (!window.confirm("Valider le Blueprint Fonctionnel et créer la Product Interview Baseline immuable ?")) return;
     setIsValidatingBaseline(true);
     try {
-      const bsl = await svc.productInterview.validateAndCreateBaseline(piSession.id);
+      const bsl = await svc.productInterview.createBaseline(
+        piSession.id,
+        "Baseline de cadrage validée par l'utilisateur."
+      );
       setPiBaseline(bsl);
       showToast("success", `Product Interview Baseline v${bsl.version} créée avec succès !`);
       load();
@@ -623,7 +503,7 @@ export function ProjectDetailPageContent() {
     const nextStatus: import("@pbh/domain").SourceContextStatus =
       currentStatus === "INACTIVE" ? "ACTIVE" : "INACTIVE";
     try {
-      await svc.productInterview.toggleSourceContextStatus(sourceId, nextStatus);
+      await svc.productInterview.updateSourceContextStatus(sourceId, nextStatus);
       showToast(
         "success",
         nextStatus === "ACTIVE"
@@ -770,7 +650,7 @@ export function ProjectDetailPageContent() {
     try {
       await svc.audits.runAudits(missions[0]!.id);
       showToast("success", lang === "fr" ? "Audits terminés" : "Audits completed");
-      handleTabChange("audits");
+      handleTabChange("delivery");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -785,7 +665,7 @@ export function ProjectDetailPageContent() {
     try {
       await svc.baselines.freezeBaseline(missions[0]!.id);
       showToast("success", lang === "fr" ? "Version de référence gelée" : "Baseline frozen");
-      handleTabChange("baseline");
+      handleTabChange("delivery");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -800,7 +680,7 @@ export function ProjectDetailPageContent() {
     try {
       await svc.packages.generatePackage(baselines[0]!.id);
       showToast("success", lang === "fr" ? "Paquet final généré avec succès" : "Package generated");
-      handleTabChange("package");
+      handleTabChange("delivery");
       load();
     } catch (err) {
       showToast("error", String(err));
@@ -988,7 +868,7 @@ export function ProjectDetailPageContent() {
 
 
 
-        {activeTab === "decisions" && (
+        {(activeTab as string) === "decisions" && (
           <div>
             <h2 className="mb-4">{t("tab.decisions")}</h2>
             {decisions.length === 0 ? (
@@ -2285,8 +2165,8 @@ export function ProjectDetailPageContent() {
                 <h3>{lang === "fr" ? "Aucune mission planifiée" : "No mission planned"}</h3>
                 <p>{t("empty.organization")}</p>
                 {briefItems.length > 0 && (
-                  <button className="btn btn-primary mt-4" onClick={() => handleTabChange("brief")}>
-                    👈 {lang === "fr" ? "Aller au brief" : "Go to brief"}
+                  <button className="btn btn-primary mt-4" onClick={() => handleTabChange("interview")}>
+                    👈 {lang === "fr" ? "Aller à l'Entretien Produit" : "Go to Product Interview"}
                   </button>
                 )}
               </div>
@@ -2449,7 +2329,7 @@ export function ProjectDetailPageContent() {
           </div>
         )}
 
-        {activeTab === "conflicts" && (
+        {(activeTab as string) === "conflicts" && (
           <div>
             <h2 className="mb-4">{t("tab.conflicts")}</h2>
             {conflicts.length === 0 ? (
@@ -2669,7 +2549,7 @@ export function ProjectDetailPageContent() {
                 </div>
                 {gates.length > 0 && (
                   <div className="mb-6">
-                    <h3 className="mb-3">{t("audits.gates")}</h3>
+                    <h3 className="mb-3">{lang === "fr" ? "Portes de validation" : "Validation Gates"}</h3>
                     <div className="grid grid-2">
                       {gates.map((g) => (
                         <div key={g.id} className="card">
@@ -2693,14 +2573,14 @@ export function ProjectDetailPageContent() {
                             )}
                           </div>
                           <h4 className="text-sm font-semibold">{g.name}</h4>
-                          <p className="text-xs text-muted mt-1">{g.description}</p>
+                          <p className="text-xs text-muted mt-1">{g.passCondition}</p>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                <h3 className="mb-3">{t("audits.findings")}</h3>
+                <h3 className="mb-3">{lang === "fr" ? "Observations d'audit" : "Audit Findings"}</h3>
                 {findings.length === 0 ? (
                   <div className="empty-state">
                     <div className="empty-state-icon">🔍</div>
@@ -2897,7 +2777,7 @@ export function ProjectDetailPageContent() {
                                   className="btn btn-sm btn-primary"
                                   onClick={() => resolveConflict(c.id, opt.id)}
                                 >
-                                  {t("action.resolve")}
+                                  {lang === "fr" ? "Résoudre" : "Resolve"}
                                 </button>
                               </div>
                             </div>
@@ -2933,19 +2813,64 @@ export function ProjectDetailPageContent() {
                         `📦 ${t("package.generateBtn")}`
                       )}
                     </button>
-                        whiteSpace: "pre-wrap",
-                        maxHeight: 300,
-                        overflow: "auto",
-                        background: "var(--color-neutral-800)",
-                        padding: "var(--space-3)",
-                        borderRadius: "var(--radius-md)",
-                        color: "var(--color-neutral-200)",
-                      }}
-                    >
-                      {f.content}
-                    </pre>
-                  </details>
-                ))}
+                    {pkg && (
+                      <button className="btn btn-secondary" onClick={downloadPackage}>
+                        {t("package.downloadBtn")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {!pkg ? (
+                  <div className="empty-state">
+                    <div className="empty-state-icon">📦</div>
+                    <h3>{lang === "fr" ? "Aucun paquet généré" : "No package yet"}</h3>
+                    <p>{t("empty.package")}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="card mb-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`badge badge-${pkg.status.toLowerCase()}`}>
+                          {pkg.status === "READY" ? (lang === "fr" ? "Prêt" : "Ready") : pkg.status}
+                        </span>
+                        <h4>{lang === "fr" ? "Paquet de livraison" : "Execution Package"}</h4>
+                      </div>
+                      <p className="text-sm text-muted">
+                        {lang === "fr" ? "Fichiers : " : "Files: "}
+                        {pkg.files.length} | {lang === "fr" ? "Généré le : " : "Generated: "}
+                        {new Date(pkg.generatedAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <h3 className="mb-4">{t("package.files")}</h3>
+                    {pkg.files.map((f, i) => (
+                      <details key={i} className="card mb-2">
+                        <summary
+                          style={{ cursor: "pointer" }}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="text-sm font-semibold">{f.filename}</span>
+                          <span className="text-xs text-muted">
+                            {(f.sizeBytes / 1024).toFixed(1)} KB
+                          </span>
+                        </summary>
+                        <pre
+                          className="text-xs mt-3"
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            maxHeight: 300,
+                            overflow: "auto",
+                            background: "var(--color-neutral-800)",
+                            padding: "var(--space-3)",
+                            borderRadius: "var(--radius-md)",
+                            color: "var(--color-neutral-200)",
+                          }}
+                        >
+                          {f.content}
+                        </pre>
+                      </details>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

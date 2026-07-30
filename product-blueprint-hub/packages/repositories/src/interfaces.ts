@@ -60,6 +60,7 @@ export interface IDesignBaselineRepository extends IRepository<DesignBaseline> {
 
 export interface ISourceRepository extends IRepository<Source> {
   getByProjectId(projectId: EntityId): Promise<Source[]>;
+  addSource(projectId: EntityId, label: string, content: string, type: import("@pbh/domain").SourceType): Promise<Source>;
   updateContextStatus(sourceId: EntityId, status: import("@pbh/domain").SourceContextStatus): Promise<Source>;
 }
 
@@ -177,6 +178,10 @@ export interface IProposedConsequenceRepository extends IRepository<import("@pbh
   getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").ProposedConsequence[]>;
 }
 
+export interface IOrbiteReviewRepository extends IRepository<import("@pbh/domain").OrbiteReviewResult> {
+  getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").OrbiteReviewResult[]>;
+}
+
 export interface IProductInterviewBaselineRepository extends IRepository<import("@pbh/domain").ProductInterviewBaseline> {
   getByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewBaseline[]>;
   getLatestByProjectId(projectId: EntityId): Promise<import("@pbh/domain").ProductInterviewBaseline | null>;
@@ -215,5 +220,6 @@ export interface RepositoryRegistry {
   functionalBlueprints: IFunctionalBlueprintRepository;
   productInterviewContradictions: IProductInterviewContradictionRepository;
   proposedConsequences: IProposedConsequenceRepository;
+  orbiteReviews: IOrbiteReviewRepository;
   productInterviewBaselines: IProductInterviewBaselineRepository;
 }

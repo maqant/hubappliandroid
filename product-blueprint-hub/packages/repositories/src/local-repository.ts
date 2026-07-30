@@ -30,6 +30,8 @@ import type {
   IFunctionalBlueprintRepository,
   IProductInterviewContradictionRepository,
   IProposedConsequenceRepository,
+  IOrbiteReviewRepository,
+  IProductInterviewBaselineRepository,
   RepositoryRegistry,
 } from "./interfaces";
 import type {
@@ -156,12 +158,24 @@ class LocalProjectRepository extends LocalRepo<Project> implements IProjectRepos
   }
 }
 
+import { createSource } from "@pbh/domain";
+
 class LocalSourceRepository extends LocalRepo<Source> implements ISourceRepository {
   constructor() {
     super("sources");
   }
   async getByProjectId(projectId: EntityId): Promise<Source[]> {
     return this.filter((s) => s.projectId === projectId);
+  }
+  async addSource(
+    projectId: EntityId,
+    label: string,
+    content: string,
+    type: import("@pbh/domain").SourceType
+  ): Promise<Source> {
+    const newSource = createSource({ projectId, type, label, content });
+    await this.save(newSource);
+    return newSource;
   }
   async updateContextStatus(sourceId: EntityId, status: import("@pbh/domain").SourceContextStatus): Promise<Source> {
     const source = await this.getById(sourceId);
@@ -536,8 +550,20 @@ class LocalProposedConsequenceRepository
   }
 }
 
+class LocalOrbiteReviewRepository
+  extends LocalRepo<import("@pbh/domain").OrbiteReviewResult>
+  implements IOrbiteReviewRepository
+{
+  constructor() {
+    super("orbite_reviews");
+  }
+  async getBySessionId(sessionId: EntityId): Promise<import("@pbh/domain").OrbiteReviewResult[]> {
+    return this.filter((r) => r.sessionId === sessionId);
+  }
+}
+
 export class LocalProductInterviewBaselineRepository
-  extends LocalRepository<import("@pbh/domain").ProductInterviewBaseline>
+  extends LocalRepo<import("@pbh/domain").ProductInterviewBaseline>
   implements IProductInterviewBaselineRepository
 {
   constructor() {
@@ -588,6 +614,7 @@ export function createLocalRepositoryRegistry(): RepositoryRegistry {
     functionalBlueprints: new LocalFunctionalBlueprintRepository(),
     productInterviewContradictions: new LocalProductInterviewContradictionRepository(),
     proposedConsequences: new LocalProposedConsequenceRepository(),
+    orbiteReviews: new LocalOrbiteReviewRepository(),
     productInterviewBaselines: new LocalProductInterviewBaselineRepository(),
   };
 }

@@ -448,9 +448,6 @@ export function validateProductArchitectResponse(response: ProductArchitectRespo
   return { valid: true };
 }
 
-/**
- * Évalue l'état de chacun des 28+ axes ORBITE de façon pure et déterministe depuis les assertions.
- */
 export function evaluateAxes(assertions: KnowledgeAssertion[]): Record<OrbiteAxis, OrbiteAxisState> {
   const states = Object.fromEntries(
     ORBITE_AXES.map((axis) => [
@@ -462,7 +459,7 @@ export function evaluateAxes(assertions: KnowledgeAssertion[]): Record<OrbiteAxi
         lastTouchedTurn: null,
       },
     ])
-  ) as Record<OrbiteAxis, OrbiteAxisState>;
+  ) as any as Record<OrbiteAxis, OrbiteAxisState>;
 
   for (const assertion of assertions) {
     if (assertion.status === "EXCLUDED" || assertion.status === "NOT_APPLICABLE") continue;
@@ -487,7 +484,7 @@ export function evaluateAxes(assertions: KnowledgeAssertion[]): Record<OrbiteAxi
 
 const PHASE_AXES: Record<MaturityStep, OrbiteAxis[]> = {
   EXPLORATION: ["IDENTITY_AND_USER", "USAGE_MOMENT", "CURRENT_BEHAVIOR", "REAL_PROBLEM"],
-  CADRAGE: ["DECISION_TO_SIMPLIFY", "MINIMAL_PROMISE", "VALUE_LOOP_ENTRY", "VALUE_LOOP_ACTION", "VALUE_LOOP_RESULT", "VALUE_LOOP_RETURN"],
+  CADRAGE: ["DECISION_TO_SIMPLIFY", "MINIMAL_PROMISE", "VALUE_LOOP_ENTRY", "VALUE_LOOP_ACTION", "VALUE_LOOP_DECISION", "VALUE_LOOP_FEEDBACK"],
   MVP: ["MVP_SCOPE", "EXCLUSIONS", "SUCCESS_SIGNAL", "LEARNING_GOAL", "DATA_NECESSARY", "RULES_VS_AI"],
   TRANSMISSION: ["WEAK_STATES", "TRUST_AND_CONTROL", "CONSTRAINTS", "ACCEPTANCE_CRITERIA", "OPEN_RISKS", "OPEN_DECISIONS"],
   READY: ["ROADMAP", "MONETIZATION"],
@@ -499,35 +496,36 @@ export function computeMaturityFromAxes(
 ): {
   confirmedCount: number;
   inferredCount: number;
+  emptyCount: number;
+  conflictingCount: number;
   unknownCount: number;
   blockingUnknownsCount: number;
   openContradictionsCount: number;
   maturityStep: MaturityStep;
+  maturityScore: number;
   allowFinalize: boolean;
 } {
   const confirmedCount = Object.values(states).filter((s) => s.status === "CONFIRMED").length;
   const inferredCount = Object.values(states).filter((s) => s.status === "INFERRED").length;
-  const unknownCount = Object.values(states).filter((s) => s.status === "EMPTY").length;
+  const emptyCount = Object.values(states).filter((s) => s.status === "EMPTY").length;
+  const conflictingCount = Object.values(states).filter((s) => s.status === "CONFLICTING").length;
   const openContradictionsCount = contradictions.filter((c) => c.status === "OPEN").length;
   const blockingUnknownsCount = Object.values(states).filter(
     (s) => PHASE_AXES.EXPLORATION.includes(s.axis) && s.status === "EMPTY"
   ).length;
 
-  let maturityStep: MaturityStep = "EXPLORATION";
-  const ok = (a: OrbiteAxis, minStatus: OrbiteAxisStatus) =>
-    minStatus === "CONFIRMED" ? states[a]?.status === "CONFIRMED" : states[a]?.status !== "EMPTY";
+  const totalAxes = ORBITE_AXES.length;
+  const maturityScore = Math.round(((confirmedCount * 1.0 + inferredCount * 0.5) / totalAxes) * 100);
 
-  if (ok("IDENTITY_AND_USER", "CONFIRMED") && ok("REAL_PROBLEM", "CONFIRMED")) {
-    maturityStep = "CADRAGE";
-  }
-  if (maturityStep === "CADRAGE" && ok("MINIMAL_PROMISE", "CONFIRMED") && ok("DECISION_TO_SIMPLIFY", "CONFIRMED")) {
-    maturityStep = "MVP";
-  }
-  if (maturityStep === "MVP" && ok("MVP_SCOPE", "CONFIRMED") && ok("SUCCESS_SIGNAL", "CONFIRMED")) {
-    maturityStep = "TRANSMISSION";
-  }
-  if (maturityStep === "TRANSMISSION" && ok("ACCEPTANCE_CRITERIA", "CONFIRMED") && openContradictionsCount === 0) {
+  let maturityStep: MaturityStep = "EXPLORATION";
+  if (maturityScore >= 80 && conflictingCount === 0) {
     maturityStep = "READY";
+  } else if (maturityScore >= 60) {
+    maturityStep = "TRANSMISSION";
+  } else if (maturityScore >= 40) {
+    maturityStep = "MVP";
+  } else if (maturityScore >= 20) {
+    maturityStep = "CADRAGE";
   }
 
   const allowFinalize = openContradictionsCount === 0 && blockingUnknownsCount === 0 && confirmedCount >= 4;
@@ -535,77 +533,318 @@ export function computeMaturityFromAxes(
   return {
     confirmedCount,
     inferredCount,
-    unknownCount,
+    emptyCount,
+    conflictingCount,
+    unknownCount: emptyCount,
     blockingUnknownsCount,
     openContradictionsCount,
     maturityStep,
+    maturityScore,
     allowFinalize,
   };
 }
 
-export function computeMaturity(
-  assertions: KnowledgeAssertion[],
-  _sections: Record<BlueprintSectionId, BlueprintSection>,
-  contradictions: ProductInterviewContradiction[]
-) {
-  const states = evaluateAxes(assertions);
-  return computeMaturityFromAxes(states, contradictions);
-}
-
 export function selectNextQuestionTarget(
   states: Record<OrbiteAxis, OrbiteAxisState>,
-  lastTargetAxis: OrbiteAxis | null = null,
-  contradictions: ProductInterviewContradiction[] = []
+  currentMaturityStep: MaturityStep,
+  contradictions: ProductInterviewContradiction[]
 ): QuestionTarget {
-  const maturityResult = computeMaturityFromAxes(states, contradictions);
-  const phase = maturityResult.maturityStep;
+  // 1. Check for open blocking contradictions first
+  const openContradiction = contradictions.find((c) => c.status === "OPEN" && c.isBlocking);
+  if (openContradiction) {
+    return {
+      axis: "REAL_PROBLEM",
+      reason: `Une contradiction bloquante a été détectée sur le sujet "${openContradiction.subject}". Elle doit être résolue avant de poursuivre.`,
+      maturityPhase: currentMaturityStep,
+      targetSubject: openContradiction.subject,
+      affectedSectionIds: ["REAL_PROBLEM"],
+      candidates: [
+        {
+          axis: "REAL_PROBLEM",
+          score: 100,
+          reasons: ["Résolution de contradiction bloquante prioritaire"],
+        },
+      ],
+    };
+  }
 
-  const candidates: QuestionCandidate[] = ORBITE_AXES.filter((a) => states[a].status !== "CONFIRMED").map((axis) => {
-    const s = states[axis];
-    const reasons: string[] = [];
-    let score = 0;
+  // 2. Filter axes belonging to current and preceding maturity phases
+  const targetPhases: MaturityStep[] = ["EXPLORATION"];
+  if (currentMaturityStep !== "EXPLORATION") targetPhases.push("CADRAGE");
+  if (currentMaturityStep === "MVP" || currentMaturityStep === "TRANSMISSION" || currentMaturityStep === "READY") targetPhases.push("MVP");
+  if (currentMaturityStep === "TRANSMISSION" || currentMaturityStep === "READY") targetPhases.push("TRANSMISSION");
+  if (currentMaturityStep === "READY") targetPhases.push("READY");
 
-    if (s.status === "CONFLICTING") {
-      score += 200;
-      reasons.push("Contradiction bloquante à résoudre");
-    }
-    if (PHASE_AXES[phase].includes(axis)) {
-      score += 100;
-      reasons.push(`Axe critique de la phase actuelle (${phase})`);
-    }
-    if (s.status === "EMPTY") {
-      score += 35;
-      reasons.push("Aucune information établie (Inconnue)");
-    }
-    if (s.status === "INFERRED") {
-      score += 15;
-      reasons.push("Hypothèse à confirmer");
-    }
-    if (axis === lastTargetAxis) {
-      score -= 40;
-      reasons.push("Sujet abordé au tour précédent");
-    }
-
-    return { axis, score, reasons };
-  }).sort(
-    (a, b) => b.score - a.score || ORBITE_AXES.indexOf(a.axis) - ORBITE_AXES.indexOf(b.axis)
+  const eligibleAxes = ORBITE_AXES.filter((axis) =>
+    targetPhases.some((phase) => PHASE_AXES[phase]?.includes(axis))
   );
 
-  const top = candidates[0] || {
+  const candidates: QuestionCandidate[] = [];
+
+  for (const axis of eligibleAxes) {
+    const s = states[axis];
+    if (!s) continue;
+
+    let score = 0;
+    const reasons: string[] = [];
+
+    if (s.status === "EMPTY") {
+      score += 50;
+      reasons.push("Axe non exploré (vide)");
+    } else if (s.status === "INFERRED") {
+      score += 30;
+      reasons.push("Axe basé sur des hypothèses non confirmées");
+    } else if (s.status === "CONFLICTING") {
+      score += 70;
+      reasons.push("Axe en situation de conflit d'assertions");
+    }
+
+    if (score > 0) {
+      candidates.push({ axis, score, reasons });
+    }
+  }
+
+  // Sort candidates by score desc
+  candidates.sort((a, b) => b.score - a.score);
+
+  const bestCandidate = candidates[0] || {
     axis: "REAL_PROBLEM" as OrbiteAxis,
-    score: 100,
-    reasons: ["Axe fondamental initial"],
+    score: 10,
+    reasons: ["Approfondissement général"],
   };
 
-  const section = AXIS_TO_SECTION[top.axis] || "REAL_PROBLEM";
+  const sectionId = AXIS_TO_SECTION[bestCandidate.axis] || "REAL_PROBLEM";
 
   return {
-    axis: top.axis,
-    reason: top.reasons.join(" • "),
-    maturityPhase: phase,
-    targetSubject: `Clarification de l'axe ${top.axis}`,
-    affectedSectionIds: [section],
+    axis: bestCandidate.axis,
+    reason: bestCandidate.reasons.join(" ; "),
+    maturityPhase: currentMaturityStep,
+    targetSubject: BLUEPRINT_SECTION_TITLES[sectionId] || bestCandidate.axis,
+    affectedSectionIds: [sectionId],
     candidates: candidates.slice(0, 3),
+  };
+}
+
+// ─── Assertions & Actions Synchrones ─────────────────────────────
+export function applyAnswerToBlueprintSync(
+  blueprint: FunctionalBlueprint,
+  userText: string,
+  questionTarget: QuestionTarget
+): FunctionalBlueprint {
+  const cat = classifyAnswer(userText);
+  const sectionId = questionTarget.affectedSectionIds[0] || "REAL_PROBLEM";
+  const existingSec = blueprint.sections[sectionId];
+  if (!existingSec) return blueprint;
+
+  let newStatus: SectionStatus = existingSec.status;
+
+  if (cat === "EXCLUSION" || cat === "DEFER_REQUEST") {
+    newStatus = "DEFERRED";
+  } else if (cat === "CONFIRMATION" || cat === "SUBSTANTIVE") {
+    newStatus = "CONFIRMED";
+  } else if (cat === "CORRECTION") {
+    newStatus = "INFERRED";
+  }
+
+  const updatedSection: BlueprintSection = {
+    ...existingSec,
+    status: newStatus,
+    summary: `${existingSec.summary ? existingSec.summary + "\n" : ""}[Réponse Utilisateur] : ${userText.trim()}`,
+    lastUpdatedAt: new Date().toISOString(),
+  };
+
+  return {
+    ...blueprint,
+    sections: {
+      ...blueprint.sections,
+      [sectionId]: updatedSection,
+    },
+    version: blueprint.version + 1,
+  };
+}
+
+// ─── 14 Sections Canoniques Initiales ──────────────────────────────
+export function createInitialFunctionalBlueprint(projectId: EntityId, sessionId: EntityId): FunctionalBlueprint {
+  const now = new Date().toISOString();
+  const sections: Record<BlueprintSectionId, BlueprintSection> = {
+    ORIGINAL_INTUITION: {
+      id: "ORIGINAL_INTUITION",
+      title: BLUEPRINT_SECTION_TITLES.ORIGINAL_INTUITION,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    REAL_PROBLEM: {
+      id: "REAL_PROBLEM",
+      title: BLUEPRINT_SECTION_TITLES.REAL_PROBLEM,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    DECISION_TO_SIMPLIFY: {
+      id: "DECISION_TO_SIMPLIFY",
+      title: BLUEPRINT_SECTION_TITLES.DECISION_TO_SIMPLIFY,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    MINIMAL_PROMISE: {
+      id: "MINIMAL_PROMISE",
+      title: BLUEPRINT_SECTION_TITLES.MINIMAL_PROMISE,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    USAGE_MOMENT: {
+      id: "USAGE_MOMENT",
+      title: BLUEPRINT_SECTION_TITLES.USAGE_MOMENT,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    VALUE_LOOP: {
+      id: "VALUE_LOOP",
+      title: BLUEPRINT_SECTION_TITLES.VALUE_LOOP,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    PRIMARY_EXPERIENCE: {
+      id: "PRIMARY_EXPERIENCE",
+      title: BLUEPRINT_SECTION_TITLES.PRIMARY_EXPERIENCE,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    MVP_SCOPE: {
+      id: "MVP_SCOPE",
+      title: BLUEPRINT_SECTION_TITLES.MVP_SCOPE,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    DATA_MATRIX: {
+      id: "DATA_MATRIX",
+      title: BLUEPRINT_SECTION_TITLES.DATA_MATRIX,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    RULES_AND_AI: {
+      id: "RULES_AND_AI",
+      title: BLUEPRINT_SECTION_TITLES.RULES_AND_AI,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    WEAK_STATES: {
+      id: "WEAK_STATES",
+      title: BLUEPRINT_SECTION_TITLES.WEAK_STATES,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    TRUST_AND_CONTROL: {
+      id: "TRUST_AND_CONTROL",
+      title: BLUEPRINT_SECTION_TITLES.TRUST_AND_CONTROL,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    EVOLUTION: {
+      id: "EVOLUTION",
+      title: BLUEPRINT_SECTION_TITLES.EVOLUTION,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+    TRANSMISSION: {
+      id: "TRANSMISSION",
+      title: BLUEPRINT_SECTION_TITLES.TRANSMISSION,
+      summary: "",
+      status: "EMPTY",
+      assertionIds: [],
+      decisionIds: [],
+      unknownIds: [],
+      contradictionIds: [],
+      lastUpdatedAt: now,
+      version: 1,
+    },
+  };
+
+  return {
+    id: `bp_${sessionId}` as EntityId,
+    projectId,
+    sessionId,
+    sections,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -613,7 +852,7 @@ export function selectNextQuestionTarget(
 // CHANTIER 5 — Relecture ORBITE, Baseline immuable & Transmission
 // ============================================================
 
-export type ReviewStatus = 'PENDING_ARBITRATION' | 'ARBITRATED' | 'FAILED';
+export type OrbiteReviewStatus = 'PENDING_ARBITRATION' | 'ARBITRATED' | 'FAILED';
 
 export type FindingCategory =
   | 'COHERENCE'
@@ -654,7 +893,7 @@ export interface OrbiteReviewResult {
   readonly sessionId: EntityId;
   readonly requestedAt: string;
   readonly modelCallId: string;
-  status: ReviewStatus;
+  status: OrbiteReviewStatus;
   readonly reviewSummary: string;
   readonly findings: ReviewFinding[];
   readonly strengths: readonly string[];
@@ -664,7 +903,7 @@ export interface OrbiteReviewResult {
 }
 
 export interface PreReviewBlocker {
-  readonly code: 'PENDING_CONSEQUENCES' | 'OPEN_CONTRADICTIONS' | 'BLOCKING_UNKNOWNS' | 'MISSING_MANDATORY_SECTION';
+  readonly code: 'PENDING_CONSEQUENCES' | 'OPEN_CONTRADICTIONS' | 'MISSING_MANDATORY_SECTION';
   readonly detail: string;
   readonly relatedIds: readonly string[];
 }
@@ -676,8 +915,8 @@ export interface PreReviewReadiness {
 }
 
 export function computePreReviewReadiness(
-  session: ProductInterviewSession,
-  assertions: KnowledgeAssertion[],
+  _session: ProductInterviewSession,
+  _assertions: KnowledgeAssertion[],
   blueprint: FunctionalBlueprint,
   consequences: ProposedConsequence[],
   contradictions: ProductInterviewContradiction[]
@@ -704,7 +943,7 @@ export function computePreReviewReadiness(
     });
   }
 
-  // 3. Mandatory sections completeness check (REAL_PROBLEM, DECISION_TO_SIMPLIFY, MINIMAL_PROMISE, MVP_SCOPE)
+  // 3. Mandatory sections completeness check
   const mandatorySections: BlueprintSectionId[] = [
     'REAL_PROBLEM',
     'DECISION_TO_SIMPLIFY',
@@ -725,7 +964,8 @@ export function computePreReviewReadiness(
   }
 
   const sectionMaturities: Record<BlueprintSectionId, number> = {} as any;
-  for (const secId of ALL_BLUEPRINT_SECTION_IDS) {
+  const allSectionIds = Object.keys(BLUEPRINT_SECTION_TITLES) as BlueprintSectionId[];
+  for (const secId of allSectionIds) {
     const sec = blueprint.sections[secId];
     sectionMaturities[secId] = sec?.status === 'CONFIRMED' ? 1.0 : sec?.status === 'INFERRED' ? 0.6 : 0.0;
   }
@@ -756,19 +996,17 @@ export interface CanonicalScreen {
 
 export interface CanonicalJourney {
   readonly id: string; // UJ001, UJ002...
-  readonly name: string;
-  readonly trigger: string;
-  readonly expectedOutcome: string;
-  readonly featureIds: readonly string[];
+  readonly title: string;
+  readonly goal: string;
   readonly screenIds: readonly string[];
+  readonly keyDecisionPoint: string;
 }
 
 export interface TraceabilityEntry {
-  readonly promiseItem: string;
   readonly featureId: string;
   readonly screenId: string;
   readonly journeyId: string;
-  readonly status: 'VERIFIED' | 'PARTIAL' | 'MISSING';
+  readonly sectionId: BlueprintSectionId;
 }
 
 export interface CanonicalInventories {
@@ -779,12 +1017,11 @@ export interface CanonicalInventories {
 }
 
 export function buildCanonicalInventories(
-  blueprint: FunctionalBlueprint,
+  _blueprint: FunctionalBlueprint,
   assertions: KnowledgeAssertion[],
-  consequences: ProposedConsequence[]
+  _consequences: ProposedConsequence[]
 ): CanonicalInventories {
   const confirmedAssertions = assertions.filter((a) => a.status === 'CONFIRMED');
-  const acceptedConsequences = consequences.filter((c) => c.status === 'ACCEPTED');
 
   const FEATURES: CanonicalFeature[] = confirmedAssertions.map((a, idx) => ({
     id: `F${String(idx + 1).padStart(3, '0')}`,
@@ -808,20 +1045,18 @@ export function buildCanonicalInventories(
   const USER_JOURNEYS: CanonicalJourney[] = [
     {
       id: 'UJ001',
-      name: 'Parcours de Première Valeur',
-      trigger: 'Lancement du produit',
-      expectedOutcome: 'Résultat ou bénéfice minimal délivré',
-      featureIds: FEATURES.map((f) => f.id),
-      screenIds: SCREENS.map((s) => s.id),
+      title: 'Parcours Nominal Principal',
+      goal: 'Atteindre le résultat observable de la promesse minimale',
+      screenIds: ['E001'],
+      keyDecisionPoint: 'Confirmation par l\'utilisateur',
     },
   ];
 
   const TRACEABILITY_MATRIX: TraceabilityEntry[] = FEATURES.map((f) => ({
-    promiseItem: f.title,
     featureId: f.id,
     screenId: 'E001',
     journeyId: 'UJ001',
-    status: 'VERIFIED',
+    sectionId: f.sectionId,
   }));
 
   return {
@@ -832,14 +1067,14 @@ export function buildCanonicalInventories(
   };
 }
 
-export type BaselineStatus = 'VALIDATED' | 'SUPERSEDED';
+export type ProductInterviewBaselineStatus = 'VALIDATED' | 'SUPERSEDED';
 
 export interface ProductInterviewBaseline {
   readonly id: EntityId;
   readonly projectId: EntityId;
   readonly sessionId: EntityId;
   readonly version: number;
-  readonly status: BaselineStatus;
+  readonly status: ProductInterviewBaselineStatus;
   readonly createdAt: string;
   readonly validatedAt: string;
   readonly contentHash: string;
@@ -858,10 +1093,9 @@ export const PRODUCT_INTERVIEW_BASELINE_CONTRACT = `
 2. Interdiction de redéfinir le problème, réécrire la promesse ou élargir silencieusement le MVP.
 3. Seul FIX-DIRECTOR consolide les inventaires canoniques : FEATURES, SCREENS, USER_JOURNEYS, TRACEABILITY_MATRIX.
 4. Toute contribution spécialisée doit référencer les identifiants canoniques (F001, E001, UJ001...) sans dupliquer le produit.
-5. ContentHash de référence : {{CONTENT_HASH}}
-` as const;
+`;
 
-// ─── Chantier 7 — Service Déterministe d'Autorité Produit ───
+// ─── Chantier 7 — Service d'autorité produit ───────────────────
 
 export type ProductAuthorityStatus =
   | 'PRODUCT_INTERVIEW_BASELINE'
@@ -883,20 +1117,10 @@ export interface ProductAuthorityFacts {
   readonly hasLockedBriefItems: boolean;
 }
 
-/**
- * Fonction PURE et déterministe résolvant l'autorité produit principale d'un projet.
- * Priorité stricte :
- * 1. Product Interview Baseline validée
- * 2. Product Interview session / working state en cours
- * 3. Brief historique (BriefItems)
- * 4. Aucun cadrage (NONE)
- */
-export function resolveProjectProductAuthority(
-  facts: ProductAuthorityFacts
-): ProjectProductAuthority {
+export function resolveProjectProductAuthority(facts: ProductAuthorityFacts): ProjectProductAuthority {
   const hasHistoricalBrief = facts.hasLockedBriefItems;
 
-  if (facts.latestValidatedBaselineId !== null) {
+  if (facts.latestValidatedBaselineId) {
     return {
       status: 'PRODUCT_INTERVIEW_BASELINE',
       baselineId: facts.latestValidatedBaselineId,
@@ -978,7 +1202,7 @@ export function buildDecisionRegisterEntries(input: {
   // 1. Map explicit Decisions
   for (const d of input.decisions) {
     entries.push({
-      id: `decision:${d.id}`,
+      id: `decision:${d.id}` as EntityId,
       source: 'decision',
       sourceId: d.id,
       title: d.title || 'Décision utilisateur',
@@ -996,17 +1220,17 @@ export function buildDecisionRegisterEntries(input: {
   for (const ctr of input.contradictions) {
     if (ctr.status === 'RESOLVED') {
       entries.push({
-        id: `contradiction:${ctr.id}`,
+        id: `contradiction:${ctr.id}` as EntityId,
         source: 'resolved-contradiction',
         sourceId: ctr.id,
-        title: `Contradiction résolue : ${ctr.topic}`,
-        statement: ctr.resolutionRationale || ctr.topic,
-        rationale: `Arbitrage entre assertion A et assertion B sur l'axe ${ctr.axis}`,
+        title: `Contradiction résolue : ${ctr.subject}`,
+        statement: ctr.explanation || ctr.subject,
+        rationale: `Arbitrage sur le sujet "${ctr.subject}"`,
         status: 'ACTIVE',
         arbitrationType: 'CONTRADICTION_RESOLVED',
-        decidedAt: ctr.updatedAt || ctr.createdAt,
+        decidedAt: new Date().toISOString(),
         provenance: 'Entretien Produit',
-        relatedSectionIds: [AXIS_TO_SECTION[ctr.axis]],
+        relatedSectionIds: ['REAL_PROBLEM'],
       });
     }
   }
@@ -1015,16 +1239,16 @@ export function buildDecisionRegisterEntries(input: {
   for (const cons of input.consequences) {
     if (cons.status === 'ACCEPTED' || cons.status === 'REJECTED' || cons.status === 'DEFERRED') {
       entries.push({
-        id: `consequence:${cons.id}`,
+        id: `consequence:${cons.id}` as EntityId,
         source: 'accepted-consequence',
         sourceId: cons.id,
         title: `Conséquence : ${cons.targetSectionId}`,
         statement: cons.statement,
-        rationale: cons.userJustification || cons.impactDescription,
+        rationale: cons.rationale,
         status: cons.status === 'ACCEPTED' ? 'ACTIVE' : cons.status === 'DEFERRED' ? 'DEFERRED' : 'REJECTED',
         arbitrationType: cons.status === 'ACCEPTED' ? 'CONSEQUENCE_ACCEPTED' : cons.status === 'DEFERRED' ? 'DEFERRAL' : 'CONSEQUENCE_REJECTED',
-        decidedAt: cons.updatedAt || cons.createdAt,
-        provenance: cons.sourceAssertionId ? 'Inférence Blueprint' : 'Architecte Produit',
+        decidedAt: cons.resolvedAt || new Date().toISOString(),
+        provenance: cons.sourceAssertionIds && cons.sourceAssertionIds.length > 0 ? 'Inférence Blueprint' : 'Architecte Produit',
         relatedSectionIds: [cons.targetSectionId],
       });
     }
@@ -1035,7 +1259,7 @@ export function buildDecisionRegisterEntries(input: {
     for (const fnd of input.orbiteFindings) {
       if (fnd.decision) {
         entries.push({
-          id: `finding:${fnd.id}`,
+          id: `finding:${fnd.id}` as EntityId,
           source: 'orbite-finding',
           sourceId: fnd.id,
           title: `Arbitrage ORBITE : ${fnd.title}`,
@@ -1043,9 +1267,9 @@ export function buildDecisionRegisterEntries(input: {
           rationale: fnd.suggestedResolution,
           status: fnd.decision === 'ACCEPTED' ? 'ACTIVE' : fnd.decision === 'MAINTAINED' ? 'ASSUMED_RISK' : fnd.decision === 'DEFERRED' ? 'DEFERRED' : 'REJECTED',
           arbitrationType: 'REVIEW_FINDING_DECIDED',
-          decidedAt: new Date().toISOString(),
+          decidedAt: fnd.decidedAt || new Date().toISOString(),
           provenance: 'Relecteur ORBITE Silencieux',
-          relatedSectionIds: [],
+          relatedSectionIds: fnd.sectionIds || [],
         });
       }
     }
